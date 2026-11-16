@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="288"
+    android:viewportHeight="288">
+    <!-- Emblema pastel arredondado centralizado dentro da área segura (192dp) do Android 12+ -->
+    <path android:pathData="M102,68 h84 a34,34 0 0 1 34,34 v84 a34,34 0 0 1 -34,34 h-84 a34,34 0 0 1 -34,-34 v-84 a34,34 0 0 1 34,-34 z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="82"
+                android:startY="80"
+                android:endX="208"
+                android:endY="210"
+                android:type="linear">
+                <item android:color="#E88E76" android:offset="0.0" />
+                <item android:color="#D46F65" android:offset="0.48" />
+                <item android:color="#BE6272" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M144,90 A54,54 0 1,1 143.99,90 Z"
+        android:fillColor="#18FFFFFF" />
+    <path
+        android:fillColor="#FFFDFB"
+        android:pathData="M136,105 C138.4,123.75 147.25,132.6 166,135 C147.25,137.4 138.4,146.25 136,165 C133.6,146.25 124.75,137.4 106,135 C124.75,132.6 133.6,123.75 136,105 Z" />
+    <path
+        android:fillColor="#FCE8DF"
+        android:pathData="M168,150 C169.35,159.3 173.7,163.65 183,165 C173.7,166.35 169.35,170.7 168,180 C166.65,170.7 162.3,166.35 153,165 C162.3,163.65 166.65,159.3 168,150 Z" />
+</vector>
