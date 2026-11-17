@@ -81,6 +81,32 @@ import {
   hapticImpactLight,
   hapticSelection,
 } from '../services/hapticsService';
+import {
+  addUpdateProgressListener,
+  canRequestPackageInstalls,
+  clearPendingApk,
+  downloadAndInstallApk,
+  getInstalledAppInfo,
+  installPendingApk,
+  isNativeSelfUpdateSupported,
+  openInstallUnknownAppsSettings,
+} from '../services/appUpdaterBridge';
+import {
+  checkForGitHubUpdates,
+  clearDismissedUpdateVersion,
+  CURRENT_APP_VERSION,
+  CURRENT_BUILD_NUMBER,
+  dismissUpdateVersion,
+  downloadActionsArtifactWithToken,
+  getDismissedUpdateVersion,
+  getLastSeenNativeBuild,
+  getStoredGitHubConfig,
+  parseSemVer,
+  resolveInstallableUpdateTarget,
+  setLastSeenNativeBuild,
+  shouldRunAutoUpdateCheck,
+  UpdateCheckResult,
+} from '../services/githubUpdateService';
 import confetti from 'canvas-confetti';
 
 const STORAGE_KEY_DATA = 'vidaorganizada_local_data_v2';
@@ -114,6 +140,23 @@ interface UndoToastInfo {
   id: string;
   message: string;
   onUndo: () => void;
+}
+
+export interface AppUpdateDownloadState {
+  status:
+    | 'idle'
+    | 'downloading'
+    | 'extracting'
+    | 'verifying'
+    | 'permission_required'
+    | 'installer_launched'
+    | 'error';
+  progress: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  error?: string;
+  pendingVersionName?: string;
+  pendingVersionCode?: number;
 }
 
 interface AppContextType {
@@ -275,6 +318,24 @@ interface AppContextType {
     isDestructive?: boolean;
     onConfirm: () => Promise<void> | void;
   }) => void;
+
+  // In-app Updater
+  installedAppVersion: string;
+  installedBuildNumber: number;
+  appUpdateResult: UpdateCheckResult | null;
+  isCheckingAppUpdate: boolean;
+  updateDownloadState: AppUpdateDownloadState;
+  isUpdateBannerDismissed: boolean;
+  checkForUpdatesNow: (options?: {
+    repo?: string;
+    token?: string;
+    force?: boolean;
+  }) => Promise<UpdateCheckResult | null>;
+  startInAppUpdate: () => Promise<void>;
+  openUnknownSourcesAndAwaitReturn: () => Promise<void>;
+  retryInstallPendingApk: () => Promise<void>;
+  dismissUpdateBanner: () => void;
+  resetUpdateDownloadState: () => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -507,6 +568,341 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         .catch(() => {});
     }
   }, []);
+
+  // In-app Updater state & lifecycle
+  const [installedAppVersion, setInstalledAppVersion] = useState<string>(CURRENT_APP_VERSION);
+  const [installedBuildNumber, setInstalledBuildNumber] = useState<number>(CURRENT_BUILD_NUMBER);
+  const installedVersionRef = useRef<{ version: string; build: number }>({
+    version: CURRENT_APP_VERSION,
+    build: CURRENT_BUILD_NUMBER,
+  });
+  const [appUpdateResult, setAppUpdateResult] = useState<UpdateCheckResult | null>(
+    () => getStoredGitHubConfig().lastResult
+  );
+  const [isCheckingAppUpdate, setIsCheckingAppUpdate] = useState<boolean>(false);
+  const [dismissedUpdateVer, setDismissedUpdateVer] = useState<string>(() =>
+    getDismissedUpdateVersion()
+  );
+  const [updateDownloadState, setUpdateDownloadState] = useState<AppUpdateDownloadState>({
+    status: 'idle',
+    progress: 0,
+    downloadedBytes: 0,
+    totalBytes: 0,
+  });
+  const updateStateStatusRef = useRef(updateDownloadState.status);
+  updateStateStatusRef.current = updateDownloadState.status;
+
+  const checkForUpdatesNow = useCallback(
+    async (options?: {
+      repo?: string;
+      token?: string;
+      force?: boolean;
+    }): Promise<UpdateCheckResult | null> => {
+      const cfg = getStoredGitHubConfig();
+      const targetRepo = (options?.repo ?? cfg.repo).trim();
+      const targetToken = (options?.token ?? cfg.token).trim();
+
+      if (!options?.force && !shouldRunAutoUpdateCheck(cfg.lastResult?.checkedAt)) {
+        return cfg.lastResult;
+      }
+
+      setIsCheckingAppUpdate(true);
+      try {
+        let effectiveBuild = installedVersionRef.current.build;
+        let effectiveVersion = installedVersionRef.current.version;
+        if (isNativeSelfUpdateSupported()) {
+          const nativeInfo = await getInstalledAppInfo();
+          if (nativeInfo) {
+            effectiveBuild = Math.max(CURRENT_BUILD_NUMBER, nativeInfo.versionCode || 0);
+            if (nativeInfo.versionName) {
+              effectiveVersion = nativeInfo.versionName.startsWith('v')
+                ? nativeInfo.versionName
+                : `v${nativeInfo.versionName}`;
+            }
+            installedVersionRef.current = { version: effectiveVersion, build: effectiveBuild };
+            setInstalledAppVersion(effectiveVersion);
+            setInstalledBuildNumber(effectiveBuild);
+          }
+        }
+
+        const result = await checkForGitHubUpdates(
+          targetRepo,
+          targetToken || undefined,
+          effectiveVersion,
+          { currentBuildNumber: effectiveBuild }
+        );
+        setAppUpdateResult(result);
+        if (result.hasUpdate && result.latestVersion && result.latestVersion !== getDismissedUpdateVersion()) {
+          clearDismissedUpdateVersion();
+          setDismissedUpdateVer('');
+        }
+        return result;
+      } catch (err) {
+        console.warn('Erro ao verificar atualizações:', err);
+        return null;
+      } finally {
+        setIsCheckingAppUpdate(false);
+      }
+    },
+    []
+  );
+
+  const retryInstallPendingApk = useCallback(async () => {
+    try {
+      const res = await installPendingApk();
+      if (res.status === 'installer_launched') {
+        hapticSuccess();
+        setUpdateDownloadState((prev) => ({
+          ...prev,
+          status: 'installer_launched',
+          progress: 100,
+          error: undefined,
+        }));
+      } else if (res.status === 'permission_required') {
+        setUpdateDownloadState((prev) => ({
+          ...prev,
+          status: 'permission_required',
+          error: undefined,
+        }));
+      } else {
+        setUpdateDownloadState({
+          status: 'idle',
+          progress: 0,
+          downloadedBytes: 0,
+          totalBytes: 0,
+        });
+      }
+    } catch (err: any) {
+      setUpdateDownloadState((prev) => ({
+        ...prev,
+        status: 'error',
+        error: err?.message || 'Não foi possível abrir o instalador do Android.',
+      }));
+    }
+  }, []);
+
+  const openUnknownSourcesAndAwaitReturn = useCallback(async () => {
+    hapticImpactLight();
+    await openInstallUnknownAppsSettings();
+  }, []);
+
+  const startInAppUpdate = useCallback(async () => {
+    const cfg = getStoredGitHubConfig();
+    const target = resolveInstallableUpdateTarget(appUpdateResult, cfg.token);
+    if (!target) return;
+
+    if (!isNativeSelfUpdateSupported()) {
+      if (target.kind === 'actions_artifact_zip' && appUpdateResult?.latestBuild?.artifactId && cfg.token) {
+        try {
+          setUpdateDownloadState({
+            status: 'downloading',
+            progress: 40,
+            downloadedBytes: 0,
+            totalBytes: target.size,
+          });
+          await downloadActionsArtifactWithToken(
+            appUpdateResult.latestBuild.artifactId,
+            appUpdateResult.repo,
+            cfg.token,
+            appUpdateResult.latestBuild.artifactName || 'Lifeedy-APK'
+          );
+          setUpdateDownloadState({
+            status: 'idle',
+            progress: 0,
+            downloadedBytes: 0,
+            totalBytes: 0,
+          });
+        } catch (err: any) {
+          setUpdateDownloadState({
+            status: 'error',
+            progress: 0,
+            downloadedBytes: 0,
+            totalBytes: 0,
+            error: err?.message || 'Não foi possível baixar o pacote.',
+          });
+        }
+      } else {
+        try {
+          await Browser.open({ url: target.url });
+        } catch {
+          window.open(target.url, '_blank', 'noopener,noreferrer');
+        }
+      }
+      return;
+    }
+
+    if (target.kind === 'external_page') {
+      try {
+        await Browser.open({ url: target.url });
+      } catch {
+        window.open(target.url, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+
+    hapticImpactLight();
+    setUpdateDownloadState({
+      status: 'downloading',
+      progress: 0,
+      downloadedBytes: 0,
+      totalBytes: target.size,
+      error: undefined,
+    });
+
+    try {
+      const res = await downloadAndInstallApk({
+        url: target.url,
+        token: target.needsToken ? cfg.token : undefined,
+        fileName: target.fileName,
+      });
+
+      if (res.status === 'permission_required') {
+        setUpdateDownloadState((prev) => ({
+          ...prev,
+          status: 'permission_required',
+          progress: 100,
+          pendingVersionName: res.versionName,
+          pendingVersionCode: res.versionCode,
+          error: undefined,
+        }));
+      } else if (res.status === 'installer_launched') {
+        hapticSuccess();
+        setUpdateDownloadState((prev) => ({
+          ...prev,
+          status: 'installer_launched',
+          progress: 100,
+          pendingVersionName: res.versionName,
+          pendingVersionCode: res.versionCode,
+          error: undefined,
+        }));
+      }
+    } catch (err: any) {
+      setUpdateDownloadState({
+        status: 'error',
+        progress: 0,
+        downloadedBytes: 0,
+        totalBytes: 0,
+        error: err?.message || 'Não foi possível baixar a atualização.',
+      });
+    }
+  }, [appUpdateResult]);
+
+  const dismissUpdateBanner = useCallback(() => {
+    hapticSelection();
+    const version = appUpdateResult?.latestVersion || '';
+    if (version) {
+      dismissUpdateVersion(version);
+      setDismissedUpdateVer(version);
+    }
+    setUpdateDownloadState({
+      status: 'idle',
+      progress: 0,
+      downloadedBytes: 0,
+      totalBytes: 0,
+    });
+  }, [appUpdateResult]);
+
+  const resetUpdateDownloadState = useCallback(() => {
+    setUpdateDownloadState({
+      status: 'idle',
+      progress: 0,
+      downloadedBytes: 0,
+      totalBytes: 0,
+    });
+  }, []);
+
+  const isUpdateBannerDismissed = Boolean(
+    appUpdateResult?.latestVersion && dismissedUpdateVer === appUpdateResult.latestVersion
+  );
+
+  // Read native installed version, cleanup stale APK cache after upgrade, subscribe progress & auto-check
+  useEffect(() => {
+    let progressHandle: { remove: () => Promise<void> } | null = null;
+    let appStateHandle: { remove: () => Promise<void> } | null = null;
+    let startupTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const initUpdater = async () => {
+      let effectiveBuild = CURRENT_BUILD_NUMBER;
+      if (isNativeSelfUpdateSupported()) {
+        const nativeInfo = await getInstalledAppInfo();
+        if (!cancelled && nativeInfo) {
+          effectiveBuild = Math.max(CURRENT_BUILD_NUMBER, nativeInfo.versionCode || 0);
+          const formattedVer = nativeInfo.versionName
+            ? nativeInfo.versionName.startsWith('v')
+              ? nativeInfo.versionName
+              : `v${nativeInfo.versionName}`
+            : CURRENT_APP_VERSION;
+          installedVersionRef.current = { version: formattedVer, build: effectiveBuild };
+          setInstalledAppVersion(formattedVer);
+          setInstalledBuildNumber(effectiveBuild);
+
+          const lastSeen = getLastSeenNativeBuild();
+          if (effectiveBuild > lastSeen) {
+            setLastSeenNativeBuild(effectiveBuild);
+            if (lastSeen > 0) {
+              await clearPendingApk();
+            }
+          }
+
+          // Reconcile stale cached update result if build is already installed
+          const cached = getStoredGitHubConfig().lastResult;
+          if (cached?.hasUpdate && cached.latestVersion) {
+            const cachedBuild = parseSemVer(cached.latestVersion)[3] || cached.latestBuild?.runNumber || 0;
+            if (cachedBuild > 0 && cachedBuild <= effectiveBuild) {
+              setAppUpdateResult(null);
+            }
+          }
+        }
+
+        progressHandle = await addUpdateProgressListener((ev) => {
+          if (cancelled) return;
+          setUpdateDownloadState((prev) => ({
+            ...prev,
+            status: ev.phase === 'installing' ? 'installer_launched' : ev.phase,
+            progress: ev.progress,
+            downloadedBytes: ev.downloadedBytes,
+            totalBytes: ev.totalBytes || prev.totalBytes,
+          }));
+        });
+
+        appStateHandle = await CapApp.addListener('appStateChange', ({ isActive }) => {
+          if (!isActive || cancelled) return;
+          if (updateStateStatusRef.current === 'permission_required') {
+            canRequestPackageInstalls()
+              .then((canInstall) => {
+                if (canInstall && !cancelled) {
+                  void retryInstallPendingApk();
+                }
+              })
+              .catch(() => {});
+          }
+          const cfg = getStoredGitHubConfig();
+          if (cfg.autoCheck && shouldRunAutoUpdateCheck(cfg.lastResult?.checkedAt)) {
+            void checkForUpdatesNow({ force: true });
+          }
+        });
+      }
+
+      const cfg = getStoredGitHubConfig();
+      if (cfg.autoCheck && !cancelled) {
+        startupTimer = setTimeout(() => {
+          if (!cancelled) {
+            void checkForUpdatesNow({ force: false });
+          }
+        }, 2500);
+      }
+    };
+
+    void initUpdater();
+
+    return () => {
+      cancelled = true;
+      if (startupTimer) clearTimeout(startupTimer);
+      if (progressHandle) void progressHandle.remove();
+      if (appStateHandle) void appStateHandle.remove();
+    };
+  }, [checkForUpdatesNow, retryInstallPendingApk]);
 
   const [notificationsList, setNotificationsList] = useState<AppNotification[]>(() => {
     try {
@@ -2412,6 +2808,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         undoToast,
         clearUndoToast,
         confirmDestructiveAction,
+        installedAppVersion,
+        installedBuildNumber,
+        appUpdateResult,
+        isCheckingAppUpdate,
+        updateDownloadState,
+        isUpdateBannerDismissed,
+        checkForUpdatesNow,
+        startInAppUpdate,
+        openUnknownSourcesAndAwaitReturn,
+        retryInstallPendingApk,
+        dismissUpdateBanner,
+        resetUpdateDownloadState,
       }}
     >
       {children}

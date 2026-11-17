@@ -25,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
     isAuthenticating,
     driveSyncInfo,
     notificationsList,
+    appUpdateResult,
   } = useApp();
 
   const todayStr = new Intl.DateTimeFormat('pt-BR', {
@@ -37,8 +38,11 @@ export const Header: React.FC<HeaderProps> = ({
   const unreadCount = notificationsList.filter((n) => !n.read).length;
   const isSyncBusy =
     driveSyncInfo.status === 'syncing' || workspaceAuthStatus === 'refreshing' || isAuthenticating;
+  const hasAppUpdate = Boolean(appUpdateResult?.hasUpdate);
   const hasCloudAttention =
-    driveSyncInfo.status === 'cloud_newer' || (Boolean(user) && workspaceAuthStatus === 'needs_reauth');
+    driveSyncInfo.status === 'cloud_newer' ||
+    (Boolean(user) && workspaceAuthStatus === 'needs_reauth') ||
+    hasAppUpdate;
 
   return (
     <header className="sticky top-0 z-30 pt-[max(env(safe-area-inset-top,0px),var(--safe-area-inset-top,0px))] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-b border-zinc-200/80 dark:border-zinc-800 transition-colors">

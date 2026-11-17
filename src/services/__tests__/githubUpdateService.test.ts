@@ -5,6 +5,8 @@ import {
   DEFAULT_GITHUB_REPO,
   normalizeGitHubRepo,
   parseSemVer,
+  resolveInstallableUpdateTarget,
+  shouldRunAutoUpdateCheck,
 } from '../githubUpdateService';
 
 function mockJsonResponse(status: number, body: any): Response {
@@ -165,5 +167,69 @@ describe('checkForGitHubUpdates', () => {
     const result = await checkForGitHubUpdates('souoleandro/meu-vida-organizada', undefined, 'v1.1.0');
     expect(result.hasUpdate).toBe(false);
     expect(result.error).toContain('vazio');
+  });
+
+  it('resolveInstallableUpdateTarget prioriza APK direto da Release e usa Actions zip quando há token', () => {
+    const releaseTarget = resolveInstallableUpdateTarget({
+      hasUpdate: true,
+      repo: 'leancelot/lifeedy',
+      currentVersion: 'v1.1.0',
+      apkAsset: {
+        id: 1,
+        name: 'Lifeedy-v1.1.0-build.18.apk',
+        size: 12_000_000,
+        download_count: 2,
+        browser_download_url: 'https://github.com/leancelot/lifeedy/releases/download/v1.1.0-build.18/app.apk',
+        api_url: 'https://api.github.com/repos/leancelot/lifeedy/releases/assets/1',
+        content_type: 'application/vnd.android.package-archive',
+      },
+      recentCommits: [],
+      repoUrl: 'https://github.com/leancelot/lifeedy',
+      actionsUrl: 'https://github.com/leancelot/lifeedy/actions',
+      releasesUrl: 'https://github.com/leancelot/lifeedy/releases',
+      checkedAt: '2026-11-17T10:00:00Z',
+    });
+    expect(releaseTarget?.kind).toBe('release_apk');
+    expect(releaseTarget?.needsToken).toBe(false);
+    expect(releaseTarget?.url).toContain('releases/download');
+
+    const artifactTarget = resolveInstallableUpdateTarget(
+      {
+        hasUpdate: true,
+        repo: 'leancelot/lifeedy',
+        currentVersion: 'v1.1.0',
+        latestBuild: {
+          id: 77,
+          runNumber: 22,
+          name: 'Build Android APK',
+          headBranch: 'main',
+          headSha: 'abc1234',
+          shortSha: 'abc1234',
+          htmlUrl: 'https://github.com/leancelot/lifeedy/actions/runs/77',
+          createdAt: '2026-11-17T10:00:00Z',
+          updatedAt: '2026-11-17T10:05:00Z',
+          artifactName: 'Lifeedy-APK',
+          artifactId: 900,
+          artifactSize: 13_000_000,
+          artifactDownloadUrl: 'https://api.github.com/repos/leancelot/lifeedy/actions/artifacts/900/zip',
+        },
+        recentCommits: [],
+        repoUrl: 'https://github.com/leancelot/lifeedy',
+        actionsUrl: 'https://github.com/leancelot/lifeedy/actions',
+        releasesUrl: 'https://github.com/leancelot/lifeedy/releases',
+        checkedAt: '2026-11-17T10:00:00Z',
+      },
+      'ghp_token'
+    );
+    expect(artifactTarget?.kind).toBe('actions_artifact_zip');
+    expect(artifactTarget?.needsToken).toBe(true);
+    expect(artifactTarget?.fileName).toBe('Lifeedy-APK.zip');
+  });
+
+  it('shouldRunAutoUpdateCheck respeita intervalo mínimo entre verificações', () => {
+    const now = new Date('2026-11-17T12:00:00Z').getTime();
+    expect(shouldRunAutoUpdateCheck(undefined, 30 * 60_000, now)).toBe(true);
+    expect(shouldRunAutoUpdateCheck('2026-11-17T11:45:00Z', 30 * 60_000, now)).toBe(false);
+    expect(shouldRunAutoUpdateCheck('2026-11-17T11:20:00Z', 30 * 60_000, now)).toBe(true);
   });
 });

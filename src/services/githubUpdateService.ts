@@ -96,7 +96,19 @@ const STORAGE_KEYS = {
   TOKEN: 'vo_github_token',
   AUTO_CHECK: 'vo_github_auto_check',
   LAST_RESULT: 'vo_github_last_result',
+  DISMISSED_VERSION: 'vo_dismissed_update_version',
+  LAST_NATIVE_BUILD: 'vo_last_seen_native_build',
 };
+
+export interface InstallableUpdateTarget {
+  kind: 'release_apk' | 'actions_artifact_zip' | 'external_page';
+  url: string;
+  fileName: string;
+  size: number;
+  needsToken: boolean;
+}
+
+export const AUTO_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
 
 export function normalizeGitHubRepo(input: string): string {
   return input
@@ -566,6 +578,118 @@ export async function downloadActionsArtifactWithToken(
   anchor.download = `${artifactName}.zip`;
   anchor.click();
   URL.revokeObjectURL(objectUrl);
+}
+
+/**
+ * Resolves the best installable download target from an UpdateCheckResult.
+ * Prefers direct GitHub Release .apk asset, falls back to authenticated Actions artifact .zip,
+ * and lastly external release/build web URL.
+ */
+export function resolveInstallableUpdateTarget(
+  result: UpdateCheckResult | null | undefined,
+  token?: string
+): InstallableUpdateTarget | null {
+  if (!result || !result.hasUpdate) return null;
+  const cleanToken = (token || '').trim();
+
+  if (result.apkAsset) {
+    const useApiAsset = Boolean(cleanToken && result.apkAsset.api_url);
+    return {
+      kind: 'release_apk',
+      url: useApiAsset ? result.apkAsset.api_url! : result.apkAsset.browser_download_url,
+      fileName: result.apkAsset.name || 'Lifeedy-update.apk',
+      size: result.apkAsset.size || 0,
+      needsToken: useApiAsset,
+    };
+  }
+
+  if (result.latestBuild?.artifactDownloadUrl && cleanToken) {
+    return {
+      kind: 'actions_artifact_zip',
+      url: result.latestBuild.artifactDownloadUrl,
+      fileName: `${result.latestBuild.artifactName || 'Lifeedy-APK'}.zip`,
+      size: result.latestBuild.artifactSize || 0,
+      needsToken: true,
+    };
+  }
+
+  const externalUrl =
+    result.latestRelease?.html_url || result.latestBuild?.htmlUrl || result.releasesUrl;
+  if (externalUrl) {
+    return {
+      kind: 'external_page',
+      url: externalUrl,
+      fileName: 'Lifeedy-update.apk',
+      size: 0,
+      needsToken: false,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Determines whether an automatic background update check should run now.
+ */
+export function shouldRunAutoUpdateCheck(
+  lastCheckedAt?: string | null,
+  minIntervalMs: number = AUTO_UPDATE_INTERVAL_MS,
+  nowMs: number = Date.now()
+): boolean {
+  if (!lastCheckedAt) return true;
+  const parsed = new Date(lastCheckedAt).getTime();
+  if (!Number.isFinite(parsed)) return true;
+  return nowMs - parsed >= minIntervalMs;
+}
+
+export function getDismissedUpdateVersion(): string {
+  if (typeof localStorage === 'undefined') return '';
+  try {
+    return localStorage.getItem(STORAGE_KEYS.DISMISSED_VERSION) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function dismissUpdateVersion(version: string): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (version.trim()) {
+      localStorage.setItem(STORAGE_KEYS.DISMISSED_VERSION, version.trim());
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function clearDismissedUpdateVersion(): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.removeItem(STORAGE_KEYS.DISMISSED_VERSION);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function getLastSeenNativeBuild(): number {
+  if (typeof localStorage === 'undefined') return 0;
+  try {
+    const val = parseInt(localStorage.getItem(STORAGE_KEYS.LAST_NATIVE_BUILD) || '0', 10);
+    return Number.isFinite(val) && val > 0 ? val : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function setLastSeenNativeBuild(build: number): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (build > 0) {
+      localStorage.setItem(STORAGE_KEYS.LAST_NATIVE_BUILD, String(build));
+    }
+  } catch {
+    // ignore storage errors
+  }
 }
 
 /**

@@ -24,6 +24,7 @@ import {
 } from './components/DriveSync/DriveDecisionModals';
 import { QuickActionFab } from './components/Common/QuickActionFab';
 import { ToastUndo } from './components/Common/ToastUndo';
+import { InAppUpdateBanner } from './components/Common/InAppUpdateBanner';
 import { NativeConnectBridge } from './components/Auth/NativeConnectBridge';
 
 const AgendaTasksView = lazy(() =>
@@ -251,6 +252,7 @@ const MainApp: React.FC = () => {
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 pt-3 sm:pt-6 keyboard-safe-main">
+        <InAppUpdateBanner />
         <div key={currentTab} className="animate-tab-enter">
           {currentTab === 'dashboard' && <DashboardView setCurrentTab={setCurrentTab} />}
           {currentTab === 'agenda' && (

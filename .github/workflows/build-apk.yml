@@ -42,6 +42,16 @@ jobs:
             cp firebase-applet-config.example.json firebase-applet-config.json
           fi
 
+      - name: Ler versão do aplicativo
+        id: app_meta
+        run: |
+          APP_VERSION=$(node -e "const fs=require('fs'); const m=fs.readFileSync('src/services/githubUpdateService.ts','utf8').match(/CURRENT_APP_VERSION\\s*=\\s*['\"]([^'\"]+)['\"]/); console.log(m ? m[1] : 'v1.1.0');")
+          BUILT_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version_name=${APP_VERSION#v}-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${APP_VERSION}-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "built_at=${BUILT_AT}" >> "$GITHUB_OUTPUT"
+
       - name: Compilar Web App (Vite)
         run: npm run build
         env:
@@ -49,6 +59,7 @@ jobs:
           VITE_GITHUB_REPO: ${{ github.repository }}
           VITE_APP_COMMIT_SHA: ${{ github.sha }}
           VITE_APP_BUILD_NUMBER: ${{ github.run_number }}
+          VITE_APP_BUILT_AT: ${{ steps.app_meta.outputs.built_at }}
 
       - name: Sincronizar Capacitor Android
         run: |
@@ -58,6 +69,14 @@ jobs:
           npx cap sync android
 
       - name: Compilar APK com Gradle
+        id: gradle_build
+        env:
+          APP_VERSION_CODE: ${{ github.run_number }}
+          APP_VERSION_NAME: ${{ steps.app_meta.outputs.version_name }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           cd android
           # Corrige possíveis quebras de linha CRLF do Windows no script gradlew
@@ -65,15 +84,25 @@ jobs:
           chmod +x gradlew
           # Aponta explicitamente para o SDK Android do runner
           echo "sdk.dir=${ANDROID_HOME}" > local.properties
-          ./gradlew assembleDebug --no-daemon --stacktrace
+
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > app/release.keystore
+            export ANDROID_KEYSTORE_PATH="$(pwd)/app/release.keystore"
+            ./gradlew assembleRelease --no-daemon --stacktrace
+            echo "apk_dir=android/app/build/outputs/apk/release" >> "$GITHUB_OUTPUT"
+          else
+            ./gradlew assembleDebug --no-daemon --stacktrace
+            echo "apk_dir=android/app/build/outputs/apk/debug" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Preparar APK versionado para distribuição
         id: prep_apk
         run: |
-          APP_VERSION=$(node -e "const fs=require('fs'); const m=fs.readFileSync('src/services/githubUpdateService.ts','utf8').match(/CURRENT_APP_VERSION\\s*=\\s*['\"]([^'\"]+)['\"]/); console.log(m ? m[1] : 'v1.1.0');")
-          RELEASE_TAG="${APP_VERSION}-build.${{ github.run_number }}"
-          APK_SOURCE=$(find android/app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' | head -n 1)
-          APK_DEST="android/app/build/outputs/apk/debug/Lifeedy-${RELEASE_TAG}.apk"
+          APP_VERSION="${{ steps.app_meta.outputs.app_version }}"
+          RELEASE_TAG="${{ steps.app_meta.outputs.release_tag }}"
+          APK_DIR="${{ steps.gradle_build.outputs.apk_dir }}"
+          APK_SOURCE=$(find "$APK_DIR" -maxdepth 1 -name '*.apk' ! -name '*-unsigned.apk' | head -n 1)
+          APK_DEST="${APK_DIR}/Lifeedy-${RELEASE_TAG}.apk"
           if [ -n "$APK_SOURCE" ] && [ "$APK_SOURCE" != "$APK_DEST" ]; then
             cp "$APK_SOURCE" "$APK_DEST"
           fi
@@ -100,5 +129,5 @@ jobs:
           else
             gh release create "$TAG" "$APK_FILE" \
               --title "Lifeedy ${{ steps.prep_apk.outputs.app_version }} (Build #${{ github.run_number }})" \
-              --notes "APK gerado automaticamente pelo GitHub Actions no commit ${{ github.sha }}."
+              --notes "APK gerado automaticamente pelo GitHub Actions no commit ${{ github.sha }}. Atualizável diretamente dentro do aplicativo sem desinstalar."
           fi

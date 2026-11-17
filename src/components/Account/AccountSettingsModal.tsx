@@ -34,16 +34,13 @@ import {
   checkBiometricAvailability,
   isBiometricSupportedOnPlatform,
 } from '../../services/biometricLockBridge';
+import { isNativeSelfUpdateSupported } from '../../services/appUpdaterBridge';
 import {
-  checkForGitHubUpdates,
-  CURRENT_APP_VERSION,
-  CURRENT_BUILD_NUMBER,
   DEFAULT_GITHUB_REPO,
-  downloadActionsArtifactWithToken,
   getStoredGitHubConfig,
   refreshAppCache,
+  resolveInstallableUpdateTarget,
   saveGitHubConfig,
-  UpdateCheckResult,
 } from '../../services/githubUpdateService';
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
 
@@ -83,6 +80,15 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     financeLockEnabled,
     setFinanceLockEnabled,
     openStartFromScratchModal,
+    installedAppVersion,
+    installedBuildNumber,
+    appUpdateResult,
+    isCheckingAppUpdate,
+    updateDownloadState,
+    checkForUpdatesNow,
+    startInAppUpdate,
+    openUnknownSourcesAndAwaitReturn,
+    retryInstallPendingApk,
   } = useApp();
 
   const [isSyncingAction, setIsSyncingAction] = useState(false);
@@ -102,13 +108,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   // Updates & GitHub repo config (collapsible)
   const [showUpdatesSection, setShowUpdatesSection] = useState(false);
   const [showRepoConfig, setShowRepoConfig] = useState(false);
-  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const [isRefreshingCache, setIsRefreshingCache] = useState(false);
-  const [isDownloadingArtifact, setIsDownloadingArtifact] = useState(false);
-  const [artifactDownloadError, setArtifactDownloadError] = useState<string | null>(null);
-  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(
-    () => getStoredGitHubConfig().lastResult
-  );
   const [githubRepo, setGithubRepo] = useState<string>(() => getStoredGitHubConfig().repo);
   const [githubToken, setGithubToken] = useState<string>(() => getStoredGitHubConfig().token);
   const [autoCheckUpdates, setAutoCheckUpdates] = useState<boolean>(
@@ -133,14 +133,16 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     setGithubRepo(config.repo);
     setGithubToken(config.token);
     setAutoCheckUpdates(config.autoCheck);
-    setUpdateResult(config.lastResult);
+    if (appUpdateResult?.hasUpdate) {
+      setShowUpdatesSection(true);
+    }
 
     if (biometricPlatformSupported) {
       checkBiometricAvailability()
         .then((res) => setBiometricAvailable(res.available))
         .catch(() => setBiometricAvailable(false));
     }
-  }, [isOpen, biometricPlatformSupported]);
+  }, [isOpen, biometricPlatformSupported, appUpdateResult?.hasUpdate]);
 
   if (!isOpen) return null;
 
@@ -276,21 +278,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const handleCheckUpdates = async (repoOverride?: string, tokenOverride?: string) => {
     const targetRepo = (repoOverride ?? githubRepo).trim() || DEFAULT_GITHUB_REPO;
     const targetToken = (tokenOverride ?? githubToken).trim();
-    setIsCheckingUpdates(true);
-    setArtifactDownloadError(null);
-    try {
-      const result = await checkForGitHubUpdates(
-        targetRepo,
-        targetToken || undefined,
-        CURRENT_APP_VERSION
-      );
-      setUpdateResult(result);
-      if (result.error) setShowRepoConfig(true);
-    } catch (err: any) {
-      console.warn('Falha ao verificar atualizações:', err);
-    } finally {
-      setIsCheckingUpdates(false);
-    }
+    const result = await checkForUpdatesNow({
+      repo: targetRepo,
+      token: targetToken || undefined,
+      force: true,
+    });
+    if (result?.error) setShowRepoConfig(true);
   };
 
   const handleSaveGitHubConfigAndCheck = async (e: React.FormEvent) => {
@@ -300,25 +293,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     const updated = getStoredGitHubConfig();
     setGithubRepo(updated.repo);
     await handleCheckUpdates(updated.repo, updated.token);
-  };
-
-  const handleDownloadArtifact = async () => {
-    if (!updateResult?.latestBuild?.artifactId || !githubToken.trim()) return;
-    setIsDownloadingArtifact(true);
-    setArtifactDownloadError(null);
-    try {
-      await downloadActionsArtifactWithToken(
-        updateResult.latestBuild.artifactId,
-        updateResult.repo,
-        githubToken,
-        updateResult.latestBuild.artifactName || 'Lifeedy-APK'
-      );
-      hapticSuccess();
-    } catch (err: any) {
-      setArtifactDownloadError(err?.message || 'Não foi possível baixar o artefato.');
-    } finally {
-      setIsDownloadingArtifact(false);
-    }
   };
 
   const handleHardRefresh = () => {
@@ -338,6 +312,13 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     bytes < 1024 * 1024
       ? `${(bytes / 1024).toFixed(1)} KB`
       : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+  const nativeSelfUpdate = isNativeSelfUpdateSupported();
+  const installTarget = resolveInstallableUpdateTarget(appUpdateResult, githubToken);
+  const isDownloadingNow =
+    updateDownloadState.status === 'downloading' ||
+    updateDownloadState.status === 'extracting' ||
+    updateDownloadState.status === 'verifying';
 
   return (
     <div
@@ -726,9 +707,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               >
                 <Package className="w-3.5 h-3.5 text-indigo-500" />
                 <span>
-                  Versão {CURRENT_APP_VERSION}
-                  {CURRENT_BUILD_NUMBER > 0 ? ` · #${CURRENT_BUILD_NUMBER}` : ''}
+                  Versão {installedAppVersion}
+                  {installedBuildNumber > 0 ? ` · #${installedBuildNumber}` : ''}
                 </span>
+                {appUpdateResult?.hasUpdate && (
+                  <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
+                )}
               </button>
 
               <button
@@ -763,11 +747,11 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     <button
                       type="button"
                       onClick={() => void handleCheckUpdates()}
-                      disabled={isCheckingUpdates}
+                      disabled={isCheckingAppUpdate || isDownloadingNow}
                       className="pressable min-h-[34px] px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
                     >
-                      <RefreshCw className={`w-3 h-3 ${isCheckingUpdates ? 'animate-spin' : ''}`} />
-                      <span>{isCheckingUpdates ? 'Buscando...' : 'Buscar atualização'}</span>
+                      <RefreshCw className={`w-3 h-3 ${isCheckingAppUpdate ? 'animate-spin' : ''}`} />
+                      <span>{isCheckingAppUpdate ? 'Buscando...' : 'Buscar atualização'}</span>
                     </button>
                   </div>
                 </div>
@@ -814,7 +798,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       </label>
                       <button
                         type="submit"
-                        disabled={isCheckingUpdates || !githubRepo.trim()}
+                        disabled={isCheckingAppUpdate || !githubRepo.trim()}
                         className="pressable min-h-[34px] px-3 rounded-lg bg-indigo-600 text-white text-[11px] font-semibold cursor-pointer"
                       >
                         Salvar e verificar
@@ -823,14 +807,14 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   </form>
                 )}
 
-                {updateResult?.error ? (
+                {appUpdateResult?.error ? (
                   <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 space-y-2">
                     <div className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200">
                       <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                      <span>{updateResult.error}</span>
+                      <span>{appUpdateResult.error}</span>
                     </div>
                     <a
-                      href={updateResult.actionsUrl}
+                      href={appUpdateResult.actionsUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 inline-flex items-center gap-1 hover:underline"
@@ -838,65 +822,123 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       <ExternalLink className="w-3 h-3" /> Abrir GitHub Actions
                     </a>
                   </div>
-                ) : updateResult?.hasUpdate ? (
-                  <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 space-y-2">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Nova versão disponível: {updateResult.latestVersion}</span>
+                ) : appUpdateResult?.hasUpdate ? (
+                  <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Nova versão disponível: {appUpdateResult.latestVersion}</span>
+                      </div>
+                      {installTarget?.size ? (
+                        <span className="text-[11px] font-mono tabular-nums text-indigo-600/80 dark:text-indigo-300/80">
+                          {formatFileSize(installTarget.size)}
+                        </span>
+                      ) : null}
                     </div>
-                    {artifactDownloadError && (
-                      <p className="text-[11px] text-rose-600 dark:text-rose-400">
-                        {artifactDownloadError}
+
+                    {isDownloadingNow && (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[11px] font-mono tabular-nums text-indigo-700 dark:text-indigo-300">
+                          <span>
+                            {updateDownloadState.status === 'extracting'
+                              ? 'Extraindo APK...'
+                              : updateDownloadState.status === 'verifying'
+                              ? 'Verificando pacote...'
+                              : 'Baixando atualização...'}
+                          </span>
+                          <span>{updateDownloadState.progress}%</span>
+                        </div>
+                        <div className="w-full h-1.5 rounded-full bg-indigo-200/70 dark:bg-indigo-900 overflow-hidden">
+                          <div
+                            className="h-full bg-indigo-600 rounded-full transition-all duration-150"
+                            style={{
+                              width: `${Math.max(4, Math.min(100, updateDownloadState.progress))}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {updateDownloadState.status === 'permission_required' && (
+                      <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 space-y-2">
+                        <p className="text-[11px] text-amber-800 dark:text-amber-200">
+                          Autorize o Lifeedy a instalar atualizações nas configurações do Android. Ao voltar, a instalação abrirá sozinha.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void openUnknownSourcesAndAwaitReturn()}
+                            className="pressable min-h-[34px] px-3 rounded-lg bg-amber-600 text-white text-xs font-semibold cursor-pointer"
+                          >
+                            Permitir instalação
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void retryInstallPendingApk()}
+                            className="pressable min-h-[34px] px-3 rounded-lg border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-xs font-semibold cursor-pointer"
+                          >
+                            Já permiti
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {updateDownloadState.status === 'installer_launched' && (
+                      <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">
+                        Instalador do Android aberto. Confirme em &ldquo;Atualizar&rdquo; — seus dados serão mantidos.
                       </p>
                     )}
-                    <div className="flex flex-wrap gap-2">
-                      {updateResult.apkAsset ? (
-                        <a
-                          href={updateResult.apkAsset.browser_download_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="pressable min-h-[36px] px-3 rounded-lg bg-indigo-600 text-white text-xs font-semibold inline-flex items-center gap-1.5"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>Baixar APK ({formatFileSize(updateResult.apkAsset.size)})</span>
-                        </a>
-                      ) : updateResult.latestBuild ? (
-                        <>
-                          {githubToken.trim() && updateResult.latestBuild.artifactId && (
-                            <button
-                              type="button"
-                              onClick={() => void handleDownloadArtifact()}
-                              disabled={isDownloadingArtifact}
-                              className="pressable min-h-[36px] px-3 rounded-lg bg-indigo-600 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                              <span>{isDownloadingArtifact ? 'Baixando...' : 'Baixar APK'}</span>
-                            </button>
-                          )}
+
+                    {updateDownloadState.status === 'error' && updateDownloadState.error && (
+                      <p className="text-[11px] text-rose-600 dark:text-rose-400">
+                        {updateDownloadState.error}
+                      </p>
+                    )}
+
+                    {!isDownloadingNow && updateDownloadState.status !== 'permission_required' && (
+                      <div className="flex flex-wrap gap-2">
+                        {nativeSelfUpdate &&
+                        installTarget &&
+                        (installTarget.kind === 'release_apk' ||
+                          installTarget.kind === 'actions_artifact_zip') ? (
+                          <button
+                            type="button"
+                            onClick={() => void startInAppUpdate()}
+                            className="pressable min-h-[36px] px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Atualizar agora</span>
+                          </button>
+                        ) : installTarget ? (
+                          <button
+                            type="button"
+                            onClick={() => void startInAppUpdate()}
+                            className="pressable min-h-[36px] px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>
+                              {installTarget.kind === 'external_page'
+                                ? 'Abrir página de download'
+                                : `Baixar APK${installTarget.size ? ` (${formatFileSize(installTarget.size)})` : ''}`}
+                            </span>
+                          </button>
+                        ) : null}
+
+                        {appUpdateResult.latestRelease?.html_url && (
                           <a
-                            href={updateResult.latestBuild.htmlUrl}
+                            href={appUpdateResult.latestRelease.html_url}
                             target="_blank"
                             rel="noreferrer"
                             className="pressable min-h-[36px] px-3 rounded-lg border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 text-xs font-semibold inline-flex items-center gap-1.5"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
-                            <span>Build #{updateResult.latestBuild.runNumber}</span>
+                            <span>Release</span>
                           </a>
-                        </>
-                      ) : updateResult.latestRelease?.html_url ? (
-                        <a
-                          href={updateResult.latestRelease.html_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="pressable min-h-[36px] px-3 rounded-lg bg-indigo-600 text-white text-xs font-semibold inline-flex items-center gap-1.5"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>Ver Download</span>
-                        </a>
-                      ) : null}
-                    </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                ) : updateResult ? (
+                ) : appUpdateResult ? (
                   <div className="flex items-center justify-between gap-2 text-xs text-emerald-700 dark:text-emerald-300">
                     <span className="flex items-center gap-1.5 font-medium">
                       <CheckCircle2 className="w-3.5 h-3.5" />
@@ -914,9 +956,9 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   </div>
                 ) : null}
 
-                {updateResult?.recentCommits && updateResult.recentCommits.length > 0 && (
+                {appUpdateResult?.recentCommits && appUpdateResult.recentCommits.length > 0 && (
                   <div className="pt-2 border-t border-zinc-200/70 dark:border-zinc-700/60 space-y-1">
-                    {updateResult.recentCommits.slice(0, 2).map((commit) => (
+                    {appUpdateResult.recentCommits.slice(0, 2).map((commit) => (
                       <a
                         key={commit.sha}
                         href={commit.url}

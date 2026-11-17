@@ -84,6 +84,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(OfflineReceiptOcrPlugin.class);
         registerPlugin(SystemAppearancePlugin.class);
         registerPlugin(BiometricLockPlugin.class);
+        registerPlugin(AppUpdaterPlugin.class);
         super.onCreate(savedInstanceState);
 
         WebView mainWebView = null;

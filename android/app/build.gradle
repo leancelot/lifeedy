@@ -3,12 +3,46 @@ apply plugin: 'com.android.application'
 android {
     namespace = "com.vidaorganizada.app"
     compileSdk = rootProject.ext.compileSdkVersion
+
+    def envVersionCode = System.getenv('APP_VERSION_CODE')
+    def propVersionCode = project.findProperty('APP_VERSION_CODE')
+    def resolvedVersionCode = (propVersionCode ?: envVersionCode ?: '1').toString().toInteger()
+
+    def envVersionName = System.getenv('APP_VERSION_NAME')
+    def propVersionName = project.findProperty('APP_VERSION_NAME')
+    def resolvedVersionName = (propVersionName ?: envVersionName ?: '1.1.0').toString()
+
+    signingConfigs {
+        debug {
+            if (file('debug.keystore').exists()) {
+                storeFile file('debug.keystore')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
+        }
+        release {
+            def ksPath = System.getenv('ANDROID_KEYSTORE_PATH')
+            if (ksPath && file(ksPath).exists()) {
+                storeFile file(ksPath)
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD') ?: ''
+                keyAlias System.getenv('ANDROID_KEY_ALIAS') ?: ''
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD') ?: ''
+            } else if (file('debug.keystore').exists()) {
+                storeFile file('debug.keystore')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
+        }
+    }
+
     defaultConfig {
         applicationId "com.vidaorganizada.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode resolvedVersionCode
+        versionName resolvedVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -17,7 +51,11 @@ android {
         }
     }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
