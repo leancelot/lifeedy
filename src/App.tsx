@@ -18,9 +18,8 @@ import { MobileNav } from './components/MobileNav';
 import { DashboardView } from './components/Dashboard/DashboardView';
 import { AgendaTasksView } from './components/Agenda/AgendaTasksView';
 import { FinanceView } from './components/Finance/FinanceView';
-import { SettingsView } from './components/Settings/SettingsView';
 import { OnboardingView } from './components/Onboarding/OnboardingView';
-import { DriveSyncModal } from './components/DriveSync/DriveSyncModal';
+import { AccountSettingsModal } from './components/Account/AccountSettingsModal';
 import {
   AutoRestoredDriveBanner,
   DriveRestorePromptModal,
@@ -37,7 +36,7 @@ const MainApp: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [agendaQuickOpen, setAgendaQuickOpen] = useState<'task' | 'event' | null>(null);
   const [financeQuickOpen, setFinanceQuickOpen] = useState<'new-transaction' | 'scan-receipt' | null>(null);
-  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
   const [isQuickMenuOpen, setIsQuickMenuOpen] = useState(false);
 
@@ -119,7 +118,7 @@ const MainApp: React.FC = () => {
       if (!action) return;
 
       setIsQuickMenuOpen(false);
-      setIsSyncModalOpen(false);
+      setIsAccountModalOpen(false);
       setIsNotificationCenterOpen(false);
 
       if (action === 'new-task') {
@@ -221,7 +220,7 @@ const MainApp: React.FC = () => {
           setIsQuickMenuOpen(false);
           setCurrentTab(tab);
         }}
-        openSyncModal={() => setIsSyncModalOpen(true)}
+        openAccountModal={() => setIsAccountModalOpen(true)}
         openNotificationCenter={() => setIsNotificationCenterOpen(true)}
       />
 
@@ -286,22 +285,19 @@ const MainApp: React.FC = () => {
                 onConsumeQuickOpen={() => setFinanceQuickOpen(null)}
               />
             ))}
-          {currentTab === 'configuracoes' && (
-            <SettingsView
-              openSyncModal={() => setIsSyncModalOpen(true)}
-              openNotificationCenter={() => setIsNotificationCenterOpen(true)}
-            />
-          )}
         </div>
       </main>
 
       <QuickActionFab
         isOpen={isQuickMenuOpen}
         onOpenChange={setIsQuickMenuOpen}
-        setCurrentTab={setCurrentTab}
         onTriggerAgendaModal={(mode) => {
           setCurrentTab('agenda');
           setAgendaQuickOpen(mode);
+        }}
+        onTriggerFinanceModal={(mode) => {
+          setCurrentTab('financas');
+          setFinanceQuickOpen(mode);
         }}
       />
 
@@ -313,19 +309,19 @@ const MainApp: React.FC = () => {
           setIsQuickMenuOpen(false);
           setCurrentTab(tab);
         }}
-        openSyncModal={() => setIsSyncModalOpen(true)}
         isQuickMenuOpen={isQuickMenuOpen}
         onToggleQuickMenu={() => setIsQuickMenuOpen((prev) => !prev)}
       />
 
-      <DriveSyncModal
-        isOpen={isSyncModalOpen}
-        onClose={() => setIsSyncModalOpen(false)}
+      <AccountSettingsModal
+        isOpen={isAccountModalOpen}
+        onClose={() => setIsAccountModalOpen(false)}
       />
 
       <NotificationCenterModal
         isOpen={isNotificationCenterOpen}
         onClose={() => setIsNotificationCenterOpen(false)}
+        onOpenAgenda={() => setCurrentTab('agenda')}
       />
     </div>
   );

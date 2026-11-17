@@ -54,10 +54,38 @@ export interface BudgetLimit {
   monthlyLimit: number;
 }
 
+export interface DraftChecklistItem {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
+export interface DraftImageAttachment {
+  id: string;
+  dataUrl: string;
+  caption?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface DraftAudioAttachment {
+  id: string;
+  dataUrl: string;
+  mimeType: string;
+  durationSec: number;
+  createdAt: string;
+}
+
+export type DraftKind = 'text' | 'list' | 'media' | 'mixed';
+
 export interface DraftNote {
   id: string;
   title: string;
   content: string;
+  kind?: DraftKind;
+  checklistItems?: DraftChecklistItem[];
+  images?: DraftImageAttachment[];
+  audios?: DraftAudioAttachment[];
   color?: string;
   updatedAt: string;
   isPinned?: boolean;
@@ -71,6 +99,8 @@ export interface AppNotification {
   type: 'task_deadline' | 'calendar_event' | 'reminder';
   read: boolean;
 }
+
+export type CalendarEventCategory = 'event' | 'holiday' | 'commemorative' | 'birthday';
 
 export interface GoogleCalendarEvent {
   id: string;
@@ -87,6 +117,23 @@ export interface GoogleCalendarEvent {
   };
   htmlLink?: string;
   status?: string;
+  calendarId?: string;
+  calendarSummary?: string;
+  eventCategory?: CalendarEventCategory;
+  source?: 'google' | 'brazil_holiday' | 'local_special';
+  editable?: boolean;
+  recurringYearly?: boolean;
+  specialDateId?: string;
+}
+
+export interface LocalSpecialDate {
+  id: string;
+  title: string;
+  monthDay: string; // MM-DD (recurringYearly=true) or YYYY-MM-DD (recurringYearly=false)
+  category: 'birthday' | 'commemorative' | 'holiday';
+  notes?: string;
+  recurringYearly: boolean;
+  createdAt: string;
 }
 
 export interface DriveSyncInfo {
@@ -122,6 +169,7 @@ export interface AppDataPayload {
   financialGoals: FinancialGoal[];
   budgetLimits: BudgetLimit[];
   draftNotes: DraftNote[];
+  specialDates?: LocalSpecialDate[];
   dashboardWidgets?: string[];
   pendingBankNotifications?: PendingBankNotification[];
   habits?: any[]; // Kept for backwards compatibility with existing backups

@@ -1,6 +1,6 @@
 {
-  "name": "VidaOrganizada - Gestor Pessoal",
-  "short_name": "VidaOrganizada",
+  "name": "Lifeedy - Gestor Pessoal",
+  "short_name": "Lifeedy",
   "description": "Aplicativo de organização pessoal com tarefas, finanças, agenda e sincronização no Google Drive.",
   "start_url": "/",
   "display": "standalone",

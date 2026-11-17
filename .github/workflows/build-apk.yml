@@ -73,7 +73,7 @@ jobs:
           APP_VERSION=$(node -e "const fs=require('fs'); const m=fs.readFileSync('src/services/githubUpdateService.ts','utf8').match(/CURRENT_APP_VERSION\\s*=\\s*['\"]([^'\"]+)['\"]/); console.log(m ? m[1] : 'v1.1.0');")
           RELEASE_TAG="${APP_VERSION}-build.${{ github.run_number }}"
           APK_SOURCE=$(find android/app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' | head -n 1)
-          APK_DEST="android/app/build/outputs/apk/debug/VidaOrganizada-${RELEASE_TAG}.apk"
+          APK_DEST="android/app/build/outputs/apk/debug/Lifeedy-${RELEASE_TAG}.apk"
           if [ -n "$APK_SOURCE" ] && [ "$APK_SOURCE" != "$APK_DEST" ]; then
             cp "$APK_SOURCE" "$APK_DEST"
           fi
@@ -84,7 +84,7 @@ jobs:
       - name: Salvar APK como Artefato para Download
         uses: actions/upload-artifact@v5
         with:
-          name: VidaOrganizada-APK
+          name: Lifeedy-APK
           path: ${{ steps.prep_apk.outputs.apk_path }}
           retention-days: 30
           if-no-files-found: error
@@ -99,6 +99,6 @@ jobs:
             gh release upload "$TAG" "$APK_FILE" --clobber
           else
             gh release create "$TAG" "$APK_FILE" \
-              --title "VidaOrganizada ${{ steps.prep_apk.outputs.app_version }} (Build #${{ github.run_number }})" \
+              --title "Lifeedy ${{ steps.prep_apk.outputs.app_version }} (Build #${{ github.run_number }})" \
               --notes "APK gerado automaticamente pelo GitHub Actions no commit ${{ github.sha }}."
           fi

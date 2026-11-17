@@ -18,6 +18,7 @@ interface NativeAuthSession {
 function buildNativeOAuthDeepLink(accessToken: string, idToken?: string | null): string {
   const params = new URLSearchParams();
   params.set('access_token', accessToken);
+  params.set('expires_in', '3500');
   if (idToken) {
     params.set('id_token', idToken);
   }
@@ -30,6 +31,11 @@ export const NativeConnectBridge: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [localSession, setLocalSession] = useState<NativeAuthSession | null>(null);
+
+  const loginHint =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('login_hint')
+      : null;
 
   const activeAccessToken = localSession?.accessToken || accessToken;
   const activeIdToken = localSession?.idToken || null;
@@ -84,7 +90,7 @@ export const NativeConnectBridge: React.FC = () => {
     }
 
     try {
-      const res = await googleSignIn({ allowRedirectFallback: true });
+      const res = await googleSignIn({ allowRedirectFallback: true, loginHint });
       if (!res) {
         setInfoMsg('Login não concluído. Toque no botão abaixo quando estiver pronto para conectar.');
         return;
@@ -131,7 +137,7 @@ export const NativeConnectBridge: React.FC = () => {
         {/* Título & Descrição */}
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
-            Conectar VidaOrganizada
+            Conectar Lifeedy
           </h1>
           <p className="mt-2 text-sm text-zinc-400 leading-relaxed">
             Faça login com sua Conta Google para sincronizar suas tarefas, finanças e Google Agenda no aplicativo Android.

@@ -1,7 +1,8 @@
 import { AppDataPayload } from '../types';
 import { WorkspaceAuthError } from './googleAuthError';
 
-const BACKUP_FILE_NAME = 'VidaOrganizada_Data.json';
+export const PRIMARY_BACKUP_FILE_NAME = 'Lifeedy_Data.json';
+export const LEGACY_BACKUP_FILE_NAME = 'VidaOrganizada_Data.json';
 
 export interface DriveFileInfo {
   id: string;
@@ -11,11 +12,40 @@ export interface DriveFileInfo {
 }
 
 /**
- * Searches for the existing backup file created by this app in Google Drive
+ * Selects the best backup file when both new (Lifeedy_Data.json) and legacy (VidaOrganizada_Data.json) exist.
+ */
+export function selectPreferredBackupFile(files: DriveFileInfo[]): DriveFileInfo | null {
+  if (!Array.isArray(files) || files.length === 0) return null;
+
+  const primary = files
+    .filter((f) => f.name === PRIMARY_BACKUP_FILE_NAME)
+    .sort((a, b) => new Date(b.modifiedTime).getTime() - new Date(a.modifiedTime).getTime())[0];
+
+  const legacy = files
+    .filter((f) => f.name === LEGACY_BACKUP_FILE_NAME)
+    .sort((a, b) => new Date(b.modifiedTime).getTime() - new Date(a.modifiedTime).getTime())[0];
+
+  if (primary && legacy) {
+    const primaryMs = new Date(primary.modifiedTime).getTime() || 0;
+    const legacyMs = new Date(legacy.modifiedTime).getTime() || 0;
+    // Only prefer legacy if it was modified significantly more recently (e.g. another device on older build)
+    if (legacyMs > primaryMs + 2000) {
+      return legacy;
+    }
+    return primary;
+  }
+
+  return primary || legacy || files[0];
+}
+
+/**
+ * Searches for the existing backup file (Lifeedy or legacy VidaOrganizada) in Google Drive
  */
 export async function findDriveBackupFile(accessToken: string): Promise<DriveFileInfo | null> {
-  const query = encodeURIComponent(`name='${BACKUP_FILE_NAME}' and trashed=false`);
-  const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,modifiedTime,size)&spaces=drive`;
+  const query = encodeURIComponent(
+    `(name='${PRIMARY_BACKUP_FILE_NAME}' or name='${LEGACY_BACKUP_FILE_NAME}') and trashed=false`
+  );
+  const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,modifiedTime,size)&spaces=drive&orderBy=modifiedTime desc`;
 
   const res = await fetch(url, {
     headers: {
@@ -24,7 +54,7 @@ export async function findDriveBackupFile(accessToken: string): Promise<DriveFil
   });
 
   if (res.status === 401) {
-    throw new WorkspaceAuthError('Sessão do Google Drive expirada. Conecte sua conta novamente.');
+    throw new WorkspaceAuthError('Sessão do Google Drive expirada. Renovando conexão...');
   }
 
   if (!res.ok) {
@@ -34,8 +64,8 @@ export async function findDriveBackupFile(accessToken: string): Promise<DriveFil
   }
 
   const data = await res.json();
-  if (data.files && data.files.length > 0) {
-    return data.files[0];
+  if (Array.isArray(data.files) && data.files.length > 0) {
+    return selectPreferredBackupFile(data.files as DriveFileInfo[]);
   }
   return null;
 }
@@ -53,7 +83,7 @@ export async function readDriveFile(accessToken: string, fileId: string): Promis
   });
 
   if (res.status === 401) {
-    throw new WorkspaceAuthError('Sessão do Google Drive expirada. Conecte sua conta novamente.');
+    throw new WorkspaceAuthError('Sessão do Google Drive expirada. Renovando conexão...');
   }
 
   if (!res.ok) {
@@ -64,8 +94,28 @@ export async function readDriveFile(accessToken: string, fileId: string): Promis
   return content as AppDataPayload;
 }
 
+function buildMultipartBody(
+  metadata: Record<string, string>,
+  fileContent: string
+): { body: string; boundary: string } {
+  const boundary = '-------LifeedyBoundary7MA4YWxkTrZu0gW';
+  const delimiter = `\r\n--${boundary}\r\n`;
+  const closeDelimiter = `\r\n--${boundary}--`;
+
+  const body =
+    delimiter +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(metadata) +
+    delimiter +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    fileContent +
+    closeDelimiter;
+
+  return { body, boundary };
+}
+
 /**
- * Creates or updates the backup file in Google Drive
+ * Creates or updates the backup file in Google Drive, migrating legacy files to Lifeedy_Data.json in place.
  */
 export async function saveToDrive(
   accessToken: string,
@@ -82,19 +132,26 @@ export async function saveToDrive(
     }
   }
 
+  const metadata = {
+    name: PRIMARY_BACKUP_FILE_NAME,
+    mimeType: 'application/json',
+    description: 'Backup de sincronização do Lifeedy (Agenda, Tarefas e Finanças)',
+  };
+
   if (targetFileId) {
-    const updateUrl = `https://www.googleapis.com/upload/drive/v3/files/${targetFileId}?uploadType=media`;
+    const { body, boundary } = buildMultipartBody(metadata, fileContent);
+    const updateUrl = `https://www.googleapis.com/upload/drive/v3/files/${targetFileId}?uploadType=multipart`;
     const res = await fetch(updateUrl, {
       method: 'PATCH',
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json; charset=UTF-8',
+        'Content-Type': `multipart/related; boundary=${boundary}`,
       },
-      body: fileContent,
+      body,
     });
 
     if (res.status === 401) {
-      throw new WorkspaceAuthError('Sessão do Google Drive expirada. Conecte sua conta novamente.');
+      throw new WorkspaceAuthError('Sessão do Google Drive expirada. Renovando conexão...');
     }
 
     if (res.status === 404) {
@@ -108,32 +165,14 @@ export async function saveToDrive(
       const updated = await res.json();
       return {
         id: updated.id,
-        name: updated.name || BACKUP_FILE_NAME,
+        name: updated.name || PRIMARY_BACKUP_FILE_NAME,
         modifiedTime: new Date().toISOString(),
       };
     }
   }
 
   // Create new file with multipart upload
-  const metadata = {
-    name: BACKUP_FILE_NAME,
-    mimeType: 'application/json',
-    description: 'Backup de sincronização do VidaOrganizada (Agenda, Tarefas e Finanças)',
-  };
-
-  const boundary = '-------VidaOrganizadaBoundary7MA4YWxkTrZu0gW';
-  const delimiter = `\r\n--${boundary}\r\n`;
-  const closeDelimiter = `\r\n--${boundary}--`;
-
-  const multipartRequestBody =
-    delimiter +
-    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-    JSON.stringify(metadata) +
-    delimiter +
-    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-    fileContent +
-    closeDelimiter;
-
+  const { body, boundary } = buildMultipartBody(metadata, fileContent);
   const createUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
   const res = await fetch(createUrl, {
     method: 'POST',
@@ -141,11 +180,11 @@ export async function saveToDrive(
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': `multipart/related; boundary=${boundary}`,
     },
-    body: multipartRequestBody,
+    body,
   });
 
   if (res.status === 401) {
-    throw new WorkspaceAuthError('Sessão do Google Drive expirada. Conecte sua conta novamente.');
+    throw new WorkspaceAuthError('Sessão do Google Drive expirada. Renovando conexão...');
   }
 
   if (!res.ok) {
@@ -157,7 +196,7 @@ export async function saveToDrive(
   const created = await res.json();
   return {
     id: created.id,
-    name: created.name || BACKUP_FILE_NAME,
+    name: created.name || PRIMARY_BACKUP_FILE_NAME,
     modifiedTime: new Date().toISOString(),
   };
 }
@@ -174,7 +213,7 @@ export async function deleteDriveFile(accessToken: string, fileId: string): Prom
   });
 
   if (res.status === 401) {
-    throw new WorkspaceAuthError('Sessão do Google Drive expirada. Conecte sua conta novamente.');
+    throw new WorkspaceAuthError('Sessão do Google Drive expirada. Renovando conexão...');
   }
 
   if (!res.ok && res.status !== 404) {

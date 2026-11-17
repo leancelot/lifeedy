@@ -75,7 +75,7 @@ const ENV_GITHUB_REPO = (
   (import.meta as any).env?.VITE_GITHUB_REPO as string | undefined
 )?.trim() || '';
 
-export const DEFAULT_GITHUB_REPO = ENV_GITHUB_REPO || 'leancelot/meu-vida-organizada';
+export const DEFAULT_GITHUB_REPO = ENV_GITHUB_REPO || 'leancelot/lifeedy';
 
 export const CURRENT_BUILD_NUMBER = (() => {
   const raw = ((import.meta as any).env?.VITE_APP_BUILD_NUMBER as string | undefined) || '';
@@ -120,12 +120,17 @@ export function getStoredGitHubConfig() {
   }
   try {
     const storedRepo = normalizeGitHubRepo(localStorage.getItem(STORAGE_KEYS.REPO) || '');
-    const isLegacyEmptyDefault = storedRepo.toLowerCase() === 'souoleandro/meu-vida-organizada';
+    const lowerStored = storedRepo.toLowerCase();
+    const isLegacyDefault =
+      lowerStored === 'souoleandro/meu-vida-organizada' ||
+      lowerStored === 'leancelot/meu-vida-organizada';
     const resolvedRepo =
-      storedRepo && !isLegacyEmptyDefault ? storedRepo : DEFAULT_GITHUB_REPO;
+      storedRepo && !isLegacyDefault ? storedRepo : DEFAULT_GITHUB_REPO;
     const rawLastResult = loadLastResult();
     const lastResult =
-      rawLastResult && rawLastResult.repo?.toLowerCase() === 'souoleandro/meu-vida-organizada'
+      rawLastResult &&
+      (rawLastResult.repo?.toLowerCase() === 'souoleandro/meu-vida-organizada' ||
+        rawLastResult.repo?.toLowerCase() === 'leancelot/meu-vida-organizada')
         ? null
         : rawLastResult;
 
@@ -246,7 +251,7 @@ function mapRelease(data: any, releasesUrl: string): GitHubRelease {
 
 function isApkArtifactName(name: string): boolean {
   const lower = name.toLowerCase();
-  return lower.includes('apk') || lower.includes('vidaorganizada');
+  return lower.includes('apk') || lower.includes('lifeedy') || lower.includes('vidaorganizada');
 }
 
 /**
@@ -280,7 +285,7 @@ export async function checkForGitHubUpdates(
       releasesUrl,
       checkedAt: now,
       error:
-        'Formato de repositório inválido. Use "usuario/nome-do-repositorio" (ex.: leancelot/meu-vida-organizada).',
+        'Formato de repositório inválido. Use "usuario/nome-do-repositorio" (ex.: leancelot/lifeedy).',
     };
     saveLastResult(invalidResult);
     return invalidResult;
@@ -539,7 +544,7 @@ export async function downloadActionsArtifactWithToken(
   artifactId: number,
   repoPath: string,
   token: string,
-  artifactName = 'VidaOrganizada-APK'
+  artifactName = 'Lifeedy-APK'
 ): Promise<void> {
   const cleanRepo = normalizeGitHubRepo(repoPath);
   const url = `https://api.github.com/repos/${cleanRepo}/actions/artifacts/${artifactId}/zip`;

@@ -10,6 +10,7 @@ describe('backupSummary utilities', () => {
       goalsCount: 0,
       notesCount: 0,
       pendingBankCount: 0,
+      specialDatesCount: 0,
       totalItems: 0,
       lastUpdated: null,
       userName: '',

@@ -165,7 +165,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
         await navigator.share({
-          title: 'Log de Leitura de Nota Fiscal - VidaOrganizada',
+          title: 'Log de Leitura de Nota Fiscal - Lifeedy',
           text: report,
         });
         return;

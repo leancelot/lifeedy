@@ -4,7 +4,6 @@ import {
   CircleDollarSign,
   LayoutGrid,
   Plus,
-  Sliders,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { hapticImpactLight, hapticSelection } from '../services/hapticsService';
@@ -12,7 +11,6 @@ import { hapticImpactLight, hapticSelection } from '../services/hapticsService';
 interface MobileNavProps {
   currentTab: string;
   setCurrentTab: (tab: string) => void;
-  openSyncModal: () => void;
   isQuickMenuOpen: boolean;
   onToggleQuickMenu: () => void;
 }
@@ -23,9 +21,12 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   isQuickMenuOpen,
   onToggleQuickMenu,
 }) => {
-  const { tasks, driveSyncInfo } = useApp();
+  const { tasks } = useApp();
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate()
+  ).padStart(2, '0')}`;
   const pendingToday = tasks.filter((t) => !t.completed && t.dueDate === todayStr).length;
 
   const handleTabClick = (tab: string) => {
@@ -44,7 +45,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         aria-label="Navegação principal"
         className="pointer-events-auto mx-auto max-w-md bg-white/92 dark:bg-zinc-900/92 backdrop-blur-xl border border-zinc-200/90 dark:border-zinc-800 rounded-3xl shadow-xl shadow-black/10 dark:shadow-black/45 px-1.5 py-1"
       >
-        <div className="grid grid-cols-5 items-center gap-1">
+        <div className="grid grid-cols-4 items-center gap-1">
           {/* 1. Início */}
           <button
             type="button"
@@ -100,24 +101,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             )}
           </button>
 
-          {/* 3. Ação Rápida Integrada (+) */}
-          <div className="flex items-center justify-center h-12">
-            <button
-              type="button"
-              onClick={handleQuickButtonClick}
-              aria-label={isQuickMenuOpen ? 'Fechar ações rápidas' : 'Abrir ações rápidas'}
-              aria-expanded={isQuickMenuOpen}
-              className={`w-11 h-10 rounded-2xl flex items-center justify-center shadow-md transition-all duration-150 active:scale-95 cursor-pointer ${
-                isQuickMenuOpen
-                  ? 'bg-zinc-800 dark:bg-zinc-100 text-white dark:text-zinc-950 rotate-45'
-                  : 'bg-gradient-to-br from-[#DC7B62] to-[#BE6272] dark:from-[#F2A68E] dark:to-[#E69BA7] text-white dark:text-[#24120E] shadow-indigo-600/25'
-              }`}
-            >
-              <Plus className="w-5 h-5 stroke-[2.5]" />
-            </button>
-          </div>
-
-          {/* 4. Finanças */}
+          {/* 3. Finanças */}
           <button
             type="button"
             onClick={() => handleTabClick('financas')}
@@ -141,34 +125,22 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             )}
           </button>
 
-          {/* 5. Ajustes */}
-          <button
-            type="button"
-            onClick={() => handleTabClick('configuracoes')}
-            aria-current={currentTab === 'configuracoes' ? 'page' : undefined}
-            className={`relative flex flex-col items-center justify-center h-12 rounded-2xl select-none transition-all duration-150 active:scale-95 cursor-pointer ${
-              currentTab === 'configuracoes'
-                ? 'bg-indigo-100/85 dark:bg-indigo-950/65 text-indigo-700 dark:text-indigo-300'
-                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
-            }`}
-          >
-            <div className="relative">
-              <Sliders className="w-[18px] h-[18px]" />
-              {driveSyncInfo.status === 'cloud_newer' && (
-                <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-amber-500" />
-              )}
-            </div>
-            <span
-              className={`text-[10px] mt-1 leading-none tracking-tight whitespace-nowrap ${
-                currentTab === 'configuracoes' ? 'font-bold' : 'font-medium'
+          {/* 4. Ação Rápida (+) */}
+          <div className="flex items-center justify-center h-12">
+            <button
+              type="button"
+              onClick={handleQuickButtonClick}
+              aria-label={isQuickMenuOpen ? 'Fechar ações rápidas' : 'Abrir ações rápidas'}
+              aria-expanded={isQuickMenuOpen}
+              className={`w-12 h-10 rounded-2xl flex items-center justify-center shadow-md transition-all duration-150 active:scale-95 cursor-pointer ${
+                isQuickMenuOpen
+                  ? 'bg-zinc-800 dark:bg-zinc-100 text-white dark:text-zinc-950 rotate-45'
+                  : 'bg-gradient-to-br from-[#DC7B62] to-[#BE6272] dark:from-[#F2A68E] dark:to-[#E69BA7] text-white dark:text-[#24120E] shadow-indigo-600/25'
               }`}
             >
-              Ajustes
-            </span>
-            {currentTab === 'configuracoes' && (
-              <span className="absolute bottom-1 w-4 h-0.5 rounded-full bg-indigo-500 dark:bg-indigo-300" />
-            )}
-          </button>
+              <Plus className="w-5 h-5 stroke-[2.5]" />
+            </button>
+          </div>
         </div>
       </nav>
     </div>

@@ -38,7 +38,7 @@ export const OnboardingView: React.FC = () => {
               <Sparkles className="w-4 h-4" />
             </div>
             <span className="text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-              VidaOrganizada
+              Lifeedy
             </span>
           </div>
 

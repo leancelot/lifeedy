@@ -1,29 +1,19 @@
 import React from 'react';
-import {
-  Bell,
-  CloudAlert,
-  CloudCheck,
-  CloudOff,
-  LogOut,
-  Moon,
-  RefreshCw,
-  Sparkles,
-  Sun,
-} from 'lucide-react';
+import { Bell, Moon, RefreshCw, Sparkles, Sun, User as UserIcon } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { hapticImpactLight, hapticSelection } from '../services/hapticsService';
 
 interface HeaderProps {
   currentTab: string;
   setCurrentTab: (tab: string) => void;
-  openSyncModal: () => void;
+  openAccountModal: () => void;
   openNotificationCenter: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentTab,
   setCurrentTab,
-  openSyncModal,
+  openAccountModal,
   openNotificationCenter,
 }) => {
   const {
@@ -31,241 +21,144 @@ export const Header: React.FC<HeaderProps> = ({
     toggleTheme,
     user,
     userName,
+    workspaceAuthStatus,
     isAuthenticating,
-    signInWithGoogle,
-    signOut,
     driveSyncInfo,
     notificationsList,
   } = useApp();
 
   const todayStr = new Intl.DateTimeFormat('pt-BR', {
-    weekday: 'long',
+    weekday: 'short',
     day: 'numeric',
-    month: 'long',
+    month: 'short',
   }).format(new Date());
 
   const capitalizedToday = todayStr.charAt(0).toUpperCase() + todayStr.slice(1);
   const unreadCount = notificationsList.filter((n) => !n.read).length;
+  const isSyncBusy =
+    driveSyncInfo.status === 'syncing' || workspaceAuthStatus === 'refreshing' || isAuthenticating;
+  const hasCloudAttention =
+    driveSyncInfo.status === 'cloud_newer' || (Boolean(user) && workspaceAuthStatus === 'needs_reauth');
 
   return (
-    <header className="sticky top-0 z-30 pt-[max(env(safe-area-inset-top,0px),var(--safe-area-inset-top,0px))] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 transition-colors">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-14 sm:h-15 gap-2 sm:gap-6">
-          {/* Zone 1: Brand & Date */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-[#DC7B62] to-[#BE6272] dark:from-[#F2A68E] dark:to-[#E69BA7] flex items-center justify-center text-white dark:text-[#24120E] shadow-xs shrink-0">
+    <header className="sticky top-0 z-30 pt-[max(env(safe-area-inset-top,0px),var(--safe-area-inset-top,0px))] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-b border-zinc-200/80 dark:border-zinc-800 transition-colors">
+      <div className="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-13 sm:h-14 gap-3 sm:gap-6">
+          {/* Zone 1: Brand + compact date */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#DC7B62] to-[#BE6272] dark:from-[#F2A68E] dark:to-[#E69BA7] flex items-center justify-center text-white dark:text-[#24120E] shrink-0">
               <Sparkles className="w-4 h-4" />
             </div>
-            <div className="min-w-0">
-              <span className="font-bold text-sm sm:text-lg text-zinc-900 dark:text-zinc-100 tracking-tight whitespace-nowrap block leading-tight truncate">
-                VidaOrganizada
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span className="font-bold text-base text-zinc-900 dark:text-zinc-100 tracking-tight whitespace-nowrap shrink-0">
+                Lifeedy
               </span>
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 capitalize hidden sm:block">
-                {capitalizedToday}
-              </p>
+              <span className="text-xs text-zinc-400 dark:text-zinc-500 hidden sm:inline whitespace-nowrap">
+                · {capitalizedToday}
+              </span>
             </div>
           </div>
 
-          {/* Zone 2: 4 Unified Desktop Navigation Tabs */}
-          <nav className="hidden md:flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/60 p-1 rounded-xl border border-zinc-200/60 dark:border-zinc-800">
-            <button
-              onClick={() => {
-                hapticSelection();
-                setCurrentTab('dashboard');
-              }}
-              className={`pressable px-3.5 py-1.5 rounded-lg text-sm font-medium cursor-pointer whitespace-nowrap shrink-0 ${
-                currentTab === 'dashboard'
-                  ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-xs'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
-              }`}
-            >
-              Início
-            </button>
-            <button
-              onClick={() => {
-                hapticSelection();
-                setCurrentTab('agenda');
-              }}
-              className={`pressable px-3.5 py-1.5 rounded-lg text-sm font-medium cursor-pointer whitespace-nowrap shrink-0 ${
-                currentTab === 'agenda'
-                  ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-xs'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
-              }`}
-            >
-              Agenda
-            </button>
-            <button
-              onClick={() => {
-                hapticSelection();
-                setCurrentTab('financas');
-              }}
-              className={`pressable px-3.5 py-1.5 rounded-lg text-sm font-medium cursor-pointer whitespace-nowrap shrink-0 ${
-                currentTab === 'financas'
-                  ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-xs'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
-              }`}
-            >
-              Finanças
-            </button>
-            <button
-              onClick={() => {
-                hapticSelection();
-                setCurrentTab('configuracoes');
-              }}
-              className={`pressable px-3.5 py-1.5 rounded-lg text-sm font-medium cursor-pointer whitespace-nowrap shrink-0 ${
-                currentTab === 'configuracoes'
-                  ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-xs'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
-              }`}
-            >
-              Ajustes
-            </button>
+          {/* Zone 2: Desktop Tabs (3 primary areas) */}
+          <nav className="hidden md:flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/70 p-1 rounded-xl border border-zinc-200/60 dark:border-zinc-800">
+            {[
+              { id: 'dashboard', label: 'Início' },
+              { id: 'agenda', label: 'Agenda' },
+              { id: 'financas', label: 'Finanças' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  hapticSelection();
+                  setCurrentTab(tab.id);
+                }}
+                className={`pressable px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0 ${
+                  currentTab === tab.id
+                    ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-2xs'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </nav>
 
-          {/* Right actions: Theme Toggle, Notifications, Cloud Sync, Google Auth */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Theme Toggle (Dark / Light) */}
+          {/* Zone 3: Minimal Right Controls (Theme, Notifications, Single Account & Settings Icon) */}
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
+              type="button"
               onClick={() => {
                 hapticImpactLight();
                 toggleTheme();
               }}
               title={theme === 'dark' ? 'Mudar para tema Claro' : 'Mudar para tema Escuro'}
-              className="pressable w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 cursor-pointer shrink-0 group"
+              aria-label={theme === 'dark' ? 'Mudar para tema Claro' : 'Mudar para tema Escuro'}
+              className="pressable w-9 h-9 flex items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200/80 dark:border-zinc-700/80 hover:bg-zinc-200/70 dark:hover:bg-zinc-700 cursor-pointer shrink-0"
             >
               {theme === 'dark' ? (
-                <Sun className="w-4 h-4 text-amber-400 transition-transform duration-200 group-hover:rotate-45" />
+                <Sun className="w-4 h-4 text-amber-400" />
               ) : (
-                <Moon className="w-4 h-4 text-zinc-600 transition-transform duration-200 group-hover:-rotate-12" />
+                <Moon className="w-4 h-4 text-zinc-600" />
               )}
             </button>
 
-            {/* Notification Center Trigger */}
             <button
+              type="button"
               onClick={() => {
                 hapticSelection();
                 openNotificationCenter();
               }}
-              title="Central de Notificações & Lembretes"
-              className="pressable relative w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl border bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 cursor-pointer shrink-0"
+              title="Notificações e Lembretes"
+              aria-label="Notificações e Lembretes"
+              className="pressable relative w-9 h-9 flex items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200/80 dark:border-zinc-700/80 hover:bg-zinc-200/70 dark:hover:bg-zinc-700 cursor-pointer shrink-0"
             >
               <Bell className="w-4 h-4" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[10px] font-bold font-mono tabular-nums w-4 h-4 rounded-full flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[10px] font-bold font-mono tabular-nums min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center">
                   {unreadCount}
                 </span>
               )}
             </button>
 
-            {/* Cloud Sync Status Indicator - Desktop only */}
             <button
-              onClick={openSyncModal}
-              title="Gerenciar sincronização com Google Drive"
-              className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors cursor-pointer ${
-                driveSyncInfo.status === 'syncing'
-                  ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800'
-                  : driveSyncInfo.status === 'cloud_newer'
-                  ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 animate-pulse'
-                  : user
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
-                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700'
+              type="button"
+              onClick={() => {
+                hapticSelection();
+                openAccountModal();
+              }}
+              title={
+                user
+                  ? `${userName || user.displayName || user.email || 'Conta Google'} · Conta e Configurações`
+                  : 'Conta e Configurações'
+              }
+              aria-label="Conta e Configurações"
+              className={`pressable relative w-9 h-9 rounded-xl border flex items-center justify-center cursor-pointer shrink-0 overflow-visible ${
+                hasCloudAttention
+                  ? 'border-amber-400 dark:border-amber-500 bg-amber-50 dark:bg-amber-950/40'
+                  : 'border-zinc-200/80 dark:border-zinc-700/80 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200/70 dark:hover:bg-zinc-700'
               }`}
             >
-              {driveSyncInfo.status === 'syncing' ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-500" />
-                  <span className="hidden lg:inline">Sincronizando...</span>
-                </>
-              ) : driveSyncInfo.status === 'cloud_newer' ? (
-                <>
-                  <CloudAlert className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="hidden lg:inline">Nuvem atualizada</span>
-                </>
+              {isSyncBusy ? (
+                <RefreshCw className="w-4 h-4 text-indigo-600 dark:text-indigo-400 animate-spin" />
+              ) : user?.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  alt={userName || user.displayName || 'Conta'}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full rounded-[10px] object-cover"
+                />
               ) : user ? (
-                <>
-                  <CloudCheck className="w-3.5 h-3.5 text-emerald-500" />
-                  <span className="hidden lg:inline">Drive Conectado</span>
-                </>
+                <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                  {(userName || user.displayName || user.email || 'U')[0].toUpperCase()}
+                </span>
               ) : (
-                <>
-                  <CloudOff className="w-3.5 h-3.5 text-zinc-400" />
-                  <span className="hidden lg:inline">Nuvem Desconectada</span>
-                </>
+                <UserIcon className="w-4 h-4 text-zinc-700 dark:text-zinc-200" />
+              )}
+              {hasCloudAttention && !isSyncBusy && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-500 border-2 border-white dark:border-zinc-900" />
               )}
             </button>
-
-            {/* Google Account Profile or Sign In Button */}
-            {user ? (
-              <div className="flex items-center gap-1 sm:gap-2 h-9 sm:h-10 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700/80 rounded-xl px-1 sm:pr-2.5 shrink-0">
-                <button
-                  onClick={openSyncModal}
-                  title="Ver status da conta"
-                  className="cursor-pointer flex items-center justify-center"
-                >
-                  {user.photoURL ? (
-                    <img
-                      src={user.photoURL}
-                      alt={userName || user.displayName || 'Usuário'}
-                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg object-cover"
-                    />
-                  ) : (
-                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-indigo-600 text-white font-semibold text-xs flex items-center justify-center">
-                      {(userName || user.displayName || user.email || 'U')[0].toUpperCase()}
-                    </div>
-                  )}
-                </button>
-                <div className="hidden lg:block text-left">
-                  <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate max-w-[120px]">
-                    {userName || user.displayName || 'Usuário'}
-                  </p>
-                  <p className="text-[10px] text-zinc-400 dark:text-zinc-500 truncate max-w-[120px]">
-                    {user.email}
-                  </p>
-                </div>
-                <button
-                  onClick={signOut}
-                  title="Sair da conta Google"
-                  className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => {
-                  hapticImpactLight();
-                  signInWithGoogle();
-                }}
-                disabled={isAuthenticating}
-                className="pressable gsi-material-button inline-flex items-center justify-center gap-1.5 h-9 sm:h-10 px-2.5 sm:px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-zinc-700 dark:text-zinc-200 text-xs font-medium shadow-xs cursor-pointer shrink-0 whitespace-nowrap"
-              >
-                <svg
-                  className="w-4 h-4 shrink-0"
-                  viewBox="0 0 48 48"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    fill="#EA4335"
-                    d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
-                  />
-                  <path
-                    fill="#4285F4"
-                    d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
-                  />
-                  <path fill="none" d="M0 0h48v48H0z" />
-                </svg>
-                <span className="hidden sm:inline">{isAuthenticating ? 'Conectando...' : 'Conectar Google'}</span>
-                <span className="sm:hidden text-[11px] font-semibold">{isAuthenticating ? '...' : 'Entrar'}</span>
-              </button>
-            )}
           </div>
         </div>
       </div>

@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardPaste,
+  CopyPlus,
   CreditCard,
   DollarSign,
   Download,
@@ -24,15 +25,27 @@ import {
   Trash2,
   TrendingDown,
   TrendingUp,
-  Wallet,
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
-import { hapticImpactLight, hapticSelection } from '../../services/hapticsService';
+import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
 import { parseBankNotificationText } from '../../services/bankNotificationParser';
-import { FinanceCategory, PendingBankNotification, Transaction, TransactionType } from '../../types';
+import {
+  FinanceCategory,
+  FinancialGoal,
+  PendingBankNotification,
+  Transaction,
+  TransactionType,
+} from '../../types';
 import { ReceiptScannerModal } from './ReceiptScannerModal';
+
+const getLocalTodayStr = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate()
+  ).padStart(2, '0')}`;
+};
 
 type FinanceSubTab = 'resumo' | 'lancamentos' | 'metas';
 
@@ -79,6 +92,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const {
     transactions,
     addTransaction,
+    updateTransaction,
     deleteTransaction,
     financialGoals,
     updateGoal,
@@ -109,8 +123,10 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingPendingBankId, setEditingPendingBankId] = useState<string | null>(null);
+  const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isPasteBankModalOpen, setIsPasteBankModalOpen] = useState(false);
 
@@ -119,17 +135,17 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const [pasteBankName, setPasteBankName] = useState('');
   const [pasteError, setPasteError] = useState<string | null>(null);
 
-  // New Transaction / Review Edit form
+  // New / Edit Transaction form
   const [txType, setTxType] = useState<TransactionType>('despesa');
   const [txTitle, setTxTitle] = useState('');
   const [txAmount, setTxAmount] = useState('');
   const [txCategory, setTxCategory] = useState<FinanceCategory>('alimentacao');
-  const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
+  const [txDate, setTxDate] = useState(() => getLocalTodayStr());
   const [txPaymentMethod, setTxPaymentMethod] = useState<Transaction['paymentMethod']>('pix');
   const [txNotes, setTxNotes] = useState('');
   const [txRecurring, setTxRecurring] = useState(false);
 
-  // New Goal form
+  // New / Edit Goal form
   const [goalTitle, setGoalTitle] = useState('');
   const [goalTarget, setGoalTarget] = useState('');
   const [goalCurrent, setGoalCurrent] = useState('');
@@ -172,11 +188,12 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     if (!quickOpenAction) return;
     if (quickOpenAction === 'new-transaction') {
       setEditingPendingBankId(null);
+      setEditingTransactionId(null);
       setTxType('despesa');
       setTxTitle('');
       setTxAmount('');
       setTxCategory('alimentacao');
-      setTxDate(new Date().toISOString().split('T')[0]);
+      setTxDate(getLocalTodayStr());
       setTxPaymentMethod('pix');
       setTxNotes('');
       setTxRecurring(false);
@@ -318,23 +335,58 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
 
   const resetTransactionModal = () => {
     setEditingPendingBankId(null);
+    setEditingTransactionId(null);
     setTxType('despesa');
     setTxTitle('');
     setTxAmount('');
     setTxCategory('alimentacao');
-    setTxDate(new Date().toISOString().split('T')[0]);
+    setTxDate(getLocalTodayStr());
     setTxPaymentMethod('pix');
     setTxNotes('');
     setTxRecurring(false);
   };
 
-  const openNewTransactionModal = () => {
+  const openNewTransactionModal = (presetType: TransactionType = 'despesa') => {
     resetTransactionModal();
+    setTxType(presetType);
+    if (presetType === 'receita') {
+      setTxCategory('salario');
+    }
     setIsAddModalOpen(true);
+  };
+
+  const openEditTransactionModal = (tx: Transaction) => {
+    hapticSelection();
+    setEditingPendingBankId(null);
+    setEditingTransactionId(tx.id);
+    setTxType(tx.type);
+    setTxTitle(tx.title);
+    setTxAmount(tx.amount.toFixed(2));
+    setTxCategory(tx.category);
+    setTxDate(tx.date);
+    setTxPaymentMethod(tx.paymentMethod || 'pix');
+    setTxNotes(tx.notes || '');
+    setTxRecurring(Boolean(tx.recurring));
+    setIsAddModalOpen(true);
+  };
+
+  const handleRepeatTransactionToday = (tx: Transaction) => {
+    hapticSuccess();
+    addTransaction({
+      type: tx.type,
+      title: tx.title,
+      amount: tx.amount,
+      category: tx.category,
+      date: getLocalTodayStr(),
+      paymentMethod: tx.paymentMethod,
+      notes: tx.notes,
+      recurring: tx.recurring,
+    });
   };
 
   const openEditPendingModal = (item: PendingBankNotification) => {
     setEditingPendingBankId(item.id);
+    setEditingTransactionId(null);
     setTxType(item.type);
     setTxTitle(item.title);
     setTxAmount(item.amount.toFixed(2));
@@ -364,6 +416,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
 
     if (editingPendingBankId) {
       approvePendingBankNotification(editingPendingBankId, txPayload);
+    } else if (editingTransactionId) {
+      updateTransaction(editingTransactionId, txPayload);
     } else {
       addTransaction(txPayload);
     }
@@ -392,6 +446,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       return;
     }
     setEditingPendingBankId(null);
+    setEditingTransactionId(null);
     setTxType(livePastePreview.type);
     setTxTitle(livePastePreview.title);
     setTxAmount(livePastePreview.amount.toFixed(2));
@@ -408,21 +463,50 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     setIsAddModalOpen(true);
   };
 
+  const openNewGoalModal = () => {
+    setEditingGoalId(null);
+    setGoalTitle('');
+    setGoalTarget('');
+    setGoalCurrent('');
+    setGoalDate('');
+    setIsGoalModalOpen(true);
+  };
+
+  const openEditGoalModal = (goal: FinancialGoal) => {
+    hapticSelection();
+    setEditingGoalId(goal.id);
+    setGoalTitle(goal.title);
+    setGoalTarget(String(goal.targetAmount));
+    setGoalCurrent(String(goal.currentAmount));
+    setGoalDate(goal.targetDate || '');
+    setIsGoalModalOpen(true);
+  };
+
   const handleCreateGoal = (e: React.FormEvent) => {
     e.preventDefault();
     const targetNum = parseFloat(goalTarget.replace(',', '.'));
     const currentNum = goalCurrent.trim() ? parseFloat(goalCurrent.replace(',', '.')) : 0;
     if (!goalTitle.trim() || isNaN(targetNum) || targetNum <= 0) return;
 
-    addGoal({
-      title: goalTitle.trim(),
-      targetAmount: targetNum,
-      currentAmount: isNaN(currentNum) ? 0 : currentNum,
-      targetDate: goalDate,
-      category: 'investimentos',
-      color: '#6366f1',
-    });
+    if (editingGoalId) {
+      updateGoal(editingGoalId, {
+        title: goalTitle.trim(),
+        targetAmount: targetNum,
+        currentAmount: isNaN(currentNum) ? 0 : currentNum,
+        targetDate: goalDate,
+      });
+    } else {
+      addGoal({
+        title: goalTitle.trim(),
+        targetAmount: targetNum,
+        currentAmount: isNaN(currentNum) ? 0 : currentNum,
+        targetDate: goalDate,
+        category: 'investimentos',
+        color: '#6366f1',
+      });
+    }
 
+    setEditingGoalId(null);
     setGoalTitle('');
     setGoalTarget('');
     setGoalCurrent('');
@@ -467,164 +551,117 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     const targetGoal = financialGoals.find((g) => g.id === addingToGoal.id);
     if (!targetGoal || isNaN(num) || num <= 0) return;
     updateGoal(targetGoal.id, { currentAmount: targetGoal.currentAmount + num });
+    hapticSuccess();
     setAddingToGoal(null);
     setAddGoalAmount('');
   };
 
   const handleFilterCategoryFromResumo = (cat: FinanceCategory) => {
+    hapticSelection();
     setCategoryFilter(cat);
     setFilterType('despesa');
     setActiveSubTab('lancamentos');
   };
 
   return (
-    <div className="space-y-5 pb-20">
-      {/* Compact Month & Controls Bar + Single-Line Segmented Sub-tabs */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 sm:p-5 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                <Wallet className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block">
-                  Controle Financeiro
-                </span>
-                <h2 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                  {capitalizedMonth}
-                </h2>
-              </div>
-            </div>
-
-            {/* Mobile inline Month Stepper + Privacy Toggle */}
-            <div className="flex items-center gap-1.5 sm:hidden">
+    <div className="space-y-4 pb-16">
+      {/* Compact Month Bar + Primary Actions + Sub-tabs */}
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center h-9 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-xl p-0.5">
               <button
-                onClick={toggleHideValues}
-                title={hideValues ? 'Mostrar valores' : 'Ocultar valores'}
-                aria-label={hideValues ? 'Mostrar valores' : 'Ocultar valores'}
-                aria-pressed={hideValues}
-                className={`pressable w-9 h-9 flex items-center justify-center rounded-xl border cursor-pointer shrink-0 ${
-                  hideValues
-                    ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
-                }`}
-              >
-                {hideValues ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-
-              <div className="flex items-center h-9 bg-zinc-100 dark:bg-zinc-800 rounded-xl p-1">
-                <button
-                  onClick={prevMonth}
-                  title="Mês anterior"
-                  className="pressable w-8 h-7 flex items-center justify-center rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 cursor-pointer"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={nextMonth}
-                  title="Próximo mês"
-                  className="pressable w-8 h-7 flex items-center justify-center rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 cursor-pointer"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Action Buttons Row */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:flex-wrap">
-            {/* Desktop Month Stepper */}
-            <div className="hidden sm:flex items-center h-10 bg-zinc-100 dark:bg-zinc-800 rounded-xl p-1">
-              <button
+                type="button"
                 onClick={prevMonth}
                 title="Mês anterior"
-                className="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+                aria-label="Mês anterior"
+                className="pressable w-8 h-8 flex items-center justify-center rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="px-3 text-xs font-semibold text-zinc-700 dark:text-zinc-300 whitespace-nowrap">
-                {currentDate.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}
+              <span className="px-2.5 text-xs sm:text-sm font-bold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
+                {capitalizedMonth}
               </span>
               <button
+                type="button"
                 onClick={nextMonth}
                 title="Próximo mês"
-                className="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+                aria-label="Próximo mês"
+                className="pressable w-8 h-8 flex items-center justify-center rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Desktop Privacy Toggle */}
             <button
+              type="button"
               onClick={toggleHideValues}
               title={hideValues ? 'Mostrar valores' : 'Ocultar valores'}
               aria-label={hideValues ? 'Mostrar valores' : 'Ocultar valores'}
               aria-pressed={hideValues}
-              className={`pressable hidden sm:flex items-center gap-1.5 px-3 h-10 rounded-xl border text-xs font-semibold cursor-pointer ${
+              className={`pressable w-9 h-9 flex items-center justify-center rounded-xl border cursor-pointer shrink-0 ${
                 hideValues
                   ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800'
-                  : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border-zinc-200/80 dark:border-zinc-800'
               }`}
             >
-              {hideValues ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              <span className="hidden md:inline">{hideValues ? 'Mostrar' : 'Ocultar'}</span>
+              {hideValues ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={exportToCSV}
+              title="Exportar CSV do mês"
+              aria-label="Exportar CSV"
+              className="pressable w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center cursor-pointer shrink-0"
+            >
+              <Download className="w-4 h-4" />
             </button>
 
-            {/* Secondary Actions: 2-column grid on mobile, inline on desktop */}
-            <div className="grid grid-cols-2 sm:flex items-center gap-2">
-              <button
-                onClick={exportToCSV}
-                title="Exportar extrato em CSV para Excel ou Google Sheets"
-                className="pressable flex items-center justify-center gap-1.5 px-3 h-9 sm:h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold cursor-pointer whitespace-nowrap"
-              >
-                <Download className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                <span>Exportar CSV</span>
-              </button>
+            <button
+              type="button"
+              onClick={openBudgetModal}
+              title="Definir limites de orçamento"
+              aria-label="Limites de orçamento"
+              className="pressable w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center cursor-pointer shrink-0"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+            </button>
 
-              <button
-                onClick={openBudgetModal}
-                className="pressable flex items-center justify-center gap-1.5 px-3 h-9 sm:h-10 sm:w-10 sm:px-0 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold cursor-pointer whitespace-nowrap"
-                title="Ajustar limites de orçamento"
-              >
-                <SlidersHorizontal className="w-4 h-4 shrink-0" />
-                <span className="sm:hidden">Orçamento</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                hapticImpactLight();
+                setIsScannerOpen(true);
+              }}
+              title="Ler Nota Fiscal com IA"
+              className="pressable h-9 px-3 rounded-xl bg-gradient-to-r from-[#B6543C] to-[#A64B5E] text-white font-semibold text-xs inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-200 shrink-0" />
+              <span>Ler Nota</span>
+            </button>
 
-            {/* Primary CTAs: symmetric 2-column grid on mobile */}
-            <div className="grid grid-cols-2 sm:flex items-center gap-2">
-              <button
-                onClick={() => {
-                  hapticImpactLight();
-                  setIsScannerOpen(true);
-                }}
-                title="Escanear Nota Fiscal ou Cupom com Inteligência Artificial"
-                className="pressable flex items-center justify-center gap-1.5 px-3.5 h-10 rounded-xl bg-gradient-to-r from-[#B6543C] to-[#A64B5E] hover:from-[#9C432E] hover:to-[#8C3C4D] text-white font-semibold text-xs sm:text-sm shadow-md shadow-indigo-600/20 cursor-pointer whitespace-nowrap shrink-0"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-200 shrink-0" />
-                <span>Ler Nota</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  hapticImpactLight();
-                  openNewTransactionModal();
-                }}
-                className="pressable flex items-center justify-center gap-1.5 px-4 h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm shadow-md shadow-emerald-600/20 cursor-pointer whitespace-nowrap shrink-0"
-              >
-                <Plus className="w-4 h-4 shrink-0" />
-                <span>Nova</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                hapticImpactLight();
+                openNewTransactionModal('despesa');
+              }}
+              className="pressable h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs inline-flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>Nova</span>
+            </button>
           </div>
         </div>
 
-        {/* Single-line Sub-tab Switcher (Resumo | Lançamentos | Metas) */}
+        {/* Single-line Sub-tab Switcher */}
         <div
           role="tablist"
           aria-label="Seções de Finanças"
-          className="grid grid-cols-3 gap-1 bg-zinc-100 dark:bg-zinc-800/80 p-1 rounded-2xl border border-zinc-200/70 dark:border-zinc-800"
+          className="grid grid-cols-3 gap-1 bg-zinc-100 dark:bg-zinc-800/80 p-1 rounded-xl border border-zinc-200/60 dark:border-zinc-800"
         >
           <button
             role="tab"
@@ -633,9 +670,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               hapticSelection();
               setActiveSubTab('resumo');
             }}
-            className={`pressable h-10 px-2 sm:px-3 rounded-xl text-xs sm:text-sm font-semibold cursor-pointer whitespace-nowrap shrink-0 flex items-center justify-center ${
+            className={`pressable h-9 px-2 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0 flex items-center justify-center ${
               activeSubTab === 'resumo'
-                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-2xs'
                 : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
           >
@@ -649,9 +686,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               hapticSelection();
               setActiveSubTab('lancamentos');
             }}
-            className={`pressable h-10 px-2 sm:px-3 rounded-xl text-xs sm:text-sm font-semibold cursor-pointer whitespace-nowrap shrink-0 flex items-center justify-center gap-1 ${
+            className={`pressable h-9 px-2 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5 ${
               activeSubTab === 'lancamentos'
-                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-2xs'
                 : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
           >
@@ -670,9 +707,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               hapticSelection();
               setActiveSubTab('metas');
             }}
-            className={`pressable h-10 px-2 sm:px-3 rounded-xl text-xs sm:text-sm font-semibold cursor-pointer whitespace-nowrap shrink-0 flex items-center justify-center ${
+            className={`pressable h-9 px-2 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0 flex items-center justify-center ${
               activeSubTab === 'metas'
-                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-2xs'
                 : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
           >
@@ -682,34 +719,48 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       </div>
 
       {csvFeedback && (
-        <div className="px-4 py-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs font-medium text-amber-700 dark:text-amber-300">
+        <div className="px-3.5 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs font-medium text-amber-700 dark:text-amber-300">
           {csvFeedback}
         </div>
       )}
 
       {/* SUB-TAB 1: RESUMO */}
       {activeSubTab === 'resumo' && (
-        <div className="space-y-5 animate-tab-enter">
-          {/* KPI Cards - 2 cols on mobile, 4 cols on desktop */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
-            {/* Saldo Atual */}
-            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-3.5 sm:p-5 shadow-xs">
-              <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 mb-1.5">
-                <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider truncate">
+        <div className="space-y-4 animate-tab-enter">
+          {/* Actionable KPI Cards - 2 cols on mobile, 4 cols on desktop */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+            {/* Saldo -> Abre extrato completo */}
+            <div
+              onClick={() => {
+                hapticSelection();
+                setCategoryFilter(null);
+                setFilterType('all');
+                setActiveSubTab('lancamentos');
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setCategoryFilter(null);
+                  setFilterType('all');
+                  setActiveSubTab('lancamentos');
+                }
+              }}
+              className="pressable bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 hover:border-indigo-400 dark:hover:border-indigo-600 rounded-2xl p-3.5 cursor-pointer flex flex-col justify-between gap-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
                   Saldo
                 </span>
-                <div
-                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 ${
-                    balance >= 0
-                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600'
-                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600'
+                <DollarSign
+                  className={`w-4 h-4 shrink-0 ${
+                    balance >= 0 ? 'text-emerald-600' : 'text-rose-600'
                   }`}
-                >
-                  <DollarSign className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </div>
+                />
               </div>
               <div
-                className={`text-lg sm:text-2xl font-bold tracking-tight truncate tabular-nums ${
+                className={`text-lg sm:text-xl font-bold tracking-tight truncate font-mono tabular-nums ${
                   balance >= 0
                     ? 'text-zinc-900 dark:text-zinc-100'
                     : 'text-rose-600 dark:text-rose-400'
@@ -717,73 +768,167 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               >
                 {formatMoney(balance)}
               </div>
-              <div className="mt-1 flex items-center gap-1 text-[10px] sm:text-xs text-zinc-500 dark:text-zinc-400">
+              <div className="flex items-center justify-between gap-1 text-[11px]">
                 {balance >= 0 ? (
-                  <span className="text-emerald-600 font-semibold flex items-center gap-0.5">
+                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold inline-flex items-center gap-0.5">
                     <TrendingUp className="w-3 h-3" />
                     Superávit
                   </span>
                 ) : (
-                  <span className="text-rose-600 font-semibold flex items-center gap-0.5">
+                  <span className="text-rose-600 dark:text-rose-400 font-semibold inline-flex items-center gap-0.5">
                     <TrendingDown className="w-3 h-3" />
                     Déficit
                   </span>
                 )}
+                <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                  Ver extrato →
+                </span>
               </div>
             </div>
 
-            {/* Receitas */}
-            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-3.5 sm:p-5 shadow-xs">
-              <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 mb-1.5">
-                <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider truncate">
+            {/* Receitas -> Filtra receitas + botão rápido + Receita */}
+            <div
+              onClick={() => {
+                hapticSelection();
+                setCategoryFilter(null);
+                setFilterType('receita');
+                setActiveSubTab('lancamentos');
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setCategoryFilter(null);
+                  setFilterType('receita');
+                  setActiveSubTab('lancamentos');
+                }
+              }}
+              className="pressable bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 hover:border-emerald-400 dark:hover:border-emerald-600 rounded-2xl p-3.5 cursor-pointer flex flex-col justify-between gap-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
                   Receitas
                 </span>
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center shrink-0">
-                  <ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    hapticImpactLight();
+                    openNewTransactionModal('receita');
+                  }}
+                  title="Adicionar nova receita"
+                  aria-label="Adicionar receita"
+                  className="pressable h-7 px-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-[11px] font-semibold inline-flex items-center gap-0.5 cursor-pointer whitespace-nowrap"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Entrada</span>
+                </button>
               </div>
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400 truncate tabular-nums">
+              <div className="text-lg sm:text-xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400 truncate font-mono tabular-nums">
                 {formatMoney(totalIncome)}
               </div>
-              <p className="mt-1 text-[10px] sm:text-xs text-zinc-500 dark:text-zinc-400 tabular-nums">
-                {monthlyTransactions.filter((t) => t.type === 'receita').length} entrada(s)
-              </p>
+              <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400 font-mono tabular-nums">
+                <span>{monthlyTransactions.filter((t) => t.type === 'receita').length} entrada(s)</span>
+                <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
+              </div>
             </div>
 
-            {/* Despesas */}
-            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-3.5 sm:p-5 shadow-xs">
-              <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 mb-1.5">
-                <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider truncate">
+            {/* Despesas -> Filtra despesas + botão rápido + Despesa */}
+            <div
+              onClick={() => {
+                hapticSelection();
+                setCategoryFilter(null);
+                setFilterType('despesa');
+                setActiveSubTab('lancamentos');
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setCategoryFilter(null);
+                  setFilterType('despesa');
+                  setActiveSubTab('lancamentos');
+                }
+              }}
+              className="pressable bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 hover:border-rose-400 dark:hover:border-rose-600 rounded-2xl p-3.5 cursor-pointer flex flex-col justify-between gap-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
                   Despesas
                 </span>
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center shrink-0">
-                  <ArrowDownRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    hapticImpactLight();
+                    openNewTransactionModal('despesa');
+                  }}
+                  title="Adicionar nova despesa"
+                  aria-label="Adicionar despesa"
+                  className="pressable h-7 px-2 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-[11px] font-semibold inline-flex items-center gap-0.5 cursor-pointer whitespace-nowrap"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Gasto</span>
+                </button>
               </div>
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400 truncate tabular-nums">
+              <div className="text-lg sm:text-xl font-bold tracking-tight text-rose-600 dark:text-rose-400 truncate font-mono tabular-nums">
                 {formatMoney(totalExpense)}
               </div>
-              <div className="mt-1 text-[10px] sm:text-[11px] text-zinc-400 flex items-center gap-1.5 truncate tabular-nums">
+              <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 truncate font-mono tabular-nums">
                 <span>Fix: {formatMoney(fixedExpenses)}</span>
-                <span>•</span>
+                <span aria-hidden="true">·</span>
                 <span>Var: {formatMoney(variableExpenses)}</span>
               </div>
             </div>
 
-            {/* Taxa de Poupança */}
-            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-3.5 sm:p-5 shadow-xs">
-              <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 mb-1.5">
-                <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider truncate">
+            {/* Poupança -> Abre Metas ou aporta sobra na meta */}
+            <div
+              onClick={() => {
+                hapticSelection();
+                setActiveSubTab('metas');
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setActiveSubTab('metas');
+                }
+              }}
+              className="pressable bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 hover:border-indigo-400 dark:hover:border-indigo-600 rounded-2xl p-3.5 cursor-pointer flex flex-col justify-between gap-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
                   Poupança
                 </span>
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 flex items-center justify-center shrink-0">
-                  <PiggyBank className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </div>
+                {balance > 0 && financialGoals.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const firstGoal = financialGoals[0];
+                      setAddingToGoal({ id: firstGoal.id, title: firstGoal.title });
+                      setAddGoalAmount(balance.toFixed(2));
+                    }}
+                    className="pressable h-7 px-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 text-[11px] font-semibold cursor-pointer whitespace-nowrap"
+                  >
+                    Guardar sobra
+                  </button>
+                ) : (
+                  <PiggyBank className="w-4 h-4 text-indigo-500 shrink-0" />
+                )}
               </div>
-              <div className="text-lg sm:text-2xl font-bold tracking-tight text-indigo-600 dark:text-indigo-400 tabular-nums">
-                {savingsRate}%
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-lg sm:text-xl font-bold tracking-tight text-indigo-600 dark:text-indigo-400 font-mono tabular-nums">
+                  {savingsRate}%
+                </span>
+                <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono tabular-nums truncate">
+                  {balance > 0 ? formatMoney(balance) : 'Ir para metas →'}
+                </span>
               </div>
-              <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden mt-2">
+              <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden">
                 <div
                   className="bg-indigo-600 h-full rounded-full transition-all"
                   style={{ width: `${Math.min(100, savingsRate)}%` }}
@@ -792,30 +937,36 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             </div>
           </div>
 
-          {/* Visual Expense Breakdown Chart + Category Budget Limits */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {/* Visual Expense Breakdown Chart + Actionable Category Budget Limits */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Interactive Distribution Chart */}
-            <div className="lg:col-span-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-xs flex flex-col justify-between space-y-4">
+            <div className="lg:col-span-1 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl p-4 sm:p-5 flex flex-col justify-between space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <PieChartIcon className="w-5 h-5 text-indigo-600" />
-                  <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                    Distribuição de Gastos
+                  <PieChartIcon className="w-4 h-4 text-indigo-600" />
+                  <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                    Gastos por Categoria
                   </h3>
                 </div>
-                <span className="text-xs text-zinc-400 tabular-nums">
+                <span className="text-[11px] text-zinc-400 font-mono tabular-nums">
                   {monthlyTransactions.filter((t) => t.type === 'despesa').length} saídas
                 </span>
               </div>
 
               {totalExpense === 0 ? (
-                <div className="py-12 text-center text-xs text-zinc-400">
-                  Nenhuma despesa registrada no mês selecionado.
+                <div className="py-8 text-center text-xs text-zinc-400 space-y-2">
+                  <p>Nenhuma despesa registrada neste mês.</p>
+                  <button
+                    type="button"
+                    onClick={() => openNewTransactionModal('despesa')}
+                    className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                  >
+                    + Registrar primeira despesa
+                  </button>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {/* Stacked Percentage Bar */}
-                  <div className="w-full h-4 rounded-xl overflow-hidden flex bg-zinc-100 dark:bg-zinc-800 shadow-inner">
+                <div className="space-y-3">
+                  <div className="w-full h-3.5 rounded-lg overflow-hidden flex bg-zinc-100 dark:bg-zinc-800">
                     {Object.entries(categoryExpenses).map(([cat, amount]) => {
                       const pct = (amount / totalExpense) * 100;
                       const color = CATEGORY_COLORS[cat] || '#94a3b8';
@@ -834,8 +985,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                     })}
                   </div>
 
-                  {/* Legend List - Clicking filters Lançamentos */}
-                  <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                  <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                     {Object.entries(categoryExpenses)
                       .sort((a, b) => b[1] - a[1])
                       .map(([cat, amount]) => {
@@ -847,19 +997,19 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                             key={cat}
                             type="button"
                             onClick={() => handleFilterCategoryFromResumo(cat as FinanceCategory)}
-                            className="w-full flex items-center justify-between text-xs p-2.5 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800/70 transition-colors cursor-pointer text-left"
+                            className="w-full flex items-center justify-between text-xs px-2 py-2 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800/70 transition-colors cursor-pointer text-left"
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <span
-                                className="w-3 h-3 rounded-full shrink-0"
+                                className="w-2.5 h-2.5 rounded-full shrink-0"
                                 style={{ backgroundColor: color }}
                               />
                               <span className="text-zinc-800 dark:text-zinc-200 truncate">
                                 {getCategoryLabel(cat as FinanceCategory)}
                               </span>
                             </div>
-                            <div className="flex items-center gap-2 font-medium tabular-nums shrink-0">
-                              <span className="text-zinc-500">{pct}%</span>
+                            <div className="flex items-center gap-2 font-mono tabular-nums shrink-0">
+                              <span className="text-zinc-400">{pct}%</span>
                               <span className="text-zinc-900 dark:text-zinc-100 font-semibold">
                                 {formatMoney(amount)}
                               </span>
@@ -872,32 +1022,34 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               )}
             </div>
 
-            {/* Category Budget Spending vs Limit */}
-            <div className="lg:col-span-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-xs space-y-4">
+            {/* Actionable Category Budget Limits */}
+            <div className="lg:col-span-2 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl p-4 sm:p-5 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                    Limites de Orçamento por Categoria
+                  <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                    Orçamentos do Mês
                   </h3>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Acompanhe seus gastos antes de ultrapassar o limite planejado
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    Toque em uma categoria para filtrar seus gastos ou ajustar o limite
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={openBudgetModal}
                   className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline cursor-pointer shrink-0"
                 >
-                  Definir Limites
+                  Editar limites
                 </button>
               </div>
 
               {budgetLimits.filter((b) => b.monthlyLimit > 0).length === 0 ? (
-                <div className="py-12 text-center text-zinc-400 space-y-2">
-                  <SlidersHorizontal className="w-7 h-7 mx-auto text-zinc-300 dark:text-zinc-600" />
-                  <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                    Nenhum limite de orçamento definido
+                <div className="py-8 text-center text-zinc-400 space-y-2">
+                  <SlidersHorizontal className="w-6 h-6 mx-auto text-zinc-300 dark:text-zinc-600" />
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                    Nenhum teto de gasto configurado ainda
                   </p>
                   <button
+                    type="button"
                     onClick={openBudgetModal}
                     className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline cursor-pointer"
                   >
@@ -905,7 +1057,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {budgetLimits
                     .filter((b) => b.monthlyLimit > 0)
                     .map((budgetObj) => {
@@ -914,37 +1066,71 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                       const limit = budgetObj.monthlyLimit;
                       const percent = Math.round((spent / limit) * 100);
                       const isOver = spent > limit;
+                      const remaining = limit - spent;
 
                       return (
                         <div
                           key={cat}
-                          className={`p-3.5 rounded-2xl border transition-colors ${
+                          onClick={() => handleFilterCategoryFromResumo(cat)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleFilterCategoryFromResumo(cat);
+                            }
+                          }}
+                          className={`pressable p-3 rounded-xl border transition-colors cursor-pointer space-y-1.5 ${
                             isOver
                               ? 'border-rose-200 dark:border-rose-900/60 bg-rose-50/40 dark:bg-rose-950/20'
-                              : 'border-zinc-100 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/30'
+                              : 'border-zinc-200/70 dark:border-zinc-800 hover:border-indigo-400 dark:hover:border-indigo-600 bg-zinc-50/50 dark:bg-zinc-800/30'
                           }`}
                         >
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 truncate">
                               {getCategoryLabel(cat)}
                             </span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span
+                                className={`text-xs font-bold font-mono tabular-nums ${
+                                  isOver ? 'text-rose-600' : 'text-zinc-600 dark:text-zinc-300'
+                                }`}
+                              >
+                                {percent}%
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openBudgetModal();
+                                }}
+                                title={`Ajustar limite de ${getCategoryLabel(cat)}`}
+                                aria-label={`Ajustar limite de ${getCategoryLabel(cat)}`}
+                                className="w-7 h-7 rounded-lg hover:bg-zinc-200/70 dark:hover:bg-zinc-700 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 flex items-center justify-center cursor-pointer"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex items-baseline justify-between text-[11px] text-zinc-500 font-mono tabular-nums">
+                            <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                              {formatMoney(spent)} / {formatMoney(limit)}
+                            </span>
                             <span
-                              className={`text-xs font-bold tabular-nums ${
-                                isOver ? 'text-rose-600' : 'text-zinc-600 dark:text-zinc-300'
-                              }`}
+                              className={
+                                isOver
+                                  ? 'text-rose-600 dark:text-rose-400 font-semibold'
+                                  : 'text-emerald-600 dark:text-emerald-400 font-medium'
+                              }
                             >
-                              {percent}%
+                              {isOver
+                                ? `+${formatMoney(spent - limit)} acima`
+                                : `Restam ${formatMoney(remaining)}`}
                             </span>
                           </div>
 
-                          <div className="flex items-baseline justify-between text-xs text-zinc-500 mb-2 tabular-nums">
-                            <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                              {formatMoney(spent)}
-                            </span>
-                            <span>Limite: {formatMoney(limit)}</span>
-                          </div>
-
-                          <div className="w-full bg-zinc-200 dark:bg-zinc-700 h-2 rounded-full overflow-hidden">
+                          <div className="w-full bg-zinc-200 dark:bg-zinc-700 h-1.5 rounded-full overflow-hidden">
                             <div
                               className={`h-full rounded-full transition-all duration-300 ${
                                 isOver
@@ -956,12 +1142,6 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                               style={{ width: `${Math.min(100, percent)}%` }}
                             />
                           </div>
-
-                          {isOver && (
-                            <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium mt-1.5 tabular-nums">
-                              Limite excedido em {formatMoney(spent - limit)}
-                            </p>
-                          )}
                         </div>
                       );
                     })}
@@ -1240,7 +1420,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                     </button>
                   )}
                   <button
-                    onClick={openNewTransactionModal}
+                    type="button"
+                    onClick={() => openNewTransactionModal(filterType === 'receita' ? 'receita' : 'despesa')}
                     className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline cursor-pointer"
                   >
                     Adicionar transação
@@ -1259,35 +1440,44 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   return (
                     <div
                       key={tx.id}
-                      className="py-3 flex items-center justify-between gap-4 group hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 px-2 rounded-xl transition-colors"
+                      onClick={() => openEditTransactionModal(tx)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openEditTransactionModal(tx);
+                        }
+                      }}
+                      className="py-2.5 flex items-center justify-between gap-2.5 hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30 px-2 rounded-xl transition-colors cursor-pointer"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <div
-                          className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                             isIncome
                               ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600'
                               : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600'
                           }`}
                         >
                           {isIncome ? (
-                            <ArrowUpRight className="w-5 h-5" />
+                            <ArrowUpRight className="w-4 h-4" />
                           ) : (
-                            <ArrowDownRight className="w-5 h-5" />
+                            <ArrowDownRight className="w-4 h-4" />
                           )}
                         </div>
 
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                          <p className="text-xs sm:text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
                             {tx.title}
                           </p>
-                          <div className="flex items-center gap-2 text-xs text-zinc-400 mt-0.5 flex-wrap">
+                          <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 mt-0.5 flex-wrap">
                             <span>{getCategoryLabel(tx.category)}</span>
-                            <span>•</span>
-                            <span>{formattedDate}</span>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-mono tabular-nums">{formattedDate}</span>
                             {tx.paymentMethod && (
                               <>
-                                <span>•</span>
-                                <span className="uppercase text-[10px] font-medium bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
+                                <span aria-hidden="true">·</span>
+                                <span>
                                   {PAYMENT_METHOD_LABELS[tx.paymentMethod] ||
                                     tx.paymentMethod.replace('_', ' ')}
                                 </span>
@@ -1295,8 +1485,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                             )}
                             {tx.recurring && (
                               <>
-                                <span>•</span>
-                                <span className="text-[10px] font-medium text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded">
+                                <span aria-hidden="true">·</span>
+                                <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
                                   Fixa
                                 </span>
                               </>
@@ -1305,9 +1495,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0">
                         <span
-                          className={`text-sm sm:text-base font-bold whitespace-nowrap tabular-nums ${
+                          className={`text-xs sm:text-sm font-bold whitespace-nowrap font-mono tabular-nums mr-1 ${
                             isIncome
                               ? 'text-emerald-600 dark:text-emerald-400'
                               : 'text-zinc-900 dark:text-zinc-100'
@@ -1315,10 +1505,42 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                         >
                           {isIncome ? '+' : '-'} {formatMoney(tx.amount)}
                         </span>
+
                         <button
-                          onClick={() => deleteTransaction(tx.id)}
-                          className="text-zinc-400 hover:text-rose-500 p-1.5 sm:opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                          title="Excluir"
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRepeatTransactionToday(tx);
+                          }}
+                          title="Repetir este lançamento hoje"
+                          aria-label={`Repetir ${tx.title} hoje`}
+                          className="pressable w-8 h-8 rounded-lg text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center justify-center cursor-pointer"
+                        >
+                          <CopyPlus className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditTransactionModal(tx);
+                          }}
+                          title="Editar lançamento"
+                          aria-label={`Editar ${tx.title}`}
+                          className="pressable w-8 h-8 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center cursor-pointer"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteTransaction(tx.id);
+                          }}
+                          title="Excluir lançamento"
+                          aria-label={`Excluir ${tx.title}`}
+                          className="pressable w-8 h-8 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center justify-center cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1334,23 +1556,24 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
 
       {/* SUB-TAB 3: METAS */}
       {activeSubTab === 'metas' && (
-        <div className="space-y-5 animate-tab-enter">
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-xs space-y-4">
+        <div className="space-y-4 animate-tab-enter">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 rounded-2xl p-4 sm:p-5 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <Target className="w-5 h-5 text-indigo-600" />
+                <Target className="w-4 h-4 text-indigo-600 shrink-0" />
                 <div>
-                  <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                  <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
                     Metas Financeiras
                   </h3>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Objetivos de médio e longo prazo
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    Aporte valores em 1 toque ou ajuste prazos e alvos
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => setIsGoalModalOpen(true)}
-                className="flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 px-3 py-2 min-h-[38px] rounded-xl border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer shrink-0"
+                type="button"
+                onClick={openNewGoalModal}
+                className="pressable flex items-center gap-1 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-3 h-9 rounded-xl cursor-pointer shrink-0 whitespace-nowrap"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Nova Meta</span>
@@ -1358,70 +1581,131 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             </div>
 
             {financialGoals.length === 0 ? (
-              <div className="py-12 text-center text-zinc-400 space-y-2">
-                <Target className="w-8 h-8 mx-auto text-zinc-300 dark:text-zinc-600" />
-                <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+              <div className="py-10 text-center text-zinc-400 space-y-2">
+                <Target className="w-7 h-7 mx-auto text-zinc-300 dark:text-zinc-600" />
+                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
                   Nenhuma meta financeira cadastrada
                 </p>
                 <button
-                  onClick={() => setIsGoalModalOpen(true)}
+                  type="button"
+                  onClick={openNewGoalModal}
                   className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline cursor-pointer"
                 >
                   Criar primeira meta
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {financialGoals.map((goal) => {
                   const percent =
                     goal.targetAmount > 0
                       ? Math.min(100, Math.round((goal.currentAmount / goal.targetAmount) * 100))
                       : 0;
+                  const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
+
+                  let monthlySuggested: number | null = null;
+                  if (remaining > 0 && goal.targetDate) {
+                    const targetDt = new Date(`${goal.targetDate}T12:00:00`);
+                    const now = new Date();
+                    const monthsDiff =
+                      (targetDt.getFullYear() - now.getFullYear()) * 12 +
+                      (targetDt.getMonth() - now.getMonth());
+                    if (monthsDiff >= 1) {
+                      monthlySuggested = remaining / monthsDiff;
+                    }
+                  }
 
                   return (
                     <div
                       key={goal.id}
-                      className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30 relative group"
+                      className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30 space-y-2.5 flex flex-col justify-between"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <h4 className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                          {goal.title}
-                        </h4>
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                              {goal.title}
+                            </h4>
+                            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono tabular-nums">
+                              {remaining === 0
+                                ? 'Meta alcançada!'
+                                : `Faltam ${formatMoney(remaining)}`}
+                              {monthlySuggested !== null && (
+                                <>
+                                  {' · '}
+                                  <span>{formatMoney(monthlySuggested)}/mês</span>
+                                </>
+                              )}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => openEditGoalModal(goal)}
+                              title="Editar meta"
+                              aria-label={`Editar ${goal.title}`}
+                              className="pressable w-8 h-8 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-700 flex items-center justify-center cursor-pointer"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteGoal(goal.id)}
+                              title="Excluir meta"
+                              aria-label={`Excluir ${goal.title}`}
+                              className="pressable w-8 h-8 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center justify-center cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex items-baseline justify-between gap-2 text-xs font-mono tabular-nums">
+                          <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                            {formatMoney(goal.currentAmount)}
+                          </span>
+                          <span className="text-zinc-500">
+                            Alvo: {formatMoney(goal.targetAmount)} ({percent}%)
+                          </span>
+                        </div>
+
+                        <div className="w-full bg-zinc-200 dark:bg-zinc-700 h-2 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              remaining === 0 ? 'bg-emerald-500' : 'bg-indigo-600'
+                            }`}
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Ações rápidas de aporte direto no card */}
+                      <div className="flex items-center gap-1.5 pt-1 border-t border-zinc-200/60 dark:border-zinc-700/60">
+                        {[50, 100].map((quickVal) => (
+                          <button
+                            key={quickVal}
+                            type="button"
+                            onClick={() => {
+                              hapticSuccess();
+                              updateGoal(goal.id, {
+                                currentAmount: goal.currentAmount + quickVal,
+                              });
+                            }}
+                            className="pressable h-8 px-2.5 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-emerald-400 text-[11px] font-bold font-mono tabular-nums text-emerald-700 dark:text-emerald-400 cursor-pointer whitespace-nowrap"
+                          >
+                            +{quickVal}
+                          </button>
+                        ))}
                         <button
-                          onClick={() => deleteGoal(goal.id)}
-                          className="text-zinc-400 hover:text-rose-500 p-1 sm:opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                          title="Excluir meta"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      <div className="mt-3 flex items-baseline justify-between gap-2 text-xs tabular-nums">
-                        <span className="text-base font-bold text-indigo-600 dark:text-indigo-400">
-                          {formatMoney(goal.currentAmount)}
-                        </span>
-                        <span className="text-zinc-500">
-                          Alvo: {formatMoney(goal.targetAmount)}
-                        </span>
-                      </div>
-
-                      <div className="w-full bg-zinc-200 dark:bg-zinc-700 h-2.5 rounded-full overflow-hidden mt-2">
-                        <div
-                          className="h-full rounded-full bg-indigo-600 transition-all duration-500"
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
-
-                      <div className="mt-2.5 flex items-center justify-between text-xs text-zinc-500 tabular-nums">
-                        <span>{percent}% alcançado</span>
-                        <button
+                          type="button"
                           onClick={() => {
                             setAddingToGoal({ id: goal.id, title: goal.title });
                             setAddGoalAmount('');
                           }}
-                          className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                          className="pressable ml-auto h-8 px-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 text-[11px] font-semibold cursor-pointer whitespace-nowrap"
                         >
-                          + Adicionar Valor
+                          + Outro valor
                         </button>
                       </div>
                     </div>
@@ -1589,7 +1873,11 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             <div className="sm:hidden w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700 mx-auto mb-3 shrink-0" />
             <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800">
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                {editingPendingBankId ? 'Revisar Lançamento Bancário' : 'Nova Transação'}
+                {editingPendingBankId
+                  ? 'Revisar Lançamento Bancário'
+                  : editingTransactionId
+                  ? 'Editar Transação'
+                  : 'Nova Transação'}
               </h3>
               <button
                 type="button"
@@ -1768,7 +2056,11 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                       : 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
                   }`}
                 >
-                  {editingPendingBankId ? 'Confirmar e Lançar' : 'Adicionar Transação'}
+                  {editingPendingBankId
+                    ? 'Confirmar e Lançar'
+                    : editingTransactionId
+                    ? 'Salvar Alterações'
+                    : 'Adicionar Transação'}
                 </button>
               </div>
             </form>
@@ -1878,7 +2170,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             <div className="sm:hidden w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700 mx-auto mb-3 shrink-0" />
             <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800">
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                Nova Meta Financeira
+                {editingGoalId ? 'Editar Meta Financeira' : 'Nova Meta Financeira'}
               </h3>
               <button
                 type="button"

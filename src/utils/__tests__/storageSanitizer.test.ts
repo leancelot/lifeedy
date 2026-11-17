@@ -81,4 +81,53 @@ describe('sanitizeLegacyPayload', () => {
     expect(sanitized.draftNotes?.map((d) => d.id)).toEqual(['draft-user']);
     expect(sanitized.dashboardWidgets).toEqual(DEFAULT_WIDGETS);
   });
+
+  it('preserva rascunhos multimídia (lista, imagem e áudio) e datas especiais', () => {
+    const payload = {
+      version: CURRENT_DATA_VERSION,
+      userName: 'Leandro',
+      onboardingCompleted: true,
+      tasks: [],
+      transactions: [],
+      financialGoals: [],
+      budgetLimits: [],
+      draftNotes: [
+        {
+          id: 'draft-rich',
+          title: 'Compras & Ideias',
+          content: 'Lembrar de conferir preços',
+          kind: 'mixed',
+          checklistItems: [{ id: 'c1', text: 'Café', completed: true }],
+          images: [{ id: 'i1', dataUrl: 'data:image/webp;base64,AAA', width: 200, height: 200 }],
+          audios: [
+            {
+              id: 'a1',
+              dataUrl: 'data:audio/webm;base64,BBB',
+              mimeType: 'audio/webm',
+              durationSec: 12,
+              createdAt: '2026-11-17T08:00:00.000Z',
+            },
+          ],
+          isPinned: true,
+          updatedAt: '2026-11-17T08:00:00.000Z',
+        },
+      ],
+      specialDates: [
+        {
+          id: 'sp-1',
+          title: 'Aniversário da Ana',
+          monthDay: '11-25',
+          category: 'birthday',
+          recurringYearly: true,
+          createdAt: '2026-11-17T08:00:00.000Z',
+        },
+      ],
+    };
+
+    const sanitized = sanitizeLegacyPayload(payload);
+    expect(sanitized.draftNotes?.[0].checklistItems).toHaveLength(1);
+    expect(sanitized.draftNotes?.[0].images).toHaveLength(1);
+    expect(sanitized.draftNotes?.[0].audios?.[0].durationSec).toBe(12);
+    expect(sanitized.specialDates?.[0].title).toBe('Aniversário da Ana');
+  });
 });

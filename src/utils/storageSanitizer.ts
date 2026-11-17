@@ -1,8 +1,12 @@
 import {
   AppDataPayload,
   BudgetLimit,
+  DraftAudioAttachment,
+  DraftChecklistItem,
+  DraftImageAttachment,
   DraftNote,
   FinancialGoal,
+  LocalSpecialDate,
   TaskItem,
   Transaction,
 } from '../types';
@@ -56,6 +60,97 @@ const LEGACY_SEED_BUDGETS: Record<string, number> = {
   saude: 400,
 };
 
+function normalizeDraftNote(raw: unknown): DraftNote | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.id !== 'string' || !r.id) return null;
+
+  const checklistItems: DraftChecklistItem[] | undefined = Array.isArray(r.checklistItems)
+    ? r.checklistItems
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+        .map((item, idx) => ({
+          id: typeof item.id === 'string' && item.id ? item.id : `chk-${idx}-${Date.now()}`,
+          text: typeof item.text === 'string' ? item.text : '',
+          completed: Boolean(item.completed),
+        }))
+        .filter((item) => item.text.trim().length > 0)
+    : undefined;
+
+  const images: DraftImageAttachment[] | undefined = Array.isArray(r.images)
+    ? r.images
+        .filter(
+          (img): img is Record<string, unknown> =>
+            Boolean(img && typeof img === 'object' && typeof (img as Record<string, unknown>).dataUrl === 'string')
+        )
+        .map((img, idx) => ({
+          id: typeof img.id === 'string' && img.id ? img.id : `img-${idx}-${Date.now()}`,
+          dataUrl: String(img.dataUrl),
+          caption: typeof img.caption === 'string' ? img.caption : undefined,
+          width: typeof img.width === 'number' ? img.width : undefined,
+          height: typeof img.height === 'number' ? img.height : undefined,
+        }))
+    : undefined;
+
+  const audios: DraftAudioAttachment[] | undefined = Array.isArray(r.audios)
+    ? r.audios
+        .filter(
+          (aud): aud is Record<string, unknown> =>
+            Boolean(aud && typeof aud === 'object' && typeof (aud as Record<string, unknown>).dataUrl === 'string')
+        )
+        .map((aud, idx) => ({
+          id: typeof aud.id === 'string' && aud.id ? aud.id : `aud-${idx}-${Date.now()}`,
+          dataUrl: String(aud.dataUrl),
+          mimeType: typeof aud.mimeType === 'string' ? aud.mimeType : 'audio/webm',
+          durationSec: typeof aud.durationSec === 'number' && Number.isFinite(aud.durationSec) ? aud.durationSec : 0,
+          createdAt: typeof aud.createdAt === 'string' ? aud.createdAt : new Date().toISOString(),
+        }))
+    : undefined;
+
+  const title = typeof r.title === 'string' ? r.title : 'Rascunho';
+  const content = typeof r.content === 'string' ? r.content : '';
+
+  return {
+    id: r.id,
+    title,
+    content,
+    kind:
+      r.kind === 'text' || r.kind === 'list' || r.kind === 'media' || r.kind === 'mixed'
+        ? r.kind
+        : undefined,
+    checklistItems: checklistItems && checklistItems.length > 0 ? checklistItems : undefined,
+    images: images && images.length > 0 ? images : undefined,
+    audios: audios && audios.length > 0 ? audios : undefined,
+    color: typeof r.color === 'string' ? r.color : undefined,
+    updatedAt: typeof r.updatedAt === 'string' ? r.updatedAt : new Date().toISOString(),
+    isPinned: typeof r.isPinned === 'boolean' ? r.isPinned : undefined,
+  };
+}
+
+function normalizeSpecialDates(raw: unknown): LocalSpecialDate[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+    .filter(
+      (item) =>
+        typeof item.id === 'string' &&
+        typeof item.title === 'string' &&
+        typeof item.monthDay === 'string' &&
+        item.title.trim().length > 0
+    )
+    .map((item) => ({
+      id: String(item.id),
+      title: String(item.title).trim(),
+      monthDay: String(item.monthDay).trim(),
+      category:
+        item.category === 'birthday' || item.category === 'holiday' || item.category === 'commemorative'
+          ? item.category
+          : 'commemorative',
+      notes: typeof item.notes === 'string' ? item.notes : undefined,
+      recurringYearly: item.recurringYearly !== false,
+      createdAt: typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString(),
+    }));
+}
+
 export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
 
@@ -74,8 +169,9 @@ export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> 
     ? (record.budgetLimits as BudgetLimit[])
     : [];
   const rawDrafts: DraftNote[] = Array.isArray(record.draftNotes)
-    ? (record.draftNotes as DraftNote[])
+    ? record.draftNotes.map(normalizeDraftNote).filter((d): d is DraftNote => d !== null)
     : [];
+  const specialDates = normalizeSpecialDates(record.specialDates);
   const dashboardWidgets = Array.isArray(record.dashboardWidgets)
     ? (record.dashboardWidgets as string[])
     : DEFAULT_WIDGETS;
@@ -92,6 +188,7 @@ export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> 
       financialGoals: rawGoals,
       budgetLimits: rawBudgets,
       draftNotes: rawDrafts,
+      specialDates,
       dashboardWidgets,
       pendingBankNotifications,
     };
@@ -124,6 +221,7 @@ export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> 
     financialGoals,
     budgetLimits,
     draftNotes,
+    specialDates,
     dashboardWidgets,
     pendingBankNotifications,
   };

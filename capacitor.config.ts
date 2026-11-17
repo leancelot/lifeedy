@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.vidaorganizada.app',
-  appName: 'VidaOrganizada',
+  appName: 'Lifeedy',
   webDir: 'dist',
   server: {
     androidScheme: 'https',

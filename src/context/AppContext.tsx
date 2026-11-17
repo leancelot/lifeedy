@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
@@ -24,6 +24,7 @@ import {
   DriveSyncInfo,
   AppDataPayload,
   GoogleCalendarEvent,
+  LocalSpecialDate,
   PendingBankNotification,
 } from '../types';
 import { parseBankNotificationText } from '../services/bankNotificationParser';
@@ -41,6 +42,9 @@ import {
   googleSignIn,
   consumeRedirectSignInResult,
   completeNativeGoogleAuth,
+  loadPersistedUserProfile,
+  persistedProfileToUser,
+  isAccessTokenExpiredOrNearExpiry,
   mapGoogleAuthError,
   logout as fbLogout,
   getAccessToken,
@@ -56,8 +60,14 @@ import {
 import {
   listCalendarEvents,
   createCalendarEvent,
+  updateCalendarEvent as apiUpdateCalendarEvent,
   deleteCalendarEvent as apiDeleteCalendarEvent,
 } from '../services/calendarService';
+import {
+  expandSpecialDatesToEvents,
+  getBrazilianHolidaysInRange,
+  mergeAndDeduplicateCalendarEvents,
+} from '../services/brazilianHolidaysService';
 import {
   isNotificationSupported,
   getNotificationPermission,
@@ -120,8 +130,10 @@ interface AppContextType {
   // Auth state
   user: User | null;
   accessToken: string | null;
+  workspaceAuthStatus: 'disconnected' | 'connected' | 'refreshing' | 'needs_reauth';
   isAuthenticating: boolean;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: () => Promise<string | null>;
+  refreshWorkspaceSession: (options?: { interactiveIfNeeded?: boolean }) => Promise<string | null>;
   signOut: () => Promise<void>;
 
   // Data
@@ -130,6 +142,7 @@ interface AppContextType {
   financialGoals: FinancialGoal[];
   budgetLimits: BudgetLimit[];
   draftNotes: DraftNote[];
+  specialDates: LocalSpecialDate[];
   dashboardWidgets: string[];
   calendarEvents: GoogleCalendarEvent[];
   isLoadingCalendar: boolean;
@@ -151,6 +164,7 @@ interface AppContextType {
 
   // Finance actions
   addTransaction: (tx: Omit<Transaction, 'id'>) => void;
+  updateTransaction: (id: string, updates: Partial<Omit<Transaction, 'id'>>) => void;
   deleteTransaction: (id: string) => void;
   addGoal: (goal: Omit<FinancialGoal, 'id'>) => void;
   updateGoal: (id: string, updates: Partial<FinancialGoal>) => void;
@@ -177,6 +191,9 @@ interface AppContextType {
   updateDraftNote: (id: string, updates: Partial<DraftNote>) => void;
   deleteDraftNote: (id: string) => void;
   togglePinDraft: (id: string) => void;
+  toggleDraftChecklistItem: (draftId: string, itemId: string) => void;
+  addDraftChecklistItem: (draftId: string, text: string) => void;
+  convertDraftToTask: (draft: DraftNote) => void;
 
   // Modular Dashboard
   toggleDashboardWidget: (widgetId: string) => void;
@@ -189,8 +206,11 @@ interface AppContextType {
   dismissNotification: (id: string) => void;
   clearAllNotifications: () => void;
 
-  // Calendar actions
+  // Calendar & Special Dates actions
   refreshCalendar: () => Promise<void>;
+  addSpecialDate: (item: Omit<LocalSpecialDate, 'id' | 'createdAt'>) => void;
+  deleteSpecialDate: (id: string) => void;
+  createTaskFromCalendarEvent: (event: GoogleCalendarEvent) => void;
   addEventToGoogleCalendar: (event: {
     summary: string;
     description?: string;
@@ -199,7 +219,21 @@ interface AppContextType {
     endDateTime: string;
     allDay?: boolean;
     date?: string;
+    calendarId?: string;
   }) => Promise<GoogleCalendarEvent | null>;
+  updateGoogleCalendarEvent: (
+    eventId: string,
+    event: {
+      summary: string;
+      description?: string;
+      location?: string;
+      startDateTime: string;
+      endDateTime: string;
+      allDay?: boolean;
+      date?: string;
+      calendarId?: string;
+    }
+  ) => void;
   removeGoogleCalendarEvent: (eventId: string) => Promise<void>;
   scheduleTaskInCalendar: (task: TaskItem, startHour?: string) => Promise<boolean>;
 
@@ -301,10 +335,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     () => Boolean(initialPayload.onboardingCompleted)
   );
 
-  // Auth
-  const [user, setUser] = useState<User | null>(null);
+  // Auth (user identity is persisted independently of the 1-hour Workspace access token)
+  const [user, setUser] = useState<User | null>(() => {
+    const restored = loadPersistedUserProfile();
+    return restored ? persistedProfileToUser(restored) : null;
+  });
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [workspaceAuthStatus, setWorkspaceAuthStatus] = useState<
+    'disconnected' | 'connected' | 'refreshing' | 'needs_reauth'
+  >(() => (loadPersistedUserProfile() ? 'needs_reauth' : 'disconnected'));
+  const [tokenExpiresAt, setTokenExpiresAt] = useState<number>(0);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const userRef = useRef<User | null>(user);
+  userRef.current = user;
 
   // App core state (always starts empty if no user data)
   const [tasks, setTasks] = useState<TaskItem[]>(() => initialPayload.tasks || []);
@@ -319,6 +362,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
   const [draftNotes, setDraftNotes] = useState<DraftNote[]>(
     () => initialPayload.draftNotes || []
+  );
+  const [specialDates, setSpecialDates] = useState<LocalSpecialDate[]>(
+    () => initialPayload.specialDates || []
   );
   const [dashboardWidgets, setDashboardWidgets] = useState<string[]>(
     () => initialPayload.dashboardWidgets || DEFAULT_WIDGETS
@@ -400,9 +446,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [pendingBankNotifications]);
 
-  // Calendar events
-  const [calendarEvents, setCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
+  // Google Calendar events + merged unified events (including offline BR holidays & user birthdays)
+  const [googleCalendarEvents, setGoogleCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
   const [isLoadingCalendar, setIsLoadingCalendar] = useState(false);
+
+  const calendarEvents = useMemo(() => {
+    const minDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const maxDate = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000);
+    const brazilHolidays = getBrazilianHolidaysInRange(minDate, maxDate);
+    const expandedSpecials = expandSpecialDatesToEvents(specialDates, minDate, maxDate);
+    return mergeAndDeduplicateCalendarEvents(googleCalendarEvents, [
+      ...expandedSpecials,
+      ...brazilHolidays,
+    ]);
+  }, [googleCalendarEvents, specialDates]);
 
   // Undo Toast state
   const [undoToast, setUndoToast] = useState<UndoToastInfo | null>(null);
@@ -480,6 +537,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     transactions,
     financialGoals,
     draftNotes,
+    specialDates,
     pendingBankNotifications,
   });
   latestDataRef.current = {
@@ -487,6 +545,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     transactions,
     financialGoals,
     draftNotes,
+    specialDates,
     pendingBankNotifications,
   };
 
@@ -537,6 +596,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       financialGoals,
       budgetLimits,
       draftNotes,
+      specialDates,
       dashboardWidgets,
       pendingBankNotifications,
     };
@@ -553,6 +613,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     financialGoals,
     budgetLimits,
     draftNotes,
+    specialDates,
     dashboardWidgets,
     pendingBankNotifications,
   ]);
@@ -575,16 +636,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [driveSyncInfo]);
 
-  // Handle Firebase Auth state changes
+  // Handle Firebase Auth state changes (never log the user out solely because in-memory token expired)
   useEffect(() => {
     const unsubscribe = initAuth(
-      (currentUser, token) => {
+      (currentUser, token, expiresAt) => {
         setUser(currentUser);
-        setAccessToken(token);
+        if (token) {
+          setAccessToken(token);
+          setTokenExpiresAt(expiresAt);
+          setWorkspaceAuthStatus('connected');
+        } else {
+          setAccessToken(null);
+          setTokenExpiresAt(0);
+          setWorkspaceAuthStatus((prev) => (prev === 'refreshing' ? 'refreshing' : 'needs_reauth'));
+        }
       },
       () => {
         setUser(null);
         setAccessToken(null);
+        setTokenExpiresAt(0);
+        setWorkspaceAuthStatus('disconnected');
       }
     );
     return () => unsubscribe();
@@ -746,6 +817,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const token = params.get('access_token');
         const idToken = params.get('id_token');
+        const expiresInParam = params.get('expires_in');
+        const expiresInSec = expiresInParam ? parseInt(expiresInParam, 10) : undefined;
 
         try {
           await Browser.close();
@@ -756,8 +829,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (token) {
           setIsAuthenticating(true);
           sessionExpiredNotifiedRef.current = false;
-          const loggedUser = await completeNativeGoogleAuth(token, idToken);
+          const loggedUser = await completeNativeGoogleAuth(token, idToken, expiresInSec);
           setAccessToken(token);
+          setTokenExpiresAt(Date.now() + (expiresInSec && expiresInSec > 60 ? expiresInSec : 3500) * 1000);
+          setWorkspaceAuthStatus('connected');
           if (loggedUser) {
             setUser(loggedUser);
           }
@@ -772,7 +847,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           try {
             const events = await listCalendarEvents(token);
-            setCalendarEvents(events);
+            setGoogleCalendarEvents(events);
           } catch (e) {
             console.warn('Erro ao consultar Agenda pós deep link:', e);
           }
@@ -822,6 +897,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         sessionExpiredNotifiedRef.current = false;
         setUser(res.user);
         setAccessToken(res.accessToken);
+        setTokenExpiresAt(res.expiresAt);
+        setWorkspaceAuthStatus('connected');
       })
       .catch((err) => {
         console.warn('Erro ao finalizar login Google via redirecionamento:', err);
@@ -831,27 +908,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
-
   const sessionExpiredNotifiedRef = useRef(false);
 
   const handleWorkspaceAuthError = useCallback((err: unknown): boolean => {
     if (!isWorkspaceAuthError(err)) return false;
 
+    // Clear only the expired Workspace access token — NEVER sign the user profile out!
     setSessionToken(null);
     setAccessToken(null);
-    setUser(null);
-    setDriveSyncInfo((prev) => ({
-      ...prev,
-      status: 'idle',
-      errorMessage: undefined,
-    }));
+    setTokenExpiresAt(0);
+    setWorkspaceAuthStatus(userRef.current ? 'needs_reauth' : 'disconnected');
 
-    if (!sessionExpiredNotifiedRef.current) {
+    if (userRef.current && !sessionExpiredNotifiedRef.current) {
       sessionExpiredNotifiedRef.current = true;
       const expiredNotif: AppNotification = {
-        id: 'notif-auth-expired-' + Date.now(),
-        title: 'Sessão Google expirada',
-        body: 'Sua sessão de acesso ao Google expirou. Conecte sua conta novamente para sincronizar Drive e Agenda.',
+        id: 'notif-auth-refresh-' + Date.now(),
+        title: 'Sincronização Google em espera',
+        body: 'Sua conta continua conectada no Lifeedy. Toque em "Renovar sincronização" nos ajustes ou na nuvem quando quiser atualizar Drive e Agenda.',
         timestamp: new Date().toISOString(),
         type: 'reminder',
         read: false,
@@ -870,7 +943,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsLoadingCalendar(true);
     try {
       const events = await listCalendarEvents(token);
-      setCalendarEvents(events);
+      setGoogleCalendarEvents(events);
     } catch (err: any) {
       if (!handleWorkspaceAuthError(err)) {
         console.warn('Falha ao carregar calendário:', err);
@@ -885,6 +958,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       refreshCalendar();
     }
   }, [accessToken, refreshCalendar]);
+
+  // Passive expiry & foreground watcher: cleanly transitions token state without calling blocked background popups
+  useEffect(() => {
+    if (!user) return;
+
+    const markNeedsReauthIfExpired = () => {
+      if (userRef.current && accessToken && isAccessTokenExpiredOrNearExpiry(30_000)) {
+        setSessionToken(null);
+        setAccessToken(null);
+        setTokenExpiresAt(0);
+        setWorkspaceAuthStatus('needs_reauth');
+      }
+    };
+
+    let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+    if (accessToken && tokenExpiresAt > Date.now()) {
+      const delayMs = Math.max(5_000, tokenExpiresAt - Date.now() - 30_000);
+      expiryTimer = setTimeout(markNeedsReauthIfExpired, delayMs);
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        markNeedsReauthIfExpired();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    let capAppHandle: { remove: () => Promise<void> } | null = null;
+    if (Capacitor.isNativePlatform()) {
+      CapApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) {
+          markNeedsReauthIfExpired();
+        }
+      })
+        .then((h) => {
+          capAppHandle = h;
+        })
+        .catch(() => {});
+    }
+
+    return () => {
+      if (expiryTimer) clearTimeout(expiryTimer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (capAppHandle) {
+        capAppHandle.remove().catch(() => {});
+      }
+    };
+  }, [user, accessToken, tokenExpiresAt]);
 
   const applySanitizedPayload = useCallback(
     (
@@ -903,6 +1025,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (sanitized.financialGoals) setFinancialGoals(sanitized.financialGoals);
       if (sanitized.budgetLimits) setBudgetLimits(sanitized.budgetLimits);
       if (sanitized.draftNotes) setDraftNotes(sanitized.draftNotes);
+      if (sanitized.specialDates) setSpecialDates(sanitized.specialDates);
       if (sanitized.dashboardWidgets) setDashboardWidgets(sanitized.dashboardWidgets);
       if (sanitized.pendingBankNotifications) {
         setPendingBankNotifications(sanitized.pendingBankNotifications);
@@ -916,6 +1039,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         transactions: sanitized.transactions || [],
         financialGoals: sanitized.financialGoals || [],
         draftNotes: sanitized.draftNotes || [],
+        specialDates: sanitized.specialDates || [],
         pendingBankNotifications: sanitized.pendingBankNotifications || [],
       });
 
@@ -1047,14 +1171,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [accessToken, handleWorkspaceAuthError]);
 
-  // Real-time synchronization interval
+  // Real-time synchronization interval (pauses cleanly when Workspace token needs renewal)
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || workspaceAuthStatus !== 'connected') return;
     const interval = setInterval(() => {
       void checkDriveStatus();
     }, 45000);
     return () => clearInterval(interval);
-  }, [accessToken, checkDriveStatus]);
+  }, [accessToken, workspaceAuthStatus, checkDriveStatus]);
 
   // Auto-sync debounced after local edits if logged in
   const triggerAutoSync = useCallback(() => {
@@ -1078,6 +1202,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           financialGoals,
           budgetLimits,
           draftNotes,
+          specialDates,
           dashboardWidgets,
           pendingBankNotifications,
         };
@@ -1109,6 +1234,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     financialGoals,
     budgetLimits,
     draftNotes,
+    specialDates,
     dashboardWidgets,
     pendingBankNotifications,
     driveSyncInfo.fileId,
@@ -1290,9 +1416,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       let cloudResetResult: DriveFileInfo | null = null;
       if (alsoResetCloud) {
-        const token = accessToken || (await getAccessToken());
+        let token = accessToken || (await getAccessToken());
         if (!token) {
-          throw new Error('Conecte sua conta Google para reiniciar o backup na nuvem.');
+          token = await signInWithGoogle();
+        }
+        if (!token) {
+          throw new Error('Conecte ou renove sua conta Google para reiniciar o backup na nuvem.');
         }
 
         const cleanPayload: AppDataPayload = {
@@ -1305,6 +1434,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           financialGoals: [],
           budgetLimits: [],
           draftNotes: [],
+          specialDates: [],
           dashboardWidgets: DEFAULT_WIDGETS,
           pendingBankNotifications: [],
         };
@@ -1313,7 +1443,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           cloudResetResult = await saveToDrive(token, cleanPayload, driveSyncInfo.fileId);
         } catch (err: any) {
           if (handleWorkspaceAuthError(err)) {
-            throw new Error('Sessão Google expirada. Conecte sua conta novamente.');
+            throw new Error('Permissão temporária do Google em renovação. Tente novamente em instantes.');
           }
           throw err;
         }
@@ -1326,6 +1456,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setFinancialGoals([]);
       setBudgetLimits([]);
       setDraftNotes([]);
+      setSpecialDates([]);
       setDashboardWidgets(DEFAULT_WIDGETS);
       setPendingBankNotifications([]);
       setNotificationsList([]);
@@ -1369,10 +1500,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Manual save to Google Drive
   const syncToDriveNow = async () => {
-    const token = accessToken || (await getAccessToken());
+    let token = accessToken || (await getAccessToken());
     if (!token) {
-      await signInWithGoogle();
-      return;
+      token = await signInWithGoogle();
+      if (!token) return;
     }
 
     cloudOverwriteGuardRef.current = false;
@@ -1388,6 +1519,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         financialGoals,
         budgetLimits,
         draftNotes,
+        specialDates,
         dashboardWidgets,
         pendingBankNotifications,
       };
@@ -1402,7 +1534,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       confetti({ particleCount: 30, spread: 60, origin: { y: 0.8 } });
     } catch (err: any) {
       if (handleWorkspaceAuthError(err)) {
-        throw new Error('Sessão Google expirada. Conecte sua conta novamente.');
+        throw new Error('Permissão temporária do Google expirada. Toque em Renovar para continuar.');
       }
       console.warn('Falha ao salvar no Drive:', err);
       setDriveSyncInfo((prev) => ({
@@ -1416,10 +1548,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Restore data from Google Drive
   const restoreFromDriveNow = async () => {
-    const token = accessToken || (await getAccessToken());
+    let token = accessToken || (await getAccessToken());
     if (!token) {
-      await signInWithGoogle();
-      return;
+      token = await signInWithGoogle();
+      if (!token) return;
     }
 
     setDriveSyncInfo((prev) => ({ ...prev, status: 'syncing' }));
@@ -1429,7 +1561,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!fileId) {
         const file = await findDriveBackupFile(token);
         if (!file) {
-          throw new Error('Nenhum backup do VidaOrganizada foi encontrado no seu Google Drive.');
+          throw new Error('Nenhum backup do Lifeedy foi encontrado no seu Google Drive.');
         }
         fileId = file.id;
         remoteModifiedAt = file.modifiedTime;
@@ -1445,7 +1577,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     } catch (err: any) {
       if (handleWorkspaceAuthError(err)) {
-        throw new Error('Sessão Google expirada. Conecte sua conta novamente.');
+        throw new Error('Permissão temporária do Google expirada. Toque em Renovar para continuar.');
       }
       console.warn('Falha ao restaurar do Drive:', err);
       setDriveSyncInfo((prev) => ({
@@ -1457,16 +1589,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Google Sign-in flow
-  const signInWithGoogle = async () => {
+  // Google Sign-in flow (supports both first login and one-tap renewal preserving login_hint)
+  const signInWithGoogle = async (): Promise<string | null> => {
     setIsAuthenticating(true);
     try {
-      const result = await googleSignIn();
-      if (!result) return;
+      const result = await googleSignIn({
+        loginHint: userRef.current?.email || undefined,
+      });
+      if (!result) return null;
 
       if (result.isNativeRedirect || result.isWebRedirect) {
         // Redirecionado para Chrome seguro (Custom Tab); o listener appUrlOpen concluirá a autenticação
-        return;
+        return null;
       }
 
       if (result.user && result.accessToken) {
@@ -1474,14 +1608,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cloudOverwriteGuardRef.current = false;
         setUser(result.user);
         setAccessToken(result.accessToken);
+        setTokenExpiresAt(result.expiresAt || Date.now() + 3500 * 1000);
+        setWorkspaceAuthStatus('connected');
         await inspectDriveBackupAfterAuth(result.accessToken);
         try {
           const events = await listCalendarEvents(result.accessToken);
-          setCalendarEvents(events);
+          setGoogleCalendarEvents(events);
         } catch (e) {
           console.warn('Aviso ao consultar agenda pós login:', e);
         }
+        return result.accessToken;
       }
+      return null;
     } catch (err: any) {
       console.warn('Aviso de login:', err);
       const userMessage = mapGoogleAuthError(err);
@@ -1495,10 +1633,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         read: false,
       };
       setNotificationsList((prev) => [newNotif, ...prev]);
+      return null;
     } finally {
       setIsAuthenticating(false);
     }
   };
+
+  const refreshWorkspaceSession = useCallback(
+    async (options?: { interactiveIfNeeded?: boolean }): Promise<string | null> => {
+      const existing = accessToken || (await getAccessToken());
+      if (existing) return existing;
+
+      if (options?.interactiveIfNeeded) {
+        return await signInWithGoogle();
+      }
+      return null;
+    },
+    [accessToken]
+  );
 
   const signOut = async () => {
     inspectedTokensRef.current.clear();
@@ -1508,7 +1660,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await fbLogout();
     setUser(null);
     setAccessToken(null);
-    setCalendarEvents([]);
+    setTokenExpiresAt(0);
+    setWorkspaceAuthStatus('disconnected');
+    setGoogleCalendarEvents([]);
     setDriveSyncInfo((prev) => ({ ...prev, status: 'idle' }));
   };
 
@@ -1626,6 +1780,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     hapticImpactLight();
     setTransactions((prev) => [newTx, ...prev]);
+    triggerAutoSync();
+  };
+
+  const updateTransaction = (id: string, updates: Partial<Omit<Transaction, 'id'>>) => {
+    hapticImpactLight();
+    setTransactions((prev) =>
+      prev.map((tx) => (tx.id === id ? { ...tx, ...updates } : tx))
+    );
     triggerAutoSync();
   };
 
@@ -1796,6 +1958,150 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     triggerAutoSync();
   };
 
+  const toggleDraftChecklistItem = (draftId: string, itemId: string) => {
+    setDraftNotes((prev) =>
+      prev.map((d) => {
+        if (d.id !== draftId || !d.checklistItems) return d;
+        const nextItems = d.checklistItems.map((item) => {
+          if (item.id !== itemId) return item;
+          const nextDone = !item.completed;
+          if (nextDone) hapticSuccess();
+          else hapticImpactLight();
+          return { ...item, completed: nextDone };
+        });
+        return {
+          ...d,
+          checklistItems: nextItems,
+          updatedAt: new Date().toISOString(),
+        };
+      })
+    );
+    triggerAutoSync();
+  };
+
+  const addDraftChecklistItem = (draftId: string, text: string) => {
+    const cleaned = text.trim();
+    if (!cleaned) return;
+    hapticImpactLight();
+    setDraftNotes((prev) =>
+      prev.map((d) => {
+        if (d.id !== draftId) return d;
+        const nextItems = [
+          ...(d.checklistItems || []),
+          {
+            id: `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            text: cleaned,
+            completed: false,
+          },
+        ];
+        return {
+          ...d,
+          kind: d.kind || 'list',
+          checklistItems: nextItems,
+          updatedAt: new Date().toISOString(),
+        };
+      })
+    );
+    triggerAutoSync();
+  };
+
+  const convertDraftToTask = (draft: DraftNote) => {
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate()
+    ).padStart(2, '0')}`;
+    const subtasks = (draft.checklistItems || []).map((item, idx) => ({
+      id: `st-draft-${Date.now()}-${idx}`,
+      title: item.text,
+      completed: item.completed,
+    }));
+    const newTask: TaskItem = {
+      id: 'task-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      title: draft.title.trim() || draft.content.trim().slice(0, 60) || 'Tarefa do rascunho',
+      description: draft.content.trim() && draft.content.trim() !== draft.title.trim()
+        ? draft.content.trim()
+        : undefined,
+      dueDate: todayStr,
+      priority: 'medium',
+      category: 'pessoal',
+      completed: false,
+      subtasks,
+    };
+    hapticSuccess();
+    setTasks((prev) => [newTask, ...prev]);
+    triggerAutoSync();
+    showUndoToast(`"${newTask.title}" adicionada às tarefas de hoje.`, () => {
+      setTasks((prev) => prev.filter((t) => t.id !== newTask.id));
+      triggerAutoSync();
+    });
+  };
+
+  const addSpecialDate = (item: Omit<LocalSpecialDate, 'id' | 'createdAt'>) => {
+    const newItem: LocalSpecialDate = {
+      ...item,
+      id: 'special-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      createdAt: new Date().toISOString(),
+    };
+    hapticSuccess();
+    setSpecialDates((prev) => [newItem, ...prev]);
+    triggerAutoSync();
+  };
+
+  const deleteSpecialDate = (id: string) => {
+    const target = specialDates.find((s) => s.id === id);
+    if (!target) return;
+    hapticWarning();
+    setSpecialDates((prev) => prev.filter((s) => s.id !== id));
+    triggerAutoSync();
+    showUndoToast(`Data "${target.title}" removida.`, () => {
+      setSpecialDates((prev) => [target, ...prev]);
+      triggerAutoSync();
+    });
+  };
+
+  const createTaskFromCalendarEvent = (ev: GoogleCalendarEvent) => {
+    const d = new Date();
+    const fallbackToday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate()
+    ).padStart(2, '0')}`;
+    const evDate = ev.start?.date
+      ? ev.start.date.slice(0, 10)
+      : ev.start?.dateTime
+      ? ev.start.dateTime.slice(0, 10)
+      : fallbackToday;
+    const targetDate = evDate >= fallbackToday ? evDate : fallbackToday;
+    const prefix =
+      ev.eventCategory === 'birthday'
+        ? 'Preparar comemoração: '
+        : ev.eventCategory === 'holiday'
+        ? 'Planejar feriado: '
+        : '';
+    const newTask: TaskItem = {
+      id: 'task-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      title: `${prefix}${ev.summary || 'Compromisso'}`.trim(),
+      description: ev.description || (ev.location ? `Local: ${ev.location}` : undefined),
+      dueDate: targetDate,
+      dueTime: ev.start?.dateTime
+        ? new Date(ev.start.dateTime).toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          })
+        : undefined,
+      priority: ev.eventCategory === 'birthday' ? 'high' : 'medium',
+      category: 'pessoal',
+      completed: false,
+      subtasks: [],
+    };
+    hapticSuccess();
+    setTasks((prev) => [newTask, ...prev]);
+    triggerAutoSync();
+    showUndoToast(`Tarefa "${newTask.title}" criada na sua lista.`, () => {
+      setTasks((prev) => prev.filter((t) => t.id !== newTask.id));
+      triggerAutoSync();
+    });
+  };
+
   const toggleDashboardWidget = (widgetId: string) => {
     setDashboardWidgets((prev) => {
       const exists = prev.includes(widgetId);
@@ -1814,16 +2120,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     endDateTime: string;
     allDay?: boolean;
     date?: string;
+    calendarId?: string;
   }): Promise<GoogleCalendarEvent | null> => {
-    const token = accessToken || (await getAccessToken());
+    const token = accessToken || (await getAccessToken()) || (await signInWithGoogle());
     if (!token) {
-      await signInWithGoogle();
       return null;
     }
 
     try {
       const created = await createCalendarEvent(token, eventData);
-      setCalendarEvents((prev) => [created, ...prev]);
+      setGoogleCalendarEvents((prev) => [created, ...prev]);
       confetti({ particleCount: 25, spread: 60 });
       return created;
     } catch (err: any) {
@@ -1833,23 +2139,76 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const updateGoogleCalendarEvent = (
+    eventId: string,
+    eventData: {
+      summary: string;
+      description?: string;
+      location?: string;
+      startDateTime: string;
+      endDateTime: string;
+      allDay?: boolean;
+      date?: string;
+      calendarId?: string;
+    }
+  ) => {
+    confirmDestructiveAction({
+      title: 'Atualizar Evento na Google Agenda?',
+      message: `Confirmar alterações em "${eventData.summary}" no seu Google Calendar?`,
+      details: [eventData.allDay && eventData.date ? `Data: ${eventData.date}` : `Horário atualizado`],
+      confirmText: 'Salvar Alterações',
+      isDestructive: false,
+      onConfirm: async () => {
+        const token = accessToken || (await getAccessToken()) || (await signInWithGoogle());
+        if (!token) return;
+        try {
+          const updated = await apiUpdateCalendarEvent(token, eventId, eventData);
+          setGoogleCalendarEvents((prev) =>
+            prev.map((ev) => (ev.id === eventId ? { ...ev, ...updated } : ev))
+          );
+          hapticSuccess();
+        } catch (err) {
+          handleWorkspaceAuthError(err);
+          throw err;
+        }
+      },
+    });
+  };
+
   const removeGoogleCalendarEvent = async (eventId: string) => {
-    const token = accessToken || (await getAccessToken());
+    const event = calendarEvents.find((e) => e.id === eventId);
+    if (event?.source === 'local_special' && event.specialDateId) {
+      const specialId = event.specialDateId;
+      confirmDestructiveAction({
+        title: 'Excluir Data Especial?',
+        message: `Deseja remover "${event.summary}" das suas datas e aniversários salvos?`,
+        confirmText: 'Excluir Data',
+        isDestructive: true,
+        onConfirm: () => {
+          deleteSpecialDate(specialId);
+        },
+      });
+      return;
+    }
+
+    if (event?.editable === false) return;
+
+    const token = accessToken || (await getAccessToken()) || (await signInWithGoogle());
     if (!token) return;
 
-    const event = calendarEvents.find((e) => e.id === eventId);
     const summary = event ? event.summary : 'Evento da Google Agenda';
+    const targetCalendarId = event?.calendarId || 'primary';
 
     confirmDestructiveAction({
       title: 'Excluir da Google Agenda?',
       message: `Tem certeza de que deseja remover "${summary}" da sua Google Agenda? Esta ação não pode ser desfeita.`,
-      details: [`ID do evento: ${eventId}`],
+      details: [`Calendário: ${event?.calendarSummary || 'Google Agenda'}`],
       confirmText: 'Excluir Evento',
       isDestructive: true,
       onConfirm: async () => {
         try {
-          await apiDeleteCalendarEvent(token, eventId);
-          setCalendarEvents((prev) => prev.filter((e) => e.id !== eventId));
+          await apiDeleteCalendarEvent(token, eventId, targetCalendarId);
+          setGoogleCalendarEvents((prev) => prev.filter((e) => e.id !== eventId));
         } catch (err) {
           handleWorkspaceAuthError(err);
           throw err;
@@ -1859,9 +2218,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const scheduleTaskInCalendar = async (task: TaskItem, startHour = '10:00'): Promise<boolean> => {
-    const token = accessToken || (await getAccessToken());
+    const token = accessToken || (await getAccessToken()) || (await signInWithGoogle());
     if (!token) {
-      await signInWithGoogle();
       return false;
     }
 
@@ -1871,8 +2229,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
 
       const created = await addEventToGoogleCalendar({
-        summary: `[VidaOrganizada] ${task.title}`,
-        description: task.description || 'Tarefa agendada via VidaOrganizada',
+        summary: `[Lifeedy] ${task.title}`,
+        description: task.description || 'Tarefa agendada via Lifeedy',
         startDateTime: startDate.toISOString(),
         endDateTime: endDate.toISOString(),
       });
@@ -1900,6 +2258,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       financialGoals,
       budgetLimits,
       draftNotes,
+      specialDates,
       dashboardWidgets,
       pendingBankNotifications,
     };
@@ -1907,7 +2266,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `VidaOrganizada_Backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `Lifeedy_Backup_${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1922,6 +2281,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (sanitized.financialGoals) setFinancialGoals(sanitized.financialGoals);
       if (sanitized.budgetLimits) setBudgetLimits(sanitized.budgetLimits);
       if (sanitized.draftNotes) setDraftNotes(sanitized.draftNotes);
+      if (sanitized.specialDates) setSpecialDates(sanitized.specialDates);
       if (sanitized.dashboardWidgets) setDashboardWidgets(sanitized.dashboardWidgets);
       if (sanitized.pendingBankNotifications) {
         setPendingBankNotifications(sanitized.pendingBankNotifications);
@@ -1979,14 +2339,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         completeOnboarding,
         user,
         accessToken,
+        workspaceAuthStatus,
         isAuthenticating,
         signInWithGoogle,
+        refreshWorkspaceSession,
         signOut,
         tasks,
         transactions,
         financialGoals,
         budgetLimits,
         draftNotes,
+        specialDates,
         dashboardWidgets,
         calendarEvents,
         isLoadingCalendar,
@@ -1997,6 +2360,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteTask,
         toggleSubtask,
         addTransaction,
+        updateTransaction,
         deleteTransaction,
         addGoal,
         updateGoal,
@@ -2021,6 +2385,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateDraftNote,
         deleteDraftNote,
         togglePinDraft,
+        toggleDraftChecklistItem,
+        addDraftChecklistItem,
+        convertDraftToTask,
         toggleDashboardWidget,
         notificationPermission,
         notificationsList,
@@ -2029,7 +2396,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dismissNotification,
         clearAllNotifications,
         refreshCalendar,
+        addSpecialDate,
+        deleteSpecialDate,
+        createTaskFromCalendarEvent,
         addEventToGoogleCalendar,
+        updateGoogleCalendarEvent,
         removeGoogleCalendarEvent,
         scheduleTaskInCalendar,
         driveSyncInfo,

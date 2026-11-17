@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   checkForGitHubUpdates,
   compareVersions,
+  DEFAULT_GITHUB_REPO,
   normalizeGitHubRepo,
   parseSemVer,
 } from '../githubUpdateService';
@@ -16,9 +17,13 @@ function mockJsonResponse(status: number, body: any): Response {
 }
 
 describe('githubUpdateService helpers', () => {
+  it('usa leancelot/lifeedy como repositório padrão', () => {
+    expect(DEFAULT_GITHUB_REPO).toBe('leancelot/lifeedy');
+  });
+
   it('normaliza URLs e caminhos de repositório do GitHub', () => {
-    expect(normalizeGitHubRepo('https://github.com/souoleandro/meu-vida-organizada/')).toBe(
-      'souoleandro/meu-vida-organizada'
+    expect(normalizeGitHubRepo('https://github.com/leancelot/lifeedy/')).toBe(
+      'leancelot/lifeedy'
     );
     expect(normalizeGitHubRepo('souoleandro/meu-vida-organizada.git')).toBe(
       'souoleandro/meu-vida-organizada'
@@ -44,7 +49,7 @@ describe('checkForGitHubUpdates', () => {
     vi.restoreAllMocks();
   });
 
-  it('detecta APK em pre-release ou release com tag -build.N', async () => {
+  it('detecta APK Lifeedy em pre-release ou release com tag -build.N', async () => {
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes('/releases')) {
@@ -52,21 +57,21 @@ describe('checkForGitHubUpdates', () => {
           {
             id: 1,
             tag_name: 'v1.1.0-build.18',
-            name: 'Build #18',
+            name: 'Lifeedy Build #18',
             body: 'APK gerado no Actions',
             published_at: '2026-11-15T10:00:00Z',
-            html_url: 'https://github.com/user/repo/releases/tag/v1.1.0-build.18',
+            html_url: 'https://github.com/leancelot/lifeedy/releases/tag/v1.1.0-build.18',
             prerelease: true,
             draft: false,
             assets: [
               {
                 id: 99,
-                name: 'VidaOrganizada-v1.1.0-build.18.apk',
+                name: 'Lifeedy-v1.1.0-build.18.apk',
                 size: 12_500_000,
                 download_count: 1,
                 browser_download_url:
-                  'https://github.com/user/repo/releases/download/v1.1.0-build.18/app.apk',
-                url: 'https://api.github.com/repos/user/repo/releases/assets/99',
+                  'https://github.com/leancelot/lifeedy/releases/download/v1.1.0-build.18/app.apk',
+                url: 'https://api.github.com/repos/leancelot/lifeedy/releases/assets/99',
                 content_type: 'application/vnd.android.package-archive',
               },
             ],
@@ -79,7 +84,7 @@ describe('checkForGitHubUpdates', () => {
       return mockJsonResponse(200, []);
     }) as typeof fetch;
 
-    const result = await checkForGitHubUpdates('user/repo', undefined, 'v1.1.0', {
+    const result = await checkForGitHubUpdates('leancelot/lifeedy', undefined, 'v1.1.0', {
       currentBuildNumber: 12,
       currentCommitSha: 'abc1234',
       currentBuiltAt: '2026-11-14T10:00:00Z',
@@ -89,10 +94,10 @@ describe('checkForGitHubUpdates', () => {
     expect(result.hasUpdate).toBe(true);
     expect(result.updateSource).toBe('release');
     expect(result.latestVersion).toBe('v1.1.0-build.18');
-    expect(result.apkAsset?.name).toBe('VidaOrganizada-v1.1.0-build.18.apk');
+    expect(result.apkAsset?.name).toBe('Lifeedy-v1.1.0-build.18.apk');
   });
 
-  it('detecta APK compilado no GitHub Actions quando não existe Release publicada', async () => {
+  it('detecta artefato Lifeedy-APK no GitHub Actions quando não existe Release publicada', async () => {
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes('/releases')) {
@@ -103,11 +108,11 @@ describe('checkForGitHubUpdates', () => {
           artifacts: [
             {
               id: 501,
-              name: 'VidaOrganizada-APK',
+              name: 'Lifeedy-APK',
               size_in_bytes: 14_000_000,
               expired: false,
               archive_download_url:
-                'https://api.github.com/repos/user/repo/actions/artifacts/501/zip',
+                'https://api.github.com/repos/leancelot/lifeedy/actions/artifacts/501/zip',
             },
           ],
         });
@@ -122,7 +127,7 @@ describe('checkForGitHubUpdates', () => {
               conclusion: 'success',
               head_branch: 'main',
               head_sha: 'def5678901234',
-              html_url: 'https://github.com/user/repo/actions/runs/777',
+              html_url: 'https://github.com/leancelot/lifeedy/actions/runs/777',
               created_at: '2026-11-15T11:00:00Z',
               updated_at: '2026-11-15T11:05:00Z',
             },
@@ -132,7 +137,7 @@ describe('checkForGitHubUpdates', () => {
       return mockJsonResponse(200, []);
     }) as typeof fetch;
 
-    const result = await checkForGitHubUpdates('user/repo', undefined, 'v1.1.0', {
+    const result = await checkForGitHubUpdates('leancelot/lifeedy', undefined, 'v1.1.0', {
       currentBuildNumber: 19,
       currentCommitSha: 'oldsha111',
       currentBuiltAt: '2026-11-14T10:00:00Z',
@@ -142,7 +147,7 @@ describe('checkForGitHubUpdates', () => {
     expect(result.hasUpdate).toBe(true);
     expect(result.updateSource).toBe('actions_artifact');
     expect(result.latestVersion).toBe('Build #21');
-    expect(result.latestBuild?.artifactName).toBe('VidaOrganizada-APK');
+    expect(result.latestBuild?.artifactName).toBe('Lifeedy-APK');
   });
 
   it('informa erro claro quando o repositório não existe ou está vazio em vez de dizer atualizado', async () => {

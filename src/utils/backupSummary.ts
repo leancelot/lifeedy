@@ -2,6 +2,7 @@ import {
   AppDataPayload,
   DraftNote,
   FinancialGoal,
+  LocalSpecialDate,
   PendingBankNotification,
   TaskItem,
   Transaction,
@@ -13,6 +14,7 @@ export interface BackupCountsSummary {
   goalsCount: number;
   notesCount: number;
   pendingBankCount: number;
+  specialDatesCount: number;
   totalItems: number;
   lastUpdated: string | null;
   userName: string;
@@ -26,6 +28,7 @@ export function summarizePayloadCounts(payload: Partial<AppDataPayload>): Backup
   const pendingBankCount = Array.isArray(payload.pendingBankNotifications)
     ? payload.pendingBankNotifications.length
     : 0;
+  const specialDatesCount = Array.isArray(payload.specialDates) ? payload.specialDates.length : 0;
 
   return {
     tasksCount,
@@ -33,7 +36,14 @@ export function summarizePayloadCounts(payload: Partial<AppDataPayload>): Backup
     goalsCount,
     notesCount,
     pendingBankCount,
-    totalItems: tasksCount + transactionsCount + goalsCount + notesCount + pendingBankCount,
+    specialDatesCount,
+    totalItems:
+      tasksCount +
+      transactionsCount +
+      goalsCount +
+      notesCount +
+      pendingBankCount +
+      specialDatesCount,
     lastUpdated: typeof payload.lastUpdated === 'string' ? payload.lastUpdated : null,
     userName: typeof payload.userName === 'string' ? payload.userName.trim() : '',
   };
@@ -45,12 +55,14 @@ export function hasMeaningfulLocalData(state: {
   financialGoals: FinancialGoal[];
   draftNotes: DraftNote[];
   pendingBankNotifications?: PendingBankNotification[];
+  specialDates?: LocalSpecialDate[];
 }): boolean {
   return (
     state.tasks.length > 0 ||
     state.transactions.length > 0 ||
     state.financialGoals.length > 0 ||
     state.draftNotes.length > 0 ||
-    (state.pendingBankNotifications?.length ?? 0) > 0
+    (state.pendingBankNotifications?.length ?? 0) > 0 ||
+    (state.specialDates?.length ?? 0) > 0
   );
 }

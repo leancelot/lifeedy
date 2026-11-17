@@ -1,16 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Bell,
+  Cake,
   Calendar,
   CalendarClock,
   CalendarPlus,
   Check,
   CheckCircle2,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
   Clock,
   Edit3,
   ExternalLink,
+  Gift,
   MapPin,
   Pause,
   Play,
@@ -18,13 +20,14 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
-import { GoogleCalendarEvent, TaskItem } from '../../types';
-import { hapticImpactLight, hapticSelection } from '../../services/hapticsService';
+import { CalendarEventCategory, GoogleCalendarEvent, TaskItem } from '../../types';
+import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
 
 interface AgendaTasksViewProps {
   quickOpenModal?: 'task' | 'event' | null;
@@ -107,8 +110,11 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
     calendarEvents,
     isLoadingCalendar,
     refreshCalendar,
+    createTaskFromCalendarEvent,
     addEventToGoogleCalendar,
+    updateGoogleCalendarEvent,
     removeGoogleCalendarEvent,
+    addSpecialDate,
     tasks,
     addTask,
     updateTask,
@@ -117,14 +123,12 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
     deleteTask,
     toggleSubtask,
     scheduleTaskInCalendar,
-    notificationPermission,
-    enableNotifications,
   } = useApp();
 
   const todayStr = toLocalDateStr(new Date());
   const [selectedDateStr, setSelectedDateStr] = useState<string>(todayStr);
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'events' | 'tasks'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'events' | 'specials' | 'tasks'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showCompleted, setShowCompleted] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -133,7 +137,27 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
   // Modals
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [isSpecialModalOpen, setIsSpecialModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<TaskItem | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<GoogleCalendarEvent | null>(null);
+  const [isEditingEvent, setIsEditingEvent] = useState(false);
+
+  // Special date / Birthday form
+  const [specialTitle, setSpecialTitle] = useState('');
+  const [specialDate, setSpecialDate] = useState(todayStr);
+  const [specialCategory, setSpecialCategory] = useState<'birthday' | 'commemorative' | 'holiday'>(
+    'birthday'
+  );
+  const [specialRecurring, setSpecialRecurring] = useState(true);
+  const [specialNotes, setSpecialNotes] = useState('');
+
+  // Edit Google event form
+  const [editEventSummary, setEditEventSummary] = useState('');
+  const [editEventDate, setEditEventDate] = useState('');
+  const [editEventStartTime, setEditEventStartTime] = useState('09:00');
+  const [editEventEndTime, setEditEventEndTime] = useState('10:00');
+  const [editEventAllDay, setEditEventAllDay] = useState(false);
+  const [editEventLocation, setEditEventLocation] = useState('');
 
   useBackHandler(isTaskModalOpen, () => {
     setIsTaskModalOpen(false);
@@ -147,6 +171,17 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
 
   useBackHandler(isEventModalOpen, () => {
     setIsEventModalOpen(false);
+    return true;
+  });
+
+  useBackHandler(isSpecialModalOpen, () => {
+    setIsSpecialModalOpen(false);
+    return true;
+  });
+
+  useBackHandler(Boolean(selectedEvent), () => {
+    setSelectedEvent(null);
+    setIsEditingEvent(false);
     return true;
   });
 
@@ -228,6 +263,14 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
     if (typeFilter !== 'tasks') {
       calendarEvents.forEach((ev) => {
         if (getEventDateStr(ev) !== dateStr) return;
+        if (
+          typeFilter === 'specials' &&
+          ev.eventCategory !== 'birthday' &&
+          ev.eventCategory !== 'holiday' &&
+          ev.eventCategory !== 'commemorative'
+        ) {
+          return;
+        }
         if (q) {
           const match =
             (ev.summary || '').toLowerCase().includes(q) ||
@@ -244,7 +287,7 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
       });
     }
 
-    if (typeFilter !== 'events') {
+    if (typeFilter !== 'events' && typeFilter !== 'specials') {
       tasks.forEach((task) => {
         if (task.dueDate !== dateStr) return;
         if (!showCompleted && task.completed) return;
@@ -285,7 +328,14 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
 
   // Tarefas pendentes de datas anteriores ao dia de hoje (para não perder metas/prazos)
   const overdueTasks = useMemo(() => {
-    if (viewMode !== 'day' || selectedDateStr !== todayStr || typeFilter === 'events') return [];
+    if (
+      viewMode !== 'day' ||
+      selectedDateStr !== todayStr ||
+      typeFilter === 'events' ||
+      typeFilter === 'specials'
+    ) {
+      return [];
+    }
     const q = searchQuery.trim().toLowerCase();
     return tasks
       .filter((t) => {
@@ -459,6 +509,120 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
     }
   };
 
+  const upcomingSpecialDates = useMemo(() => {
+    const limitDate = addDays(todayStr, 120);
+    const q = searchQuery.trim().toLowerCase();
+    return calendarEvents
+      .filter((ev) => {
+        const isSpecial =
+          ev.eventCategory === 'birthday' ||
+          ev.eventCategory === 'holiday' ||
+          ev.eventCategory === 'commemorative';
+        if (!isSpecial) return false;
+        const d = getEventDateStr(ev);
+        if (!d || d < todayStr || d > limitDate) return false;
+        if (q) {
+          return (
+            (ev.summary || '').toLowerCase().includes(q) ||
+            (ev.description || '').toLowerCase().includes(q)
+          );
+        }
+        return true;
+      })
+      .sort((a, b) => getEventDateStr(a).localeCompare(getEventDateStr(b)));
+  }, [calendarEvents, todayStr, searchQuery]);
+
+  const openEventDetails = (ev: GoogleCalendarEvent) => {
+    hapticSelection();
+    setSelectedEvent(ev);
+    setIsEditingEvent(false);
+    const d = getEventDateStr(ev) || todayStr;
+    setEditEventSummary(ev.summary || '');
+    setEditEventDate(d);
+    setEditEventLocation(ev.location || '');
+    if (ev.start?.dateTime) {
+      setEditEventAllDay(false);
+      const startObj = new Date(ev.start.dateTime);
+      const endObj = ev.end?.dateTime
+        ? new Date(ev.end.dateTime)
+        : new Date(startObj.getTime() + 60 * 60 * 1000);
+      setEditEventStartTime(
+        `${String(startObj.getHours()).padStart(2, '0')}:${String(startObj.getMinutes()).padStart(
+          2,
+          '0'
+        )}`
+      );
+      setEditEventEndTime(
+        `${String(endObj.getHours()).padStart(2, '0')}:${String(endObj.getMinutes()).padStart(
+          2,
+          '0'
+        )}`
+      );
+    } else {
+      setEditEventAllDay(true);
+      setEditEventStartTime('09:00');
+      setEditEventEndTime('10:00');
+    }
+  };
+
+  const handleSaveSpecialDate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!specialTitle.trim() || !specialDate) return;
+    const monthDay = specialRecurring ? specialDate.slice(5, 10) : specialDate;
+    addSpecialDate({
+      title: specialTitle.trim(),
+      monthDay,
+      category: specialCategory,
+      notes: specialNotes.trim() || undefined,
+      recurringYearly: specialRecurring,
+    });
+    hapticSuccess();
+    setSpecialTitle('');
+    setSpecialNotes('');
+    setIsSpecialModalOpen(false);
+  };
+
+  const handleSaveEventEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEvent || !editEventSummary.trim()) return;
+    if (editEventAllDay) {
+      updateGoogleCalendarEvent(selectedEvent.id, {
+        summary: editEventSummary.trim(),
+        location: editEventLocation.trim() || undefined,
+        description: selectedEvent.description,
+        allDay: true,
+        date: editEventDate,
+        startDateTime: `${editEventDate}T00:00:00Z`,
+        endDateTime: `${editEventDate}T23:59:59Z`,
+        calendarId: selectedEvent.calendarId,
+      });
+    } else {
+      const startIso = new Date(`${editEventDate}T${editEventStartTime}:00`).toISOString();
+      const endIso = new Date(`${editEventDate}T${editEventEndTime}:00`).toISOString();
+      updateGoogleCalendarEvent(selectedEvent.id, {
+        summary: editEventSummary.trim(),
+        location: editEventLocation.trim() || undefined,
+        description: selectedEvent.description,
+        startDateTime: startIso,
+        endDateTime: endIso,
+        calendarId: selectedEvent.calendarId,
+      });
+    }
+    hapticSuccess();
+    setSelectedEvent(null);
+    setIsEditingEvent(false);
+  };
+
+  const renderCategoryIcon = (category?: CalendarEventCategory) => {
+    if (category === 'birthday') {
+      return <Cake className="w-4 h-4 text-violet-600 dark:text-violet-400" />;
+    }
+    if (category === 'holiday' || category === 'commemorative') {
+      return <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400" />;
+    }
+    return <Calendar className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />;
+  };
+
   const renderTaskRow = (task: TaskItem, compact = false) => {
     const completedSubtasks = task.subtasks.filter((st) => st.completed).length;
 
@@ -623,34 +787,59 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
     );
   };
 
-  const renderEventRow = (ev: GoogleCalendarEvent, compact = false) => {
+  const renderEventRow = (ev: GoogleCalendarEvent, compact = false, showDateBadge = false) => {
     const timeStr = getEventTimeStr(ev);
+    const evDate = getEventDateStr(ev);
+    const dateBadge =
+      showDateBadge && evDate
+        ? evDate === todayStr
+          ? 'Hoje'
+          : new Date(`${evDate}T12:00:00`).toLocaleDateString('pt-BR', {
+              day: '2-digit',
+              month: 'short',
+            })
+        : '';
+    const categoryLabel =
+      ev.eventCategory === 'birthday'
+        ? 'Aniversário'
+        : ev.eventCategory === 'holiday'
+        ? 'Feriado'
+        : ev.eventCategory === 'commemorative'
+        ? 'Data comemorativa'
+        : ev.calendarSummary || 'Google Agenda';
 
     return (
       <div
-        key={`event-${ev.id}`}
-        className={`bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200/70 dark:border-indigo-900/50 rounded-2xl ${
+        key={`event-${ev.calendarId || ev.source || 'ev'}-${ev.id}-${evDate}`}
+        onClick={() => openEventDetails(ev)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openEventDetails(ev);
+          }
+        }}
+        className={`bg-indigo-50/50 dark:bg-indigo-950/20 hover:bg-indigo-50 dark:hover:bg-indigo-950/35 border border-indigo-200/70 dark:border-indigo-900/50 rounded-2xl ${
           compact ? 'p-3' : 'p-4'
-        } flex items-start justify-between gap-3`}
+        } flex items-start justify-between gap-3 cursor-pointer transition-colors`}
       >
         <div className="flex items-start gap-3 min-w-0">
-          <div className="mt-0.5 w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
-            <Calendar className="w-3.5 h-3.5" />
+          <div className="mt-0.5 w-8 h-8 rounded-xl bg-white dark:bg-zinc-800 border border-indigo-100 dark:border-zinc-700 flex items-center justify-center shrink-0">
+            {renderCategoryIcon(ev.eventCategory)}
           </div>
 
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-snug">
-                {ev.summary || 'Compromisso'}
-              </p>
-            </div>
+            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-snug">
+              {ev.summary || 'Compromisso'}
+            </p>
 
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400 mt-1">
               <span className="font-mono tabular-nums text-indigo-700 dark:text-indigo-300 font-medium">
-                {timeStr}
+                {dateBadge ? `${dateBadge} · ${timeStr}` : timeStr}
               </span>
               <span aria-hidden="true">·</span>
-              <span>Google Agenda</span>
+              <span>{categoryLabel}</span>
               {ev.location && (
                 <>
                   <span aria-hidden="true">·</span>
@@ -671,25 +860,30 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          {ev.htmlLink && (
-            <a
-              href={ev.htmlLink}
-              target="_blank"
-              rel="noreferrer"
-              title="Abrir no Google Calendar"
-              className="p-2 rounded-lg text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-            >
-              <ExternalLink className="w-4 h-4" />
-            </a>
-          )}
           <button
             type="button"
-            onClick={() => removeGoogleCalendarEvent(ev.id)}
-            title="Excluir evento"
-            className="p-2 rounded-lg text-zinc-400 hover:text-rose-500 transition-colors cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              createTaskFromCalendarEvent(ev);
+            }}
+            title="Criar tarefa para este evento"
+            className="pressable h-8 px-2.5 rounded-lg bg-white/80 dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-950/60 text-xs font-semibold cursor-pointer whitespace-nowrap"
           >
-            <Trash2 className="w-4 h-4" />
+            + Tarefa
           </button>
+          {ev.editable !== false && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void removeGoogleCalendarEvent(ev.id);
+              }}
+              title="Excluir"
+              className="p-2 rounded-lg text-zinc-400 hover:text-rose-500 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
     );
@@ -777,17 +971,17 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
               )}
             </div>
 
-            <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
+            <div className="grid grid-cols-3 sm:flex items-center gap-2 w-full sm:w-auto">
               <button
                 type="button"
                 onClick={() => {
                   setNewDueDate(selectedDateStr);
                   setIsTaskModalOpen(true);
                 }}
-                className="h-10 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                className="h-10 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
               >
                 <Plus className="w-4 h-4 shrink-0" />
-                <span>Nova Tarefa</span>
+                <span>Tarefa</span>
               </button>
 
               <button
@@ -796,10 +990,24 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
                   setEventDate(selectedDateStr);
                   setIsEventModalOpen(true);
                 }}
-                className="h-10 px-3.5 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                className="h-10 px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
               >
                 <CalendarPlus className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                <span>Novo Evento</span>
+                <span>Evento</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  hapticSelection();
+                  setSpecialDate(selectedDateStr);
+                  setIsSpecialModalOpen(true);
+                }}
+                title="Adicionar aniversário ou data comemorativa"
+                className="h-10 px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Gift className="w-4 h-4 text-violet-500 shrink-0" />
+                <span>Aniv.</span>
               </button>
             </div>
           </div>
@@ -895,23 +1103,6 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
         </div>
       </section>
 
-      {/* Banner discreto para ativar notificações caso desativadas */}
-      {notificationPermission !== 'granted' && (
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
-            <Bell className="w-4 h-4 text-amber-500 shrink-0" />
-            <span>Ative os alertas visuais silenciosos para horários de tarefas e eventos.</span>
-          </div>
-          <button
-            type="button"
-            onClick={enableNotifications}
-            className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-semibold cursor-pointer shrink-0"
-          >
-            Ativar Alertas
-          </button>
-        </div>
-      )}
-
       {/* Barra de Modo Foco (Pomodoro) */}
       {focusTask && (
         <div className="bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -964,22 +1155,29 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
       {/* Filtros & Busca */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/80 p-1 rounded-xl text-xs font-medium">
-            {(['all', 'events', 'tasks'] as const).map((t) => (
+          <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/80 p-1 rounded-xl text-xs font-medium overflow-x-auto">
+            {(
+              [
+                { id: 'all', label: 'Tudo' },
+                { id: 'events', label: 'Compromissos' },
+                { id: 'specials', label: 'Aniv. & Feriados' },
+                { id: 'tasks', label: 'Tarefas' },
+              ] as const
+            ).map((t) => (
               <button
-                key={t}
+                key={t.id}
                 type="button"
                 onClick={() => {
                   hapticSelection();
-                  setTypeFilter(t);
+                  setTypeFilter(t.id);
                 }}
                 className={`min-h-[34px] px-3 py-1 rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                  typeFilter === t
+                  typeFilter === t.id
                     ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 font-semibold shadow-2xs'
                     : 'text-zinc-500 dark:text-zinc-400'
                 }`}
               >
-                {t === 'all' ? 'Tudo' : t === 'events' ? 'Compromissos' : 'Tarefas'}
+                {t.label}
               </button>
             ))}
           </div>
@@ -1066,16 +1264,16 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
           )}
 
           {/* Linha do tempo unificada do dia selecionado */}
-          {dayTimeline.length === 0 ? (
+          {dayTimeline.length === 0 && typeFilter !== 'specials' ? (
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-10 text-center space-y-3">
               <CheckCircle2 className="w-9 h-9 mx-auto text-zinc-300 dark:text-zinc-700" />
               <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
                 Nada agendado para este dia
               </h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto">
-                Adicione uma tarefa acima ou registre um evento para organizar seus horários.
+                Adicione uma tarefa acima, registre um evento ou salve um aniversário.
               </p>
-              <div className="flex items-center justify-center gap-2 pt-1">
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -1096,14 +1294,57 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
                 >
                   Novo Evento
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSpecialDate(selectedDateStr);
+                    setIsSpecialModalOpen(true);
+                  }}
+                  className="min-h-[40px] px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-semibold cursor-pointer"
+                >
+                  Novo Aniversário
+                </button>
               </div>
             </div>
           ) : (
-            <div className="space-y-2.5">
-              {dayTimeline.map((entry) =>
-                entry.kind === 'event'
-                  ? renderEventRow(entry.event)
-                  : renderTaskRow(entry.task)
+            <div className="space-y-4">
+              {dayTimeline.length > 0 && (
+                <div className="space-y-2.5">
+                  {dayTimeline.map((entry) =>
+                    entry.kind === 'event'
+                      ? renderEventRow(entry.event)
+                      : renderTaskRow(entry.task)
+                  )}
+                </div>
+              )}
+
+              {typeFilter === 'specials' && (
+                <section className="space-y-2.5">
+                  <div className="flex items-center justify-between px-1">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                      Próximos Aniversários, Feriados & Datas (120 dias)
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSpecialDate(selectedDateStr);
+                        setIsSpecialModalOpen(true);
+                      }}
+                      className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline cursor-pointer"
+                    >
+                      + Adicionar data
+                    </button>
+                  </div>
+                  {upcomingSpecialDates.length === 0 ? (
+                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 text-center text-xs text-zinc-500">
+                      Nenhuma data especial encontrada neste filtro.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {upcomingSpecialDates.map((ev) => renderEventRow(ev, true, true))}
+                    </div>
+                  )}
+                </section>
               )}
             </div>
           )}
@@ -1732,6 +1973,319 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Folha de Ações / Edição de Evento */}
+      {selectedEvent && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setSelectedEvent(null);
+              setIsEditingEvent(false);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-backdrop-in keyboard-modal-backdrop"
+        >
+          <div className="w-full sm:max-w-md bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:pb-6 keyboard-modal-sheet overflow-y-auto animate-bottom-sheet">
+            <div className="sm:hidden w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700 mx-auto mb-3 shrink-0" />
+
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                  {renderCategoryIcon(selectedEvent.eventCategory)}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                    {selectedEvent.summary || 'Compromisso'}
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {selectedEvent.eventCategory === 'birthday'
+                      ? 'Aniversário'
+                      : selectedEvent.eventCategory === 'holiday'
+                      ? 'Feriado'
+                      : selectedEvent.eventCategory === 'commemorative'
+                      ? 'Data comemorativa'
+                      : selectedEvent.calendarSummary || 'Agenda'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedEvent(null);
+                  setIsEditingEvent(false);
+                }}
+                aria-label="Fechar"
+                className="pressable w-9 h-9 rounded-full text-zinc-400 hover:text-zinc-600 flex items-center justify-center cursor-pointer shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {isEditingEvent ? (
+              <form onSubmit={handleSaveEventEdit} className="mt-4 space-y-3">
+                <input
+                  type="text"
+                  required
+                  value={editEventSummary}
+                  onChange={(e) => setEditEventSummary(e.target.value)}
+                  placeholder="Título do evento"
+                  className="w-full h-11 px-3.5 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                />
+                <input
+                  type="date"
+                  required
+                  value={editEventDate}
+                  onChange={(e) => setEditEventDate(e.target.value)}
+                  className="w-full h-11 px-3.5 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                />
+                <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editEventAllDay}
+                    onChange={(e) => setEditEventAllDay(e.target.checked)}
+                    className="w-4 h-4 rounded"
+                  />
+                  <span>Dia todo</span>
+                </label>
+                {!editEventAllDay && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="time"
+                      value={editEventStartTime}
+                      onChange={(e) => setEditEventStartTime(e.target.value)}
+                      className="h-10 px-3 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100"
+                    />
+                    <input
+                      type="time"
+                      value={editEventEndTime}
+                      onChange={(e) => setEditEventEndTime(e.target.value)}
+                      className="h-10 px-3 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100"
+                    />
+                  </div>
+                )}
+                <input
+                  type="text"
+                  value={editEventLocation}
+                  onChange={(e) => setEditEventLocation(e.target.value)}
+                  placeholder="Local (opcional)"
+                  className="w-full h-10 px-3.5 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                />
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingEvent(false)}
+                    className="min-h-[40px] px-4 rounded-xl text-xs font-medium text-zinc-600 dark:text-zinc-300 cursor-pointer"
+                  >
+                    Voltar
+                  </button>
+                  <button
+                    type="submit"
+                    className="pressable min-h-[40px] px-4 rounded-xl bg-indigo-600 text-white text-xs font-semibold cursor-pointer"
+                  >
+                    Salvar
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="mt-4 space-y-4">
+                <div className="space-y-2 text-xs sm:text-sm text-zinc-600 dark:text-zinc-300">
+                  <p className="font-mono tabular-nums text-zinc-800 dark:text-zinc-200">
+                    Data: {getEventDateStr(selectedEvent)} · {getEventTimeStr(selectedEvent)}
+                  </p>
+                  {selectedEvent.location && (
+                    <p className="flex items-center gap-1.5">
+                      <MapPin className="w-4 h-4 text-zinc-400 shrink-0" />
+                      <span>{selectedEvent.location}</span>
+                    </p>
+                  )}
+                  {selectedEvent.description && (
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed whitespace-pre-wrap">
+                      {selectedEvent.description}
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      createTaskFromCalendarEvent(selectedEvent);
+                      setSelectedEvent(null);
+                    }}
+                    className="pressable min-h-[44px] w-full px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <CheckSquare className="w-4 h-4" />
+                    <span>Criar tarefa para esta data</span>
+                  </button>
+
+                  {selectedEvent.htmlLink && (
+                    <a
+                      href={selectedEvent.htmlLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="pressable min-h-[44px] w-full px-4 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold flex items-center justify-center gap-2"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Abrir no Google Agenda</span>
+                    </a>
+                  )}
+
+                  {selectedEvent.source === 'google' && selectedEvent.editable !== false && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingEvent(true)}
+                        className="pressable min-h-[42px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Editar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const id = selectedEvent.id;
+                          setSelectedEvent(null);
+                          void removeGoogleCalendarEvent(id);
+                        }}
+                        className="pressable min-h-[42px] px-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Excluir</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {selectedEvent.source === 'local_special' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const id = selectedEvent.id;
+                        setSelectedEvent(null);
+                        void removeGoogleCalendarEvent(id);
+                      }}
+                      className="pressable min-h-[42px] w-full px-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Remover data salva</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Adicionar Aniversário ou Data Especial */}
+      {isSpecialModalOpen && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsSpecialModalOpen(false);
+          }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-backdrop-in keyboard-modal-backdrop"
+        >
+          <div className="w-full sm:max-w-md bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:pb-6 keyboard-modal-sheet overflow-y-auto animate-bottom-sheet">
+            <div className="sm:hidden w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700 mx-auto mb-3 shrink-0" />
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2">
+                <Cake className="w-5 h-5 text-violet-500" />
+                <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                  Novo Aniversário ou Data
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSpecialModalOpen(false)}
+                aria-label="Fechar"
+                className="pressable w-9 h-9 rounded-full text-zinc-400 hover:text-zinc-600 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSpecialDate} className="mt-4 space-y-3">
+              <input
+                type="text"
+                required
+                autoFocus
+                value={specialTitle}
+                onChange={(e) => setSpecialTitle(e.target.value)}
+                placeholder="Nome (ex: Aniversário da Maria)"
+                className="w-full h-11 px-3.5 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
+              />
+
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    { id: 'birthday', label: 'Aniversário' },
+                    { id: 'commemorative', label: 'Comemorativa' },
+                    { id: 'holiday', label: 'Feriado local' },
+                  ] as const
+                ).map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      hapticSelection();
+                      setSpecialCategory(cat.id);
+                    }}
+                    className={`min-h-[40px] px-2 rounded-xl text-xs font-semibold border cursor-pointer ${
+                      specialCategory === cat.id
+                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                        : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              <input
+                type="date"
+                required
+                value={specialDate}
+                onChange={(e) => setSpecialDate(e.target.value)}
+                className="w-full h-11 px-3.5 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
+              />
+
+              <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={specialRecurring}
+                  onChange={(e) => setSpecialRecurring(e.target.checked)}
+                  className="w-4 h-4 rounded"
+                />
+                <span>Repetir todos os anos</span>
+              </label>
+
+              <input
+                type="text"
+                value={specialNotes}
+                onChange={(e) => setSpecialNotes(e.target.value)}
+                placeholder="Observação ou ideia de presente (opcional)"
+                className="w-full h-10 px-3.5 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
+              />
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-zinc-100 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setIsSpecialModalOpen(false)}
+                  className="min-h-[44px] px-4 rounded-xl text-xs font-medium text-zinc-600 dark:text-zinc-300 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={!specialTitle.trim()}
+                  className="pressable min-h-[44px] px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold disabled:opacity-50 cursor-pointer"
+                >
+                  Salvar Data
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

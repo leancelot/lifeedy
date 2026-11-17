@@ -1,0 +1,945 @@
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  CloudCheck,
+  CloudDownload,
+  CloudOff,
+  CloudUpload,
+  Download,
+  ExternalLink,
+  Fingerprint,
+  GitBranch,
+  GitCommit,
+  Key,
+  LogOut,
+  Moon,
+  Package,
+  RefreshCw,
+  RotateCcw,
+  Settings,
+  ShieldCheck,
+  Smartphone,
+  Sparkles,
+  Sun,
+  Upload,
+  User as UserIcon,
+  X,
+} from 'lucide-react';
+import { useApp } from '../../context/AppContext';
+import { useBackHandler } from '../../context/BackNavigationContext';
+import {
+  authenticateFinanceAccess,
+  checkBiometricAvailability,
+  isBiometricSupportedOnPlatform,
+} from '../../services/biometricLockBridge';
+import {
+  checkForGitHubUpdates,
+  CURRENT_APP_VERSION,
+  CURRENT_BUILD_NUMBER,
+  DEFAULT_GITHUB_REPO,
+  downloadActionsArtifactWithToken,
+  getStoredGitHubConfig,
+  refreshAppCache,
+  saveGitHubConfig,
+  UpdateCheckResult,
+} from '../../services/githubUpdateService';
+import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
+
+interface AccountSettingsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
+  isOpen,
+  onClose,
+}) => {
+  const {
+    theme,
+    toggleTheme,
+    userName,
+    setUserName,
+    user,
+    workspaceAuthStatus,
+    isAuthenticating,
+    signInWithGoogle,
+    signOut,
+    driveSyncInfo,
+    syncToDriveNow,
+    restoreFromDriveNow,
+    tasks,
+    transactions,
+    financialGoals,
+    draftNotes,
+    exportBackupJson,
+    importBackupJson,
+    confirmDestructiveAction,
+    bankListenerSupported,
+    bankListenerPermission,
+    refreshBankListenerPermission,
+    openBankListenerSettings,
+    financeLockEnabled,
+    setFinanceLockEnabled,
+    openStartFromScratchModal,
+  } = useApp();
+
+  const [isSyncingAction, setIsSyncingAction] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Profile name editor
+  const [nameDraft, setNameDraft] = useState(userName || '');
+  const [nameSavedFeedback, setNameSavedFeedback] = useState(false);
+
+  // Biometric lock state
+  const biometricPlatformSupported = isBiometricSupportedOnPlatform();
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricMessage, setBiometricMessage] = useState<string | null>(null);
+  const [isCheckingBiometric, setIsCheckingBiometric] = useState(false);
+
+  // Updates & GitHub repo config (collapsible)
+  const [showUpdatesSection, setShowUpdatesSection] = useState(false);
+  const [showRepoConfig, setShowRepoConfig] = useState(false);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  const [isRefreshingCache, setIsRefreshingCache] = useState(false);
+  const [isDownloadingArtifact, setIsDownloadingArtifact] = useState(false);
+  const [artifactDownloadError, setArtifactDownloadError] = useState<string | null>(null);
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(
+    () => getStoredGitHubConfig().lastResult
+  );
+  const [githubRepo, setGithubRepo] = useState<string>(() => getStoredGitHubConfig().repo);
+  const [githubToken, setGithubToken] = useState<string>(() => getStoredGitHubConfig().token);
+  const [autoCheckUpdates, setAutoCheckUpdates] = useState<boolean>(
+    () => getStoredGitHubConfig().autoCheck
+  );
+
+  useBackHandler(isOpen, () => {
+    if (isSyncingAction) return false;
+    onClose();
+    return true;
+  });
+
+  useEffect(() => {
+    setNameDraft(userName || '');
+  }, [userName]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setFeedback(null);
+
+    const config = getStoredGitHubConfig();
+    setGithubRepo(config.repo);
+    setGithubToken(config.token);
+    setAutoCheckUpdates(config.autoCheck);
+    setUpdateResult(config.lastResult);
+
+    if (biometricPlatformSupported) {
+      checkBiometricAvailability()
+        .then((res) => setBiometricAvailable(res.available))
+        .catch(() => setBiometricAvailable(false));
+    }
+  }, [isOpen, biometricPlatformSupported]);
+
+  if (!isOpen) return null;
+
+  const showTempFeedback = (type: 'success' | 'error', text: string) => {
+    setFeedback({ type, text });
+    setTimeout(() => {
+      setFeedback((curr) => (curr?.text === text ? null : curr));
+    }, 4500);
+  };
+
+  const handleManualSave = async () => {
+    setIsSyncingAction(true);
+    setFeedback(null);
+    try {
+      await syncToDriveNow();
+      hapticSuccess();
+      showTempFeedback('success', 'Dados salvos com sucesso no Google Drive.');
+    } catch (err: any) {
+      showTempFeedback('error', err?.message || 'Falha ao salvar no Google Drive.');
+    } finally {
+      setIsSyncingAction(false);
+    }
+  };
+
+  const handleManualRestore = () => {
+    confirmDestructiveAction({
+      title: 'Restaurar Dados do Google Drive?',
+      message:
+        'Esta ação substituirá suas tarefas, agenda, rascunhos e finanças locais pelos dados armazenados no Google Drive.',
+      details: [
+        'Arquivo na nuvem: Lifeedy_Data.json (compatível com VidaOrganizada_Data.json)',
+        driveSyncInfo.remoteModifiedAt
+          ? `Última modificação na nuvem: ${new Date(driveSyncInfo.remoteModifiedAt).toLocaleString('pt-BR')}`
+          : 'Verificando versão mais recente...',
+      ],
+      confirmText: 'Restaurar do Drive',
+      isDestructive: false,
+      onConfirm: async () => {
+        setIsSyncingAction(true);
+        setFeedback(null);
+        try {
+          await restoreFromDriveNow();
+          hapticSuccess();
+          showTempFeedback('success', 'Dados restaurados com sucesso do Google Drive.');
+        } catch (err: any) {
+          showTempFeedback('error', err?.message || 'Falha ao restaurar dados do Drive.');
+        } finally {
+          setIsSyncingAction(false);
+        }
+      },
+    });
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (content) {
+        confirmDestructiveAction({
+          title: 'Importar Arquivo de Backup?',
+          message:
+            'Os dados locais atuais serão substituídos pelo conteúdo do arquivo JSON selecionado.',
+          details: [`Arquivo: ${file.name}`, `Tamanho: ${(file.size / 1024).toFixed(1)} KB`],
+          confirmText: 'Importar Backup',
+          isDestructive: false,
+          onConfirm: () => {
+            const success = importBackupJson(content);
+            if (success) {
+              hapticSuccess();
+              showTempFeedback('success', 'Backup JSON importado com sucesso.');
+            } else {
+              showTempFeedback('error', 'O arquivo de backup é inválido ou está corrompido.');
+            }
+          },
+        });
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleSaveName = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nameDraft.trim()) return;
+    setUserName(nameDraft.trim());
+    hapticSuccess();
+    setNameSavedFeedback(true);
+    setTimeout(() => setNameSavedFeedback(false), 2200);
+  };
+
+  const handleToggleFinanceLock = async () => {
+    setBiometricMessage(null);
+    if (!biometricPlatformSupported) {
+      setBiometricMessage('Disponível apenas no aplicativo Android instalado (APK).');
+      return;
+    }
+
+    if (financeLockEnabled) {
+      hapticImpactLight();
+      setFinanceLockEnabled(false);
+      setBiometricMessage('Proteção biométrica desativada.');
+      return;
+    }
+
+    setIsCheckingBiometric(true);
+    try {
+      const avail = await checkBiometricAvailability();
+      setBiometricAvailable(avail.available);
+      if (!avail.available) {
+        setBiometricMessage('Configure digital, rosto ou PIN nas configurações do Android primeiro.');
+        return;
+      }
+
+      const authRes = await authenticateFinanceAccess(
+        'Ativar Proteção em Finanças',
+        'Confirme sua identidade para proteger seus dados financeiros'
+      );
+      if (authRes.authenticated) {
+        hapticSuccess();
+        setFinanceLockEnabled(true);
+        setBiometricMessage('Proteção ativada para a aba Finanças.');
+      } else {
+        setBiometricMessage(authRes.message || 'Autenticação cancelada.');
+      }
+    } finally {
+      setIsCheckingBiometric(false);
+    }
+  };
+
+  const handleCheckUpdates = async (repoOverride?: string, tokenOverride?: string) => {
+    const targetRepo = (repoOverride ?? githubRepo).trim() || DEFAULT_GITHUB_REPO;
+    const targetToken = (tokenOverride ?? githubToken).trim();
+    setIsCheckingUpdates(true);
+    setArtifactDownloadError(null);
+    try {
+      const result = await checkForGitHubUpdates(
+        targetRepo,
+        targetToken || undefined,
+        CURRENT_APP_VERSION
+      );
+      setUpdateResult(result);
+      if (result.error) setShowRepoConfig(true);
+    } catch (err: any) {
+      console.warn('Falha ao verificar atualizações:', err);
+    } finally {
+      setIsCheckingUpdates(false);
+    }
+  };
+
+  const handleSaveGitHubConfigAndCheck = async (e: React.FormEvent) => {
+    e.preventDefault();
+    hapticImpactLight();
+    saveGitHubConfig(githubRepo, githubToken, autoCheckUpdates);
+    const updated = getStoredGitHubConfig();
+    setGithubRepo(updated.repo);
+    await handleCheckUpdates(updated.repo, updated.token);
+  };
+
+  const handleDownloadArtifact = async () => {
+    if (!updateResult?.latestBuild?.artifactId || !githubToken.trim()) return;
+    setIsDownloadingArtifact(true);
+    setArtifactDownloadError(null);
+    try {
+      await downloadActionsArtifactWithToken(
+        updateResult.latestBuild.artifactId,
+        updateResult.repo,
+        githubToken,
+        updateResult.latestBuild.artifactName || 'Lifeedy-APK'
+      );
+      hapticSuccess();
+    } catch (err: any) {
+      setArtifactDownloadError(err?.message || 'Não foi possível baixar o artefato.');
+    } finally {
+      setIsDownloadingArtifact(false);
+    }
+  };
+
+  const handleHardRefresh = () => {
+    confirmDestructiveAction({
+      title: 'Recarregar aplicativo?',
+      message: 'Deseja recarregar o aplicativo para buscar as últimas atualizações salvas?',
+      confirmText: 'Recarregar',
+      isDestructive: false,
+      onConfirm: async () => {
+        setIsRefreshingCache(true);
+        await refreshAppCache();
+      },
+    });
+  };
+
+  const formatFileSize = (bytes: number) =>
+    bytes < 1024 * 1024
+      ? `${(bytes / 1024).toFixed(1)} KB`
+      : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+  return (
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isSyncingAction) {
+          hapticSelection();
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-backdrop-in keyboard-modal-backdrop"
+    >
+      <div className="w-full sm:max-w-xl bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:pb-6 keyboard-modal-sheet overflow-y-auto relative animate-bottom-sheet">
+        <div className="sm:hidden w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700 mx-auto mb-3 shrink-0" />
+
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 pb-4 border-b border-zinc-100 dark:border-zinc-800">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+              {user?.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  alt={user.displayName || 'Conta'}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full rounded-2xl object-cover"
+                />
+              ) : (
+                <UserIcon className="w-5 h-5" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                Conta & Configurações
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                {user ? user.email || user.displayName : 'Sincronização, backup e preferências'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              hapticSelection();
+              onClose();
+            }}
+            className="pressable w-9 h-9 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center cursor-pointer shrink-0"
+            aria-label="Fechar"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-5">
+          {/* Feedback banner */}
+          {feedback && (
+            <div
+              className={`p-3 rounded-2xl border flex items-center gap-2 text-xs font-medium ${
+                feedback.type === 'success'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+              }`}
+            >
+              {feedback.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0" />
+              )}
+              <span>{feedback.text}</span>
+            </div>
+          )}
+
+          {/* 1. Conta Google & Drive */}
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+                Conta Google & Drive
+              </span>
+              {user ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  <CloudCheck className="w-3.5 h-3.5" />
+                  Conectada
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-500">
+                  <CloudOff className="w-3.5 h-3.5" />
+                  Offline
+                </span>
+              )}
+            </div>
+
+            {user ? (
+              <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-800/40 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                      {user.displayName || 'Conta Google'}
+                    </p>
+                    <p className="text-xs text-zinc-500 truncate">{user.email}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      hapticSelection();
+                      void signOut();
+                      onClose();
+                    }}
+                    className="pressable min-h-[38px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 inline-flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sair</span>
+                  </button>
+                </div>
+
+                {workspaceAuthStatus === 'needs_reauth' && (
+                  <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/60 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
+                      Renove a autorização para sincronizar Drive e Agenda.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void signInWithGoogle()}
+                      className="pressable shrink-0 min-h-[36px] px-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold cursor-pointer"
+                    >
+                      Renovar
+                    </button>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleManualSave}
+                    disabled={isSyncingAction}
+                    className="pressable min-h-[42px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
+                  >
+                    {isSyncingAction ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <CloudUpload className="w-3.5 h-3.5" />
+                    )}
+                    <span>Salvar no Drive</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleManualRestore}
+                    disabled={isSyncingAction}
+                    className="pressable min-h-[42px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
+                  >
+                    <CloudDownload className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Restaurar</span>
+                  </button>
+                </div>
+
+                {(driveSyncInfo.lastSyncedAt || driveSyncInfo.remoteModifiedAt) && (
+                  <div className="pt-2 border-t border-zinc-200/70 dark:border-zinc-700/60 text-[11px] text-zinc-500 flex flex-wrap items-center justify-between gap-1 font-mono tabular-nums">
+                    {driveSyncInfo.lastSyncedAt && (
+                      <span>
+                        Local: {new Date(driveSyncInfo.lastSyncedAt).toLocaleString('pt-BR')}
+                      </span>
+                    )}
+                    {driveSyncInfo.remoteModifiedAt && (
+                      <span>
+                        Drive: {new Date(driveSyncInfo.remoteModifiedAt).toLocaleString('pt-BR')}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                  Conecte sua conta Google para backup automático no Drive e Google Agenda completo.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void signInWithGoogle()}
+                  disabled={isAuthenticating}
+                  className="pressable min-h-[42px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shrink-0 cursor-pointer disabled:opacity-60"
+                >
+                  {isAuthenticating ? 'Conectando...' : 'Conectar Google'}
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* 2. Backup Local (JSON) */}
+          <section className="pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+                Backup Local (JSON)
+              </span>
+              <span className="text-[11px] font-mono tabular-nums text-zinc-500 dark:text-zinc-400">
+                {tasks.length} tarefas · {transactions.length} lançam. ·{' '}
+                {financialGoals.length + draftNotes.length} metas/notas
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={exportBackupJson}
+                className="pressable min-h-[42px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Download className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Baixar JSON</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="pressable min-h-[42px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Upload className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Importar JSON</span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </div>
+          </section>
+
+          {/* 3. Preferências & Segurança */}
+          <section className="pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 block">
+              Preferências & Segurança
+            </span>
+
+            {/* Nome de perfil */}
+            <form onSubmit={handleSaveName} className="flex gap-2">
+              <input
+                type="text"
+                required
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                placeholder="Seu nome"
+                className="flex-1 h-10 px-3.5 text-xs sm:text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              />
+              <button
+                type="submit"
+                disabled={!nameDraft.trim()}
+                className="pressable h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-semibold cursor-pointer shrink-0"
+              >
+                {nameSavedFeedback ? 'Salvo!' : 'Salvar nome'}
+              </button>
+            </form>
+
+            {/* Aparência */}
+            <div className="p-3 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                  {theme === 'dark' ? (
+                    <Moon className="w-4 h-4 text-indigo-400" />
+                  ) : (
+                    <Sun className="w-4 h-4 text-amber-500" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">
+                    Aparência
+                  </span>
+                  <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    {theme === 'dark' ? 'Modo Escuro' : 'Modo Claro'}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  hapticImpactLight();
+                  toggleTheme();
+                }}
+                className="pressable min-h-[38px] px-3.5 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 cursor-pointer shrink-0"
+              >
+                Alternar
+              </button>
+            </div>
+
+            {/* Leitura Automática de Bancos */}
+            <div className="p-3 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                    bankListenerSupported && bankListenerPermission
+                      ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
+                  }`}
+                >
+                  {bankListenerSupported && bankListenerPermission ? (
+                    <ShieldCheck className="w-4 h-4" />
+                  ) : (
+                    <Smartphone className="w-4 h-4" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">
+                    Leitura de Bancos {bankListenerSupported ? (bankListenerPermission ? '· Ativa' : '· Inativa') : ''}
+                  </span>
+                  <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block">
+                    {bankListenerSupported
+                      ? 'Captura avisos de bancos para revisão em Finanças'
+                      : 'Automática no APK Android; na Web cole em Finanças'}
+                  </span>
+                </div>
+              </div>
+              {bankListenerSupported && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => void openBankListenerSettings()}
+                    className="pressable min-h-[38px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold cursor-pointer"
+                  >
+                    Configurar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void refreshBankListenerPermission()}
+                    aria-label="Verificar permissão bancária"
+                    className="pressable w-9 h-9 rounded-xl border border-zinc-200 dark:border-zinc-700 flex items-center justify-center text-zinc-600 dark:text-zinc-300 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Biometria para Finanças */}
+            <div className="p-3 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                    financeLockEnabled
+                      ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
+                  }`}
+                >
+                  <Fingerprint className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">
+                    Biometria em Finanças {financeLockEnabled ? '· Ativa' : ''}
+                  </span>
+                  <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block">
+                    {!biometricPlatformSupported
+                      ? 'Protege saldos e lançamentos no APK Android'
+                      : biometricAvailable
+                      ? 'Exige digital, rosto ou senha ao abrir Finanças'
+                      : 'Configure digital ou PIN de tela no Android'}
+                  </span>
+                  {biometricMessage && (
+                    <span className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 block mt-0.5">
+                      {biometricMessage}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleFinanceLock}
+                disabled={isCheckingBiometric}
+                className={`pressable min-h-[38px] px-3.5 rounded-xl text-xs font-semibold cursor-pointer shrink-0 disabled:opacity-60 ${
+                  financeLockEnabled
+                    ? 'border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                    : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                }`}
+              >
+                {isCheckingBiometric ? 'Validando...' : financeLockEnabled ? 'Desativar' : 'Ativar'}
+              </button>
+            </div>
+          </section>
+
+          {/* 4. Versão, Atualizações & Recomeçar */}
+          <section className="pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  hapticSelection();
+                  setShowUpdatesSection((prev) => !prev);
+                }}
+                className="pressable min-h-[38px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 inline-flex items-center gap-2 cursor-pointer"
+              >
+                <Package className="w-3.5 h-3.5 text-indigo-500" />
+                <span>
+                  Versão {CURRENT_APP_VERSION}
+                  {CURRENT_BUILD_NUMBER > 0 ? ` · #${CURRENT_BUILD_NUMBER}` : ''}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  hapticSelection();
+                  onClose();
+                  openStartFromScratchModal();
+                }}
+                className="pressable min-h-[38px] px-3 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Recomeçar do zero</span>
+              </button>
+            </div>
+
+            {showUpdatesSection && (
+              <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/80 dark:border-zinc-800 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 font-mono truncate">
+                    {githubRepo}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowRepoConfig((prev) => !prev)}
+                      className="pressable min-h-[34px] px-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <Settings className="w-3 h-3" />
+                      <span>Repo</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleCheckUpdates()}
+                      disabled={isCheckingUpdates}
+                      className="pressable min-h-[34px] px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isCheckingUpdates ? 'animate-spin' : ''}`} />
+                      <span>{isCheckingUpdates ? 'Buscando...' : 'Buscar atualização'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {showRepoConfig && (
+                  <form onSubmit={handleSaveGitHubConfigAndCheck} className="space-y-2.5 pt-2 border-t border-zinc-200/70 dark:border-zinc-700/60">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <label className="block space-y-1">
+                        <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 flex items-center gap-1">
+                          <GitBranch className="w-3 h-3" /> Repositório
+                        </span>
+                        <input
+                          type="text"
+                          required
+                          value={githubRepo}
+                          onChange={(e) => setGithubRepo(e.target.value)}
+                          placeholder="usuario/repositorio"
+                          className="w-full h-9 px-3 text-xs rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 font-mono"
+                        />
+                      </label>
+                      <label className="block space-y-1">
+                        <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 flex items-center gap-1">
+                          <Key className="w-3 h-3" /> Token (opcional)
+                        </span>
+                        <input
+                          type="password"
+                          value={githubToken}
+                          onChange={(e) => setGithubToken(e.target.value)}
+                          placeholder="ghp_..."
+                          autoComplete="off"
+                          className="w-full h-9 px-3 text-xs rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 font-mono"
+                        />
+                      </label>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="flex items-center gap-2 text-[11px] text-zinc-600 dark:text-zinc-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={autoCheckUpdates}
+                          onChange={(e) => setAutoCheckUpdates(e.target.checked)}
+                          className="w-3.5 h-3.5 rounded"
+                        />
+                        <span>Verificar automaticamente</span>
+                      </label>
+                      <button
+                        type="submit"
+                        disabled={isCheckingUpdates || !githubRepo.trim()}
+                        className="pressable min-h-[34px] px-3 rounded-lg bg-indigo-600 text-white text-[11px] font-semibold cursor-pointer"
+                      >
+                        Salvar e verificar
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {updateResult?.error ? (
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 space-y-2">
+                    <div className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{updateResult.error}</span>
+                    </div>
+                    <a
+                      href={updateResult.actionsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 inline-flex items-center gap-1 hover:underline"
+                    >
+                      <ExternalLink className="w-3 h-3" /> Abrir GitHub Actions
+                    </a>
+                  </div>
+                ) : updateResult?.hasUpdate ? (
+                  <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Nova versão disponível: {updateResult.latestVersion}</span>
+                    </div>
+                    {artifactDownloadError && (
+                      <p className="text-[11px] text-rose-600 dark:text-rose-400">
+                        {artifactDownloadError}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {updateResult.apkAsset ? (
+                        <a
+                          href={updateResult.apkAsset.browser_download_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="pressable min-h-[36px] px-3 rounded-lg bg-indigo-600 text-white text-xs font-semibold inline-flex items-center gap-1.5"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Baixar APK ({formatFileSize(updateResult.apkAsset.size)})</span>
+                        </a>
+                      ) : updateResult.latestBuild ? (
+                        <>
+                          {githubToken.trim() && updateResult.latestBuild.artifactId && (
+                            <button
+                              type="button"
+                              onClick={() => void handleDownloadArtifact()}
+                              disabled={isDownloadingArtifact}
+                              className="pressable min-h-[36px] px-3 rounded-lg bg-indigo-600 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>{isDownloadingArtifact ? 'Baixando...' : 'Baixar APK'}</span>
+                            </button>
+                          )}
+                          <a
+                            href={updateResult.latestBuild.htmlUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="pressable min-h-[36px] px-3 rounded-lg border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 text-xs font-semibold inline-flex items-center gap-1.5"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Build #{updateResult.latestBuild.runNumber}</span>
+                          </a>
+                        </>
+                      ) : updateResult.latestRelease?.html_url ? (
+                        <a
+                          href={updateResult.latestRelease.html_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="pressable min-h-[36px] px-3 rounded-lg bg-indigo-600 text-white text-xs font-semibold inline-flex items-center gap-1.5"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Ver Download</span>
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : updateResult ? (
+                  <div className="flex items-center justify-between gap-2 text-xs text-emerald-700 dark:text-emerald-300">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Aplicativo atualizado
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleHardRefresh}
+                      disabled={isRefreshingCache}
+                      className="text-[11px] font-semibold hover:underline inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isRefreshingCache ? 'animate-spin' : ''}`} />
+                      <span>Recarregar app</span>
+                    </button>
+                  </div>
+                ) : null}
+
+                {updateResult?.recentCommits && updateResult.recentCommits.length > 0 && (
+                  <div className="pt-2 border-t border-zinc-200/70 dark:border-zinc-700/60 space-y-1">
+                    {updateResult.recentCommits.slice(0, 2).map((commit) => (
+                      <a
+                        key={commit.sha}
+                        href={commit.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-between gap-2 text-[11px] text-zinc-600 dark:text-zinc-300 hover:text-indigo-600"
+                      >
+                        <span className="truncate flex items-center gap-1.5">
+                          <GitCommit className="w-3 h-3 shrink-0 text-zinc-400" />
+                          <span className="font-mono text-indigo-600 dark:text-indigo-400">
+                            {commit.shortSha}
+                          </span>
+                          <span className="truncate">{commit.message}</span>
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+};
