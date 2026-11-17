@@ -69,6 +69,7 @@ import {
   mergeAndDeduplicateCalendarEvents,
 } from '../services/brazilianHolidaysService';
 import {
+  checkNativeNotificationPermission,
   isNotificationSupported,
   getNotificationPermission,
   requestNotificationPermission,
@@ -501,19 +502,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     if (Capacitor.isNativePlatform()) {
-      import('@capacitor/local-notifications').then(({ LocalNotifications }) => {
-        LocalNotifications.checkPermissions()
-          .then((status) => {
-            const perm: NotificationPermission =
-              status.display === 'granted'
-                ? 'granted'
-                : status.display === 'denied'
-                ? 'denied'
-                : 'default';
-            setNotificationPermission(perm);
-          })
-          .catch(() => {});
-      });
+      checkNativeNotificationPermission()
+        .then((perm) => setNotificationPermission(perm))
+        .catch(() => {});
     }
   }, []);
 

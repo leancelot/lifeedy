@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { Fingerprint, Lock } from 'lucide-react';
@@ -16,19 +16,45 @@ import { BackNavigationProvider, useBackNavigation } from './context/BackNavigat
 import { Header } from './components/Header';
 import { MobileNav } from './components/MobileNav';
 import { DashboardView } from './components/Dashboard/DashboardView';
-import { AgendaTasksView } from './components/Agenda/AgendaTasksView';
-import { FinanceView } from './components/Finance/FinanceView';
 import { OnboardingView } from './components/Onboarding/OnboardingView';
-import { AccountSettingsModal } from './components/Account/AccountSettingsModal';
 import {
   AutoRestoredDriveBanner,
   DriveRestorePromptModal,
   StartFromScratchModal,
 } from './components/DriveSync/DriveDecisionModals';
-import { NotificationCenterModal } from './components/Notifications/NotificationCenterModal';
 import { QuickActionFab } from './components/Common/QuickActionFab';
 import { ToastUndo } from './components/Common/ToastUndo';
 import { NativeConnectBridge } from './components/Auth/NativeConnectBridge';
+
+const AgendaTasksView = lazy(() =>
+  import('./components/Agenda/AgendaTasksView').then((m) => ({ default: m.AgendaTasksView }))
+);
+const FinanceView = lazy(() =>
+  import('./components/Finance/FinanceView').then((m) => ({ default: m.FinanceView }))
+);
+const AccountSettingsModal = lazy(() =>
+  import('./components/Account/AccountSettingsModal').then((m) => ({
+    default: m.AccountSettingsModal,
+  }))
+);
+const NotificationCenterModal = lazy(() =>
+  import('./components/Notifications/NotificationCenterModal').then((m) => ({
+    default: m.NotificationCenterModal,
+  }))
+);
+
+const TabLoadingFallback: React.FC = () => (
+  <div className="max-w-6xl mx-auto space-y-4 pb-16 animate-pulse" aria-busy="true">
+    <div className="h-28 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800" />
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="h-24 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800" />
+      <div className="h-24 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800" />
+      <div className="h-24 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 hidden lg:block" />
+      <div className="h-24 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 hidden lg:block" />
+    </div>
+    <div className="h-52 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800" />
+  </div>
+);
 
 const MainApp: React.FC = () => {
   const { onboardingCompleted, theme, financeLockEnabled } = useApp();
@@ -228,10 +254,12 @@ const MainApp: React.FC = () => {
         <div key={currentTab} className="animate-tab-enter">
           {currentTab === 'dashboard' && <DashboardView setCurrentTab={setCurrentTab} />}
           {currentTab === 'agenda' && (
-            <AgendaTasksView
-              quickOpenModal={agendaQuickOpen}
-              onConsumeQuickOpen={() => setAgendaQuickOpen(null)}
-            />
+            <Suspense fallback={<TabLoadingFallback />}>
+              <AgendaTasksView
+                quickOpenModal={agendaQuickOpen}
+                onConsumeQuickOpen={() => setAgendaQuickOpen(null)}
+              />
+            </Suspense>
           )}
           {currentTab === 'financas' &&
             (isFinanceLocked ? (
@@ -280,10 +308,12 @@ const MainApp: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <FinanceView
-                quickOpenAction={financeQuickOpen}
-                onConsumeQuickOpen={() => setFinanceQuickOpen(null)}
-              />
+              <Suspense fallback={<TabLoadingFallback />}>
+                <FinanceView
+                  quickOpenAction={financeQuickOpen}
+                  onConsumeQuickOpen={() => setFinanceQuickOpen(null)}
+                />
+              </Suspense>
             ))}
         </div>
       </main>
@@ -313,16 +343,24 @@ const MainApp: React.FC = () => {
         onToggleQuickMenu={() => setIsQuickMenuOpen((prev) => !prev)}
       />
 
-      <AccountSettingsModal
-        isOpen={isAccountModalOpen}
-        onClose={() => setIsAccountModalOpen(false)}
-      />
+      {isAccountModalOpen && (
+        <Suspense fallback={null}>
+          <AccountSettingsModal
+            isOpen={isAccountModalOpen}
+            onClose={() => setIsAccountModalOpen(false)}
+          />
+        </Suspense>
+      )}
 
-      <NotificationCenterModal
-        isOpen={isNotificationCenterOpen}
-        onClose={() => setIsNotificationCenterOpen(false)}
-        onOpenAgenda={() => setCurrentTab('agenda')}
-      />
+      {isNotificationCenterOpen && (
+        <Suspense fallback={null}>
+          <NotificationCenterModal
+            isOpen={isNotificationCenterOpen}
+            onClose={() => setIsNotificationCenterOpen(false)}
+            onOpenAgenda={() => setCurrentTab('agenda')}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

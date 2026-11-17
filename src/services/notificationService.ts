@@ -28,6 +28,29 @@ export function getNotificationPermission(): NotificationPermission {
   return Notification.permission;
 }
 
+export async function checkNativeNotificationPermission(): Promise<NotificationPermission> {
+  if (!Capacitor.isNativePlatform()) {
+    return getNotificationPermission();
+  }
+  try {
+    const status = await LocalNotifications.checkPermissions();
+    const perm: NotificationPermission =
+      status.display === 'granted'
+        ? 'granted'
+        : status.display === 'denied'
+        ? 'denied'
+        : 'default';
+    try {
+      localStorage.setItem('vidaorganizada_native_notif_perm', perm);
+    } catch {
+      // ignore
+    }
+    return perm;
+  } catch {
+    return getNotificationPermission();
+  }
+}
+
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
   if (Capacitor.isNativePlatform()) {
     try {

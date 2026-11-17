@@ -1,11 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownRight,
   ArrowUpRight,
+  CalendarClock,
   Check,
   CheckCheck,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   ClipboardPaste,
   CopyPlus,
   CreditCard,
@@ -17,6 +20,7 @@ import {
   PieChart as PieChartIcon,
   PiggyBank,
   Plus,
+  Repeat,
   Search,
   SlidersHorizontal,
   Smartphone,
@@ -38,7 +42,18 @@ import {
   Transaction,
   TransactionType,
 } from '../../types';
-import { ReceiptScannerModal } from './ReceiptScannerModal';
+import {
+  computeMonthlyRecurringSummary,
+  computeProjectedBalance,
+  getRecurringMonthDismissStorageKey,
+  PendingRecurringExpense,
+} from '../../utils/financeForecastUtils';
+
+const ReceiptScannerModal = lazy(() =>
+  import('./ReceiptScannerModal').then((m) => ({ default: m.ReceiptScannerModal }))
+);
+
+const DISMISSED_RECURRING_STORAGE_KEY = 'vidaorganizada_dismissed_recurring_v1';
 
 const getLocalTodayStr = (): string => {
   const d = new Date();
@@ -158,6 +173,17 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   // Budget drafts when editing limits
   const [budgetDrafts, setBudgetDrafts] = useState<Record<string, string>>({});
   const [csvFeedback, setCsvFeedback] = useState<string | null>(null);
+  const [showRecurringDetails, setShowRecurringDetails] = useState<boolean>(false);
+  const [dismissedRecurringByMonth, setDismissedRecurringByMonth] = useState<
+    Record<string, string[]>
+  >(() => {
+    try {
+      const saved = localStorage.getItem(DISMISSED_RECURRING_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
 
   useBackHandler(isPasteBankModalOpen, () => {
     setIsPasteBankModalOpen(false);
@@ -253,6 +279,69 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     .filter((tx) => tx.type === 'despesa' && tx.recurring)
     .reduce((s, tx) => s + tx.amount, 0);
   const variableExpenses = totalExpense - fixedExpenses;
+
+  const recurringMonthKey = getRecurringMonthDismissStorageKey(currentYear, currentMonthIndex);
+  const recurringSummary = useMemo(
+    () =>
+      computeMonthlyRecurringSummary(
+        transactions,
+        currentYear,
+        currentMonthIndex,
+        dismissedRecurringByMonth[recurringMonthKey] || []
+      ),
+    [transactions, currentYear, currentMonthIndex, dismissedRecurringByMonth, recurringMonthKey]
+  );
+
+  const { projectedBalance } = useMemo(
+    () => computeProjectedBalance(totalIncome, totalExpense, recurringSummary.pendingTotal),
+    [totalIncome, totalExpense, recurringSummary.pendingTotal]
+  );
+
+  const launchSingleRecurring = (item: PendingRecurringExpense) => {
+    hapticSuccess();
+    addTransaction({
+      type: 'despesa',
+      title: item.title,
+      amount: item.amount,
+      category: item.category,
+      date: item.suggestedDate,
+      paymentMethod: item.paymentMethod || 'pix',
+      notes: item.notes,
+      recurring: true,
+    });
+  };
+
+  const launchAllPendingRecurring = () => {
+    if (recurringSummary.pendingRecurring.length === 0) return;
+    hapticSuccess();
+    recurringSummary.pendingRecurring.forEach((item) => {
+      addTransaction({
+        type: 'despesa',
+        title: item.title,
+        amount: item.amount,
+        category: item.category,
+        date: item.suggestedDate,
+        paymentMethod: item.paymentMethod || 'pix',
+        notes: item.notes,
+        recurring: true,
+      });
+    });
+  };
+
+  const dismissRecurringForMonth = (key: string) => {
+    hapticSelection();
+    setDismissedRecurringByMonth((prev) => {
+      const currentList = prev[recurringMonthKey] || [];
+      if (currentList.includes(key)) return prev;
+      const next = { ...prev, [recurringMonthKey]: [...currentList, key] };
+      try {
+        localStorage.setItem(DISMISSED_RECURRING_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // ignore storage quota
+      }
+      return next;
+    });
+  };
 
   const visibleTransactions = useMemo(
     () =>
@@ -768,22 +857,39 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               >
                 {formatMoney(balance)}
               </div>
-              <div className="flex items-center justify-between gap-1 text-[11px]">
-                {balance >= 0 ? (
-                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold inline-flex items-center gap-0.5">
-                    <TrendingUp className="w-3 h-3" />
-                    Superávit
+              {recurringSummary.pendingTotal > 0 ? (
+                <div className="flex items-center justify-between gap-1 text-[11px] font-mono tabular-nums">
+                  <span
+                    className={`font-semibold truncate ${
+                      projectedBalance >= 0
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-rose-600 dark:text-rose-400'
+                    }`}
+                  >
+                    Prev: {formatMoney(projectedBalance)}
                   </span>
-                ) : (
-                  <span className="text-rose-600 dark:text-rose-400 font-semibold inline-flex items-center gap-0.5">
-                    <TrendingDown className="w-3 h-3" />
-                    Déficit
+                  <span className="text-indigo-600 dark:text-indigo-400 font-sans font-semibold shrink-0">
+                    Extrato →
                   </span>
-                )}
-                <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
-                  Ver extrato →
-                </span>
-              </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-1 text-[11px]">
+                  {balance >= 0 ? (
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold inline-flex items-center gap-0.5">
+                      <TrendingUp className="w-3 h-3" />
+                      Superávit
+                    </span>
+                  ) : (
+                    <span className="text-rose-600 dark:text-rose-400 font-semibold inline-flex items-center gap-0.5">
+                      <TrendingDown className="w-3 h-3" />
+                      Déficit
+                    </span>
+                  )}
+                  <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                    Ver extrato →
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Receitas -> Filtra receitas + botão rápido + Receita */}
@@ -936,6 +1042,96 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Contas Fixas / Recorrentes Pendentes do Mês (1-tap launch) */}
+          {recurringSummary.pendingRecurring.length > 0 && (
+            <section className="bg-white dark:bg-zinc-900 border border-amber-300/80 dark:border-amber-800/70 rounded-2xl p-3.5 sm:p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                    <Repeat className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                      {recurringSummary.pendingRecurring.length} conta(s) fixa(s) pendente(s) neste mês
+                    </h3>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono tabular-nums">
+                      Total previsto: {formatMoney(recurringSummary.pendingTotal)} · Saldo após fixas:{' '}
+                      {formatMoney(projectedBalance)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      hapticSelection();
+                      setShowRecurringDetails((prev) => !prev);
+                    }}
+                    className="pressable h-9 px-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{showRecurringDetails ? 'Ocultar' : 'Revisar'}</span>
+                    {showRecurringDetails ? (
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={launchAllPendingRecurring}
+                    className="pressable h-9 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  >
+                    <CalendarClock className="w-3.5 h-3.5" />
+                    <span>Lançar todas</span>
+                  </button>
+                </div>
+              </div>
+
+              {showRecurringDetails && (
+                <div className="divide-y divide-zinc-100 dark:divide-zinc-800 border-t border-zinc-100 dark:border-zinc-800 pt-1">
+                  {recurringSummary.pendingRecurring.map((item) => (
+                    <div
+                      key={item.key}
+                      className="py-2 flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                          {item.title}
+                        </p>
+                        <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono tabular-nums">
+                          {getCategoryLabel(item.category)} · {item.suggestedDate.split('-').reverse().join('/')}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-mono tabular-nums font-bold text-rose-600 dark:text-rose-400 mr-1">
+                          {formatMoney(item.amount)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => launchSingleRecurring(item)}
+                          className="pressable h-8 px-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 text-[11px] font-semibold cursor-pointer"
+                        >
+                          Lançar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => dismissRecurringForMonth(item.key)}
+                          title="Ignorar neste mês"
+                          aria-label={`Ignorar ${item.title} neste mês`}
+                          className="pressable w-8 h-8 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Visual Expense Breakdown Chart + Actionable Category Budget Limits */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -2342,8 +2538,12 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
         </div>
       )}
 
-      {/* AI Receipt Scanner Modal */}
-      <ReceiptScannerModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
+      {/* AI Receipt Scanner Modal (lazy-loaded on demand) */}
+      {isScannerOpen && (
+        <Suspense fallback={null}>
+          <ReceiptScannerModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
+        </Suspense>
+      )}
     </div>
   );
 };

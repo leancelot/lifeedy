@@ -28,6 +28,8 @@ import { useApp } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import { CalendarEventCategory, GoogleCalendarEvent, TaskItem } from '../../types';
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
+import { formatMonthYearTitle } from '../../utils/agendaMonthUtils';
+import { MonthCalendarGrid } from './MonthCalendarGrid';
 
 interface AgendaTasksViewProps {
   quickOpenModal?: 'task' | 'event' | null;
@@ -127,7 +129,7 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
 
   const todayStr = toLocalDateStr(new Date());
   const [selectedDateStr, setSelectedDateStr] = useState<string>(todayStr);
-  const [viewMode, setViewMode] = useState<'day' | 'week'>('day');
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day');
   const [typeFilter, setTypeFilter] = useState<'all' | 'events' | 'specials' | 'tasks'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showCompleted, setShowCompleted] = useState<boolean>(true);
@@ -353,6 +355,10 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
   }, [viewMode, selectedDateStr, todayStr, tasks, typeFilter, selectedCategory, searchQuery]);
 
   const activeDayTitle = useMemo(() => {
+    if (viewMode === 'month') {
+      const anchor = new Date(`${selectedDateStr}T12:00:00`);
+      return formatMonthYearTitle(anchor.getFullYear(), anchor.getMonth());
+    }
     if (viewMode === 'day') {
       const formatted = new Intl.DateTimeFormat('pt-BR', {
         weekday: 'long',
@@ -375,6 +381,17 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
 
   const navigateStep = (direction: -1 | 1) => {
     hapticSelection();
+    if (viewMode === 'month') {
+      setSelectedDateStr((prev) => {
+        const cur = new Date(`${prev}T12:00:00`);
+        const targetMonth = cur.getMonth() + direction;
+        const targetYear = cur.getFullYear();
+        const maxDay = new Date(targetYear, targetMonth + 1, 0, 12, 0, 0).getDate();
+        const nextDate = new Date(targetYear, targetMonth, Math.min(cur.getDate(), maxDay), 12, 0, 0);
+        return toLocalDateStr(nextDate);
+      });
+      return;
+    }
     const offset = viewMode === 'day' ? direction : direction * 7;
     setSelectedDateStr((prev) => addDays(prev, offset));
   };
@@ -731,15 +748,36 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
             {/* Action row */}
             <div className="flex flex-wrap items-center gap-3 mt-2.5 pt-2 border-t border-zinc-100 dark:border-zinc-800/80 text-xs">
               {!task.completed && (
-                <button
-                  type="button"
-                  onClick={() => snoozeTaskToTomorrow(task.id)}
-                  title="Adiar tarefa para amanhã"
-                  className="pressable inline-flex items-center gap-1 text-zinc-600 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium cursor-pointer"
-                >
-                  <CalendarClock className="w-3.5 h-3.5" />
-                  <span>+1 dia</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => snoozeTaskToTomorrow(task.id)}
+                    title="Adiar tarefa para amanhã"
+                    className="pressable inline-flex items-center gap-1 text-zinc-600 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium cursor-pointer"
+                  >
+                    <CalendarClock className="w-3.5 h-3.5" />
+                    <span>+1 dia</span>
+                  </button>
+                  <label
+                    title="Mover tarefa para outra data"
+                    className="pressable relative inline-flex items-center gap-1 text-zinc-600 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium cursor-pointer"
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>Mover</span>
+                    <input
+                      type="date"
+                      value={task.dueDate}
+                      aria-label={`Reagendar ${task.title}`}
+                      onChange={(e) => {
+                        const nextDate = e.target.value;
+                        if (!nextDate || nextDate === task.dueDate) return;
+                        hapticSuccess();
+                        updateTask(task.id, { dueDate: nextDate });
+                      }}
+                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                    />
+                  </label>
+                </>
               )}
               {!task.googleCalendarEventId && (
                 <button
@@ -924,17 +962,17 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
             </div>
           </div>
 
-          {/* Segmented Dia / Semana + Ações de Criação */}
+          {/* Segmented Dia / Semana / Mês + Ações de Criação */}
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full lg:w-auto">
             <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="flex-1 sm:flex-initial grid grid-cols-2 sm:inline-flex items-center h-10 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl text-xs font-semibold">
+              <div className="flex-1 sm:flex-initial grid grid-cols-3 sm:inline-flex items-center h-10 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl text-xs font-semibold">
                 <button
                   type="button"
                   onClick={() => {
                     hapticSelection();
                     setViewMode('day');
                   }}
-                  className={`h-8 px-3.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center ${
+                  className={`h-8 px-3 rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center ${
                     viewMode === 'day'
                       ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-2xs'
                       : 'text-zinc-600 dark:text-zinc-400'
@@ -948,13 +986,27 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
                     hapticSelection();
                     setViewMode('week');
                   }}
-                  className={`h-8 px-3.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center ${
+                  className={`h-8 px-3 rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center ${
                     viewMode === 'week'
                       ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-2xs'
                       : 'text-zinc-600 dark:text-zinc-400'
                   }`}
                 >
                   Semana
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    hapticSelection();
+                    setViewMode('month');
+                  }}
+                  className={`h-8 px-3 rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center ${
+                    viewMode === 'month'
+                      ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-2xs'
+                      : 'text-zinc-600 dark:text-zinc-400'
+                  }`}
+                >
+                  Mês
                 </button>
               </div>
 
@@ -1054,52 +1106,54 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
             </div>
           </div>
 
-          {/* Seletor rápido de dias da semana */}
-          <div className="grid grid-cols-7 gap-1.5">
-            {weekDays.map((dStr) => {
-              const dateObj = new Date(`${dStr}T12:00:00`);
-              const weekday = dateObj
-                .toLocaleDateString('pt-BR', { weekday: 'short' })
-                .replace('.', '');
-              const dayNum = dateObj.getDate();
-              const isSelected = dStr === selectedDateStr;
-              const isToday = dStr === todayStr;
-              const hasItems =
-                tasks.some((t) => t.dueDate === dStr && !t.completed) ||
-                calendarEvents.some((ev) => getEventDateStr(ev) === dStr);
+          {/* Seletor rápido de dias da semana (oculto no modo Mês pois a grade já exibe todo o mês) */}
+          {viewMode !== 'month' && (
+            <div className="grid grid-cols-7 gap-1.5">
+              {weekDays.map((dStr) => {
+                const dateObj = new Date(`${dStr}T12:00:00`);
+                const weekday = dateObj
+                  .toLocaleDateString('pt-BR', { weekday: 'short' })
+                  .replace('.', '');
+                const dayNum = dateObj.getDate();
+                const isSelected = dStr === selectedDateStr;
+                const isToday = dStr === todayStr;
+                const hasItems =
+                  tasks.some((t) => t.dueDate === dStr && !t.completed) ||
+                  calendarEvents.some((ev) => getEventDateStr(ev) === dStr);
 
-              return (
-                <button
-                  key={dStr}
-                  type="button"
-                  onClick={() => {
-                    hapticSelection();
-                    setSelectedDateStr(dStr);
-                    if (viewMode === 'week') setViewMode('day');
-                  }}
-                  className={`min-h-[54px] py-2 px-1 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer ${
-                    isSelected
-                      ? 'bg-indigo-600 text-white'
-                      : isToday
-                      ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900'
-                      : 'bg-zinc-50 dark:bg-zinc-800/50 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <span className="text-[10px] uppercase font-semibold opacity-80">{weekday}</span>
-                  <span className="text-sm font-bold font-mono tabular-nums">{dayNum}</span>
-                  <span
-                    className={`w-1 h-1 rounded-full ${
-                      hasItems
-                        ? isSelected
-                          ? 'bg-white'
-                          : 'bg-indigo-500'
-                        : 'bg-transparent'
+                return (
+                  <button
+                    key={dStr}
+                    type="button"
+                    onClick={() => {
+                      hapticSelection();
+                      setSelectedDateStr(dStr);
+                      if (viewMode === 'week') setViewMode('day');
+                    }}
+                    className={`min-h-[54px] py-2 px-1 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white'
+                        : isToday
+                        ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900'
+                        : 'bg-zinc-50 dark:bg-zinc-800/50 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
                     }`}
-                  />
-                </button>
-              );
-            })}
-          </div>
+                  >
+                    <span className="text-[10px] uppercase font-semibold opacity-80">{weekday}</span>
+                    <span className="text-sm font-bold font-mono tabular-nums">{dayNum}</span>
+                    <span
+                      className={`w-1 h-1 rounded-full ${
+                        hasItems
+                          ? isSelected
+                            ? 'bg-white'
+                            : 'bg-indigo-500'
+                          : 'bg-transparent'
+                      }`}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </section>
 
@@ -1348,6 +1402,78 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
               )}
             </div>
           )}
+        </div>
+      ) : viewMode === 'month' ? (
+        /* Visão Mensal Unificada + Painel do Dia Selecionado */
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          <div className="lg:col-span-7">
+            <MonthCalendarGrid
+              selectedDateStr={selectedDateStr}
+              todayStr={todayStr}
+              tasks={tasks}
+              events={calendarEvents}
+              onSelectDate={(dStr) => setSelectedDateStr(dStr)}
+            />
+          </div>
+
+          <div className="lg:col-span-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 sm:p-5 space-y-3.5">
+            <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 capitalize truncate">
+                  {new Intl.DateTimeFormat('pt-BR', {
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'short',
+                  }).format(new Date(`${selectedDateStr}T12:00:00`))}
+                </h3>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono tabular-nums">
+                  {dayTimeline.length} registro(s) neste dia
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  hapticSelection();
+                  setViewMode('day');
+                }}
+                className="pressable h-8 px-2.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-semibold hover:bg-zinc-200 dark:hover:bg-zinc-700 cursor-pointer shrink-0"
+              >
+                Abrir dia
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickAddTask} className="relative">
+              <input
+                type="text"
+                value={quickTaskTitle}
+                onChange={(e) => setQuickTaskTitle(e.target.value)}
+                placeholder="Adicionar tarefa neste dia..."
+                className="w-full h-10 pl-3 pr-10 text-xs sm:text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+              />
+              <button
+                type="submit"
+                disabled={!quickTaskTitle.trim()}
+                aria-label="Adicionar tarefa rápida"
+                className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-30 text-white flex items-center justify-center cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </form>
+
+            {dayTimeline.length === 0 ? (
+              <p className="text-xs text-zinc-400 py-4 text-center">
+                Dia livre. Use o campo acima ou os botões no topo para agendar.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-[420px] overflow-y-auto pr-0.5">
+                {dayTimeline.map((entry) =>
+                  entry.kind === 'event'
+                    ? renderEventRow(entry.event, true)
+                    : renderTaskRow(entry.task, true)
+                )}
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         /* Visão Semanal Unificada */
