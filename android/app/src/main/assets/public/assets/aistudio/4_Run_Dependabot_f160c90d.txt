@@ -1,0 +1,728 @@
+﻿2026-11-17T17:40:55.7747360Z ##[group]Run github/dependabot-action@main
+2026-11-17T17:40:55.7748044Z env:
+2026-11-17T17:40:55.7748500Z   DEPENDABOT_DISABLE_CLEANUP: 1
+2026-11-17T17:40:55.7749073Z   DEPENDABOT_ENABLE_CONNECTIVITY_CHECK: 0
+2026-11-17T17:40:55.7753393Z   GITHUB_TOKEN: ***
+2026-11-17T17:40:55.7754239Z   GITHUB_DEPENDABOT_JOB_TOKEN: ***
+2026-11-17T17:40:55.7755135Z   GITHUB_DEPENDABOT_CRED_TOKEN: ***
+2026-11-17T17:40:55.7755712Z   GITHUB_REGISTRIES_PROXY: 
+2026-11-17T17:40:55.7756204Z ##[endgroup]
+2026-11-17T17:40:56.2126440Z 🤖 ~ starting update ~
+2026-11-17T17:40:56.2147591Z Fetching job details
+2026-11-17T17:40:57.8975238Z 🤖 ~ Failed to parse GITHUB_REGISTRIES_PROXY environment variable ~
+2026-11-17T17:40:57.8977854Z Adding GitHub Packages credential
+2026-11-17T17:40:57.8981204Z ##[group]Pulling updater images
+2026-11-17T17:40:57.9061794Z Pulling image ghcr.io/dependabot/dependabot-updater-npm:fda002ca9cf1ff8eca6e78173574bb9f12080cae (attempt 1)...
+2026-11-17T17:40:58.0469643Z Successfully sent metric (dependabot.action.ghcr_image_pull) to remote API endpoint
+2026-11-17T17:41:18.0575000Z Pulled image ghcr.io/dependabot/dependabot-updater-npm:fda002ca9cf1ff8eca6e78173574bb9f12080cae
+2026-11-17T17:41:18.0595997Z Pulling image ghcr.io/dependabot/proxy:v2.0.20261113201120@sha256:1a409718259fad78e1e579b082629066affe0c9c78a862344cc667c2381548f2 (attempt 1)...
+2026-11-17T17:41:18.2049477Z Successfully sent metric (dependabot.action.ghcr_image_pull) to remote API endpoint
+2026-11-17T17:41:18.7653595Z Pulled image ghcr.io/dependabot/proxy:v2.0.20261113201120@sha256:1a409718259fad78e1e579b082629066affe0c9c78a862344cc667c2381548f2
+2026-11-17T17:41:18.7656825Z ##[endgroup]
+2026-11-17T17:41:18.7657863Z Starting update process
+2026-11-17T17:41:21.8515325Z Created proxy container: 24048503f4525394ca25af180b0ebcc652cbc955afe1b6c576d4973558f022a1
+2026-11-17T17:41:22.1770135Z   proxy | 2026/11/17 17:41:22 proxy starting, commit: 2746302f57658dca6b8e4db5ef1cf910d3b5f379
+2026-11-17T17:41:22.1776980Z   proxy | 2026/11/17 17:41:22 Listening (:1080)
+2026-11-17T17:41:22.3350666Z Created container: 48f50234fdfe921f793b7d2ed3803dcfd2224a6a6a745b497c71e41c03affb4f
+2026-11-17T17:41:22.4661279Z Started container 48f50234fdfe921f793b7d2ed3803dcfd2224a6a6a745b497c71e41c03affb4f
+2026-11-17T17:41:22.5099803Z updater | Updating certificates in /etc/ssl/certs...
+2026-11-17T17:41:23.0757906Z updater | rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+2026-11-17T17:41:23.0803107Z updater | 1 added, 0 removed; done.
+2026-11-17T17:41:23.0804543Z updater | Running hooks in /etc/ca-certificates/update.d...
+2026-11-17T17:41:23.0816025Z updater | done.
+2026-11-17T17:41:23.3679511Z updater | fetch_files command is no longer used directly
+2026-11-17T17:41:25.4013608Z updater | 2026/11/17 17:41:25 INFO <job_1712510136> Starting job processing
+2026-11-17T17:41:25.4025702Z updater | 2026/11/17 17:41:25 INFO <job_1712510136> Job definition: {"job":{"command":"security","allowed-updates":[{"dependency-type":"direct","update-type":"all"}],"commit-message-options":{"prefix":null,"prefix-development":null,"include-scope":null},"credentials-metadata":[{"type":"git_source","host":"github.com"}],"debug":null,"dependencies":["@grpc/grpc-js"],"dependency-groups":[],"dependency-group-to-refresh":null,"existing-pull-requests":[],"existing-group-pull-requests":[],"experiments":{"record-ecosystem-versions":true,"record-update-job-unknown-error":true,"azure-registry-backup":true,"automatic-github-packages-auth":true,"blocked-versions":true,"workflow-job-summary":true,"async-retry":true,"enable-npmrc-credential-generation":true,"proxy-egress-observe":true,"proxy-egress-enforce":true,"github-actions-lockfile":true,"maven-wrapper-updater":true,"prioritize-scm-source":true,"enable-yarn-berry-conflicting-dependencies":true},"ignore-conditions":[],"lockfile-only":false,"package-manager":"npm_and_yarn","requirements-update-strategy":null,"reject-external-code":false,"security-advisories":[{"dependency-name":"@grpc/grpc-js","patched-versions":[],"unaffected-versions":[],"affected-versions":["< 1.13.6",">= 1.14.0 < 1.14.5"]},{"dependency-name":"@grpc/grpc-js","patched-versions":[],"unaffected-versions":[],"affected-versions":["< 1.9.16",">= 1.10.0 < 1.10.12",">= 1.11.0 < 1.11.4",">= 1.12.0 < 1.12.7",">= 1.13.0 < 1.13.5",">= 1.14.0 < 1.14.4"]},{"dependency-name":"@grpc/grpc-js","patched-versions":[],"unaffected-versions":[],"affected-versions":[">= 1.10.0 < 1.10.9",">= 1.9.0 < 1.9.15","< 1.8.22"]},{"dependency-name":"@grpc/grpc-js","patched-versions":[],"unaffected-versions":[],"affected-versions":["< 1.1.8"]}],"security-updates-only":true,"source":{"provider":"github","repo":"leancelot/lifeedy","branch":null,"api-endpoint":"https://api.github.com/","hostname":"github.com","directories":["/."]},"updating-a-pull-request":false,"update-subdependencies":false,"vendor-dependencies":false,"enable-beta-ecosystems":false,"repo-private":false,"multi-ecosystem-update":false,"exclude-paths":[],"runner-type":"actions"}}
+2026-11-17T17:41:25.5695995Z   proxy | 2026/11/17 17:41:25 [002] GET https://github.com:443/leancelot/lifeedy.git/info/refs?service=git-upload-pack
+2026-11-17T17:41:25.5697550Z   proxy | 2026/11/17 17:41:25 [002] * authenticating git server request (host: github.com)
+2026-11-17T17:41:25.6918825Z   proxy | 2026/11/17 17:41:25 [002] 200 https://github.com:443/leancelot/lifeedy.git/info/refs?service=git-upload-pack
+2026-11-17T17:41:25.7719009Z updater | 2026/11/17 17:41:25 INFO <job_1712510136> Started process PID: 998 with command: {} git clone --no-tags --depth 1 --recurse-submodules --shallow-submodules https://github.com/leancelot/lifeedy /home/dependabot/dependabot-updater/repo {}
+2026-11-17T17:41:25.8369477Z   proxy | 2026/11/17 17:41:25 [004] GET https://github.com:443/leancelot/lifeedy/info/refs?service=git-upload-pack
+2026-11-17T17:41:25.8370903Z 2026/11/17 17:41:25 [004] * authenticating git server request (host: github.com)
+2026-11-17T17:41:25.9073210Z   proxy | 2026/11/17 17:41:25 [004] 200 https://github.com:443/leancelot/lifeedy/info/refs?service=git-upload-pack
+2026-11-17T17:41:25.9078213Z   proxy | 2026/11/17 17:41:25 [005] POST https://github.com:443/leancelot/lifeedy/git-upload-pack
+2026-11-17T17:41:25.9079401Z   proxy | 2026/11/17 17:41:25 [005] * authenticating git server request (host: github.com)
+2026-11-17T17:41:25.9817509Z   proxy | 2026/11/17 17:41:25 [005] 200 https://github.com:443/leancelot/lifeedy/git-upload-pack
+2026-11-17T17:41:25.9840834Z   proxy | 2026/11/17 17:41:25 [006] POST https://github.com:443/leancelot/lifeedy/git-upload-pack
+2026-11-17T17:41:25.9842167Z   proxy | 2026/11/17 17:41:25 [006] * authenticating git server request (host: github.com)
+2026-11-17T17:41:26.1401320Z   proxy | 2026/11/17 17:41:26 [006] 200 https://github.com:443/leancelot/lifeedy/git-upload-pack
+2026-11-17T17:41:26.3407196Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Process PID: 998 completed with status: pid 998 exit 0
+2026-11-17T17:41:26.3408419Z 2026/11/17 17:41:26 INFO <job_1712510136> Total execution time: 0.57 seconds
+2026-11-17T17:41:26.3415971Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Started process PID: 1040 with command: {} git -C /home/dependabot/dependabot-updater/repo ls-files --stage {}
+2026-11-17T17:41:26.3463997Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Process PID: 1040 completed with status: pid 1040 exit 0
+2026-11-17T17:41:26.3465143Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Total execution time: 0.01 seconds
+2026-11-17T17:41:26.4005450Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Started process PID: 1136 with command: {} git lfs pull --include .yarn,./.yarn/cache {}
+2026-11-17T17:41:26.4359013Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Process PID: 1136 completed with status: pid 1136 exit 0
+2026-11-17T17:41:26.4359718Z 2026/11/17 17:41:26 INFO <job_1712510136> Total execution time: 0.04 seconds
+2026-11-17T17:41:26.4887730Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Started process PID: 1258 with command: {} git rev-parse HEAD {}
+2026-11-17T17:41:26.4930093Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Process PID: 1258 completed with status: pid 1258 exit 0
+2026-11-17T17:41:26.4931916Z 2026/11/17 17:41:26 INFO <job_1712510136> Total execution time: 0.0 seconds
+2026-11-17T17:41:26.4969923Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:26.4971562Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Resolving package manager for: npm
+2026-11-17T17:41:26.4984211Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:26.4992463Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Fetching version for package manager: npm
+2026-11-17T17:41:26.5000959Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Started process PID: 1265 with command: {} corepack npm -v {}
+2026-11-17T17:41:26.6587910Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Process PID: 1265 completed with status: pid 1265 exit 0
+2026-11-17T17:41:26.6589138Z 2026/11/17 17:41:26 INFO <job_1712510136> Total execution time: 0.16 seconds
+2026-11-17T17:41:26.6600327Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Installed version of npm: 12.2.0
+2026-11-17T17:41:26.6601807Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Installed version for npm: 12.2.0
+2026-11-17T17:41:26.6617265Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Processing engine constraints for npm
+2026-11-17T17:41:26.6619700Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> No version requirement found for npm
+2026-11-17T17:41:26.6621709Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:26.6622803Z 2026/11/17 17:41:26 INFO <job_1712510136> Resolving package manager for: npm
+2026-11-17T17:41:26.6828004Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:26.6841561Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Installed version for npm: 12.2.0
+2026-11-17T17:41:26.6842902Z 2026/11/17 17:41:26 INFO <job_1712510136> Processing engine constraints for npm
+2026-11-17T17:41:26.6844197Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> No version requirement found for npm
+2026-11-17T17:41:26.6879290Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:26.6914424Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:26.6915551Z 2026/11/17 17:41:26 INFO <job_1712510136> Resolving package manager for: npm
+2026-11-17T17:41:26.6924978Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:26.6926131Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Installed version for npm: 12.2.0
+2026-11-17T17:41:26.6927808Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Processing engine constraints for npm
+2026-11-17T17:41:26.6928856Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> No version requirement found for npm
+2026-11-17T17:41:26.6930052Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:26.6931955Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Resolving package manager for: npm
+2026-11-17T17:41:26.6947203Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:26.6949259Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Installed version for npm: 12.2.0
+2026-11-17T17:41:26.6950713Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Processing engine constraints for npm
+2026-11-17T17:41:26.6951933Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> No version requirement found for npm
+2026-11-17T17:41:26.6953117Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:26.6954166Z 2026/11/17 17:41:26 INFO <job_1712510136> Resolving package manager for: npm
+2026-11-17T17:41:26.6960734Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:26.6964129Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Installed version for npm: 12.2.0
+2026-11-17T17:41:26.6965799Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Processing engine constraints for npm
+2026-11-17T17:41:26.6966932Z 2026/11/17 17:41:26 INFO <job_1712510136> No version requirement found for npm
+2026-11-17T17:41:26.6968021Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:26.6968988Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Resolving package manager for: npm
+2026-11-17T17:41:26.6972110Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:26.6974820Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Installed version for npm: 12.2.0
+2026-11-17T17:41:26.6975869Z 2026/11/17 17:41:26 INFO <job_1712510136> Processing engine constraints for npm
+2026-11-17T17:41:26.6976864Z 2026/11/17 17:41:26 INFO <job_1712510136> No version requirement found for npm
+2026-11-17T17:41:26.6996953Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:26.6998072Z 2026/11/17 17:41:26 INFO <job_1712510136> Resolving package manager for: npm
+2026-11-17T17:41:26.7004379Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:26.7005683Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Installed version for npm: 12.2.0
+2026-11-17T17:41:26.7007752Z 2026/11/17 17:41:26 INFO <job_1712510136> Processing engine constraints for npm
+2026-11-17T17:41:26.7008780Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> No version requirement found for npm
+2026-11-17T17:41:26.7009930Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:26.7011021Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Resolving package manager for: npm
+2026-11-17T17:41:26.7015638Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:26.7016753Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Installed version for npm: 12.2.0
+2026-11-17T17:41:26.7017738Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Processing engine constraints for npm
+2026-11-17T17:41:26.7019204Z 2026/11/17 17:41:26 INFO <job_1712510136> No version requirement found for npm
+2026-11-17T17:41:26.7020363Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:26.7021637Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Resolving package manager for: npm
+2026-11-17T17:41:26.7031287Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:26.7032441Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Installed version for npm: 12.2.0
+2026-11-17T17:41:26.7033378Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Processing engine constraints for npm
+2026-11-17T17:41:26.7034364Z 2026/11/17 17:41:26 INFO <job_1712510136> No version requirement found for npm
+2026-11-17T17:41:26.7035238Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:26.7036219Z 2026/11/17 17:41:26 INFO <job_1712510136> Resolving package manager for: npm
+2026-11-17T17:41:26.7042605Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:26.7044769Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Installed version for npm: 12.2.0
+2026-11-17T17:41:26.7045857Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Processing engine constraints for npm
+2026-11-17T17:41:26.7046751Z 2026/11/17 17:41:26 INFO <job_1712510136> No version requirement found for npm
+2026-11-17T17:41:26.8028184Z   proxy | 2026/11/17 17:41:26 [008] POST /update_jobs/1712510136/record_ecosystem_versions
+2026-11-17T17:41:26.9596821Z   proxy | 2026/11/17 17:41:26 [008] 204 /update_jobs/1712510136/record_ecosystem_versions
+2026-11-17T17:41:26.9602494Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Base commit SHA: 11911bfe21282c8ec784efcf4bf22a87ab49bb39
+2026-11-17T17:41:26.9603540Z 2026/11/17 17:41:26 INFO <job_1712510136> Finished job processing
+2026-11-17T17:41:26.9618026Z updater | 2026/11/17 17:41:26 INFO <job_1712510136> Starting job processing
+2026-11-17T17:41:27.0438471Z   proxy | 2026/11/17 17:41:27 [010] GET /update_jobs/1712510136/blocked_versions?package-manager=npm_and_yarn
+2026-11-17T17:41:27.0938789Z   proxy | 2026/11/17 17:41:27 [010] 200 /update_jobs/1712510136/blocked_versions?package-manager=npm_and_yarn
+2026-11-17T17:41:27.0965881Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:27.0966568Z 2026/11/17 17:41:27 INFO <job_1712510136> Resolving package manager for: npm
+2026-11-17T17:41:27.0975700Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:27.0978377Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Fetching version for package manager: npm
+2026-11-17T17:41:27.0985320Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Started process PID: 1278 with command: {} corepack npm -v {}
+2026-11-17T17:41:27.2488093Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Process PID: 1278 completed with status: pid 1278 exit 0
+2026-11-17T17:41:27.2493808Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Total execution time: 0.15 seconds
+2026-11-17T17:41:27.2494794Z 2026/11/17 17:41:27 INFO <job_1712510136> Installed version of npm: 12.2.0
+2026-11-17T17:41:27.2495641Z 2026/11/17 17:41:27 INFO <job_1712510136> Installed version for npm: 12.2.0
+2026-11-17T17:41:27.2496376Z 2026/11/17 17:41:27 INFO <job_1712510136> Processing engine constraints for npm
+2026-11-17T17:41:27.2497491Z 2026/11/17 17:41:27 INFO <job_1712510136> No version requirement found for npm
+2026-11-17T17:41:27.2498366Z 2026/11/17 17:41:27 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:27.2499255Z 2026/11/17 17:41:27 INFO <job_1712510136> Resolving package manager for: npm
+2026-11-17T17:41:27.2509047Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:27.2510313Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Installed version for npm: 12.2.0
+2026-11-17T17:41:27.2511980Z 2026/11/17 17:41:27 INFO <job_1712510136> Processing engine constraints for npm
+2026-11-17T17:41:27.2513046Z 2026/11/17 17:41:27 INFO <job_1712510136> No version requirement found for npm
+2026-11-17T17:41:27.2514141Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:27.2515199Z 2026/11/17 17:41:27 INFO <job_1712510136> Resolving package manager for: npm
+2026-11-17T17:41:27.2520285Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:27.2522692Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Installed version for npm: 12.2.0
+2026-11-17T17:41:27.2523655Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Processing engine constraints for npm
+2026-11-17T17:41:27.2524740Z 2026/11/17 17:41:27 INFO <job_1712510136> No version requirement found for npm
+2026-11-17T17:41:27.2532136Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Guessed version info "npm" : "12"
+2026-11-17T17:41:27.2536665Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Running node command: node -v
+2026-11-17T17:41:27.2544836Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Started process PID: 1291 with command: {} node -v {}
+2026-11-17T17:41:27.2589283Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Process PID: 1291 completed with status: pid 1291 exit 0
+2026-11-17T17:41:27.2591242Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Total execution time: 0.0 seconds
+2026-11-17T17:41:27.2591836Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Command executed successfully: node -v
+2026-11-17T17:41:27.2592345Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Using node version: 24.22.3
+2026-11-17T17:41:27.2592839Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Processing engine constraints for node
+2026-11-17T17:41:27.3959662Z   proxy | 2026/11/17 17:41:27 [012] POST /update_jobs/1712510136/update_dependency_list
+2026-11-17T17:41:27.4659257Z   proxy | 2026/11/17 17:41:27 [012] 204 /update_jobs/1712510136/update_dependency_list
+2026-11-17T17:41:27.5539092Z   proxy | 2026/11/17 17:41:27 [014] POST /update_jobs/1712510136/increment_metric
+2026-11-17T17:41:27.6393041Z   proxy | 2026/11/17 17:41:27 [014] 204 /update_jobs/1712510136/increment_metric
+2026-11-17T17:41:27.6402077Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Starting security update job for leancelot/lifeedy
+2026-11-17T17:41:27.6440096Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:27.6441310Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Detected package manager: npm
+2026-11-17T17:41:27.6451306Z updater | 2026/11/17 17:41:27 INFO <job_1712510136> Checking if @grpc/grpc-js 1.9.16 needs updating
+2026-11-17T17:41:27.8860157Z   proxy | 2026/11/17 17:41:27 [016] GET https://registry.npmjs.org:443/@grpc%2Fgrpc-js
+2026-11-17T17:41:27.9249142Z   proxy | 2026/11/17 17:41:27 [016] 200 https://registry.npmjs.org:443/@grpc%2Fgrpc-js
+2026-11-17T17:41:28.1067005Z   proxy | 2026/11/17 17:41:28 [018] HEAD https://registry.npmjs.org:443/@grpc/grpc-js/-/grpc-js-1.14.7.tgz
+2026-11-17T17:41:28.1297855Z   proxy | 2026/11/17 17:41:28 [018] 200 https://registry.npmjs.org:443/@grpc/grpc-js/-/grpc-js-1.14.7.tgz
+2026-11-17T17:41:28.1307909Z updater | 2026/11/17 17:41:28 INFO <job_1712510136> Latest version is 1.14.7
+2026-11-17T17:41:28.1351135Z updater | 2026/11/17 17:41:28 INFO <job_1712510136> VulnerabilityAuditor: starting audit
+2026-11-17T17:41:28.1391450Z updater | 2026/11/17 17:41:28 INFO <job_1712510136> Started process PID: 1293 with command: node /opt/npm_and_yarn/dist/run.js
+2026-11-17T17:41:29.3287867Z   proxy | 2026/11/17 17:41:29 [020] GET https://registry.npmjs.org:443/@grpc%2fgrpc-js
+2026-11-17T17:41:29.3563329Z   proxy | 2026/11/17 17:41:29 [020] 200 https://registry.npmjs.org:443/@grpc%2fgrpc-js
+2026-11-17T17:41:29.4213369Z   proxy | 2026/11/17 17:41:29 [021] GET https://registry.npmjs.org:443/@firebase%2ffirestore
+2026-11-17T17:41:29.4494293Z   proxy | 2026/11/17 17:41:29 [021] 200 https://registry.npmjs.org:443/@firebase%2ffirestore
+2026-11-17T17:41:29.9610867Z   proxy | 2026/11/17 17:41:29 [022] GET https://registry.npmjs.org:443/@firebase%2ffirestore-compat
+2026-11-17T17:41:29.9665134Z   proxy | 2026/11/17 17:41:29 [024] GET https://registry.npmjs.org:443/firebase
+2026-11-17T17:41:30.0186242Z   proxy | 2026/11/17 17:41:30 [022] 200 https://registry.npmjs.org:443/@firebase%2ffirestore-compat
+2026-11-17T17:41:30.0479976Z   proxy | 2026/11/17 17:41:30 [024] 200 https://registry.npmjs.org:443/firebase
+2026-11-17T17:41:45.8105618Z   proxy | 2026/11/17 17:41:45 [025] GET https://registry.npmjs.org:443/@capacitor%2fapp
+2026-11-17T17:41:45.8822761Z   proxy | 2026/11/17 17:41:45 [025] 200 https://registry.npmjs.org:443/@capacitor%2fapp
+2026-11-17T17:41:45.9557119Z   proxy | 2026/11/17 17:41:45 [026] GET https://registry.npmjs.org:443/@capacitor%2fcore
+2026-11-17T17:41:46.0421641Z   proxy | 2026/11/17 17:41:46 [026] 200 https://registry.npmjs.org:443/@capacitor%2fcore
+2026-11-17T17:41:46.1453558Z   proxy | 2026/11/17 17:41:46 [027] GET https://registry.npmjs.org:443/@capacitor%2fbrowser
+2026-11-17T17:41:46.2142085Z   proxy | 2026/11/17 17:41:46 [027] 200 https://registry.npmjs.org:443/@capacitor%2fbrowser
+2026-11-17T17:41:46.3135061Z   proxy | 2026/11/17 17:41:46 [028] GET https://registry.npmjs.org:443/@capacitor%2fhaptics
+2026-11-17T17:41:46.3804214Z   proxy | 2026/11/17 17:41:46 [028] 200 https://registry.npmjs.org:443/@capacitor%2fhaptics
+2026-11-17T17:41:46.4459058Z   proxy | 2026/11/17 17:41:46 [029] GET https://registry.npmjs.org:443/@capacitor%2flocal-notifications
+2026-11-17T17:41:46.5152940Z   proxy | 2026/11/17 17:41:46 [029] 200 https://registry.npmjs.org:443/@capacitor%2flocal-notifications
+2026-11-17T17:41:46.5939426Z   proxy | 2026/11/17 17:41:46 [030] GET https://registry.npmjs.org:443/@capacitor%2fstatus-bar
+2026-11-17T17:41:46.6281747Z   proxy | 2026/11/17 17:41:46 [030] 200 https://registry.npmjs.org:443/@capacitor%2fstatus-bar
+2026-11-17T17:41:46.7834815Z   proxy | 2026/11/17 17:41:46 [031] GET https://registry.npmjs.org:443/@google%2fgenai
+2026-11-17T17:41:46.8264169Z   proxy | 2026/11/17 17:41:46 [031] 200 https://registry.npmjs.org:443/@google%2fgenai
+2026-11-17T17:41:46.8455682Z   proxy | 2026/11/17 17:41:46 [032] GET https://registry.npmjs.org:443/@modelcontextprotocol%2fsdk
+2026-11-17T17:41:46.8741236Z   proxy | 2026/11/17 17:41:46 [032] 200 https://registry.npmjs.org:443/@modelcontextprotocol%2fsdk
+2026-11-17T17:41:46.8946766Z   proxy | 2026/11/17 17:41:46 [033] GET https://registry.npmjs.org:443/@cfworker%2fjson-schema
+2026-11-17T17:41:46.9298862Z   proxy | 2026/11/17 17:41:46 [033] 200 https://registry.npmjs.org:443/@cfworker%2fjson-schema
+2026-11-17T17:41:46.9490907Z   proxy | 2026/11/17 17:41:46 [034] GET https://registry.npmjs.org:443/firebase
+2026-11-17T17:41:46.9918198Z   proxy | 2026/11/17 17:41:46 [034] 200 https://registry.npmjs.org:443/firebase
+2026-11-17T17:41:47.6182074Z   proxy | 2026/11/17 17:41:47 [035] GET https://registry.npmjs.org:443/tesseract.js
+2026-11-17T17:41:47.6472476Z   proxy | 2026/11/17 17:41:47 [035] 200 https://registry.npmjs.org:443/tesseract.js
+2026-11-17T17:41:47.6729317Z   proxy | 2026/11/17 17:41:47 [036] GET https://registry.npmjs.org:443/vitest
+2026-11-17T17:41:47.7062379Z   proxy | 2026/11/17 17:41:47 [036] 200 https://registry.npmjs.org:443/vitest
+2026-11-17T17:41:47.7626748Z   proxy | 2026/11/17 17:41:47 [037] GET https://registry.npmjs.org:443/@edge-runtime%2fvm
+2026-11-17T17:41:47.7867977Z   proxy | 2026/11/17 17:41:47 [037] 200 https://registry.npmjs.org:443/@edge-runtime%2fvm
+2026-11-17T17:41:47.8192741Z   proxy | 2026/11/17 17:41:47 [038] GET https://registry.npmjs.org:443/@opentelemetry%2fapi
+2026-11-17T17:41:47.8686078Z   proxy | 2026/11/17 17:41:47 [038] 200 https://registry.npmjs.org:443/@opentelemetry%2fapi
+2026-11-17T17:41:47.8771286Z   proxy | 2026/11/17 17:41:47 [039] GET https://registry.npmjs.org:443/@types%2fnode
+2026-11-17T17:41:47.9308908Z   proxy | 2026/11/17 17:41:47 [039] 200 https://registry.npmjs.org:443/@types%2fnode
+2026-11-17T17:41:48.1482182Z   proxy | 2026/11/17 17:41:48 [040] GET https://registry.npmjs.org:443/@vitest%2fbrowser-playwright
+2026-11-17T17:41:48.1732372Z   proxy | 2026/11/17 17:41:48 [040] 200 https://registry.npmjs.org:443/@vitest%2fbrowser-playwright
+2026-11-17T17:41:48.1972491Z   proxy | 2026/11/17 17:41:48 [041] GET https://registry.npmjs.org:443/playwright
+2026-11-17T17:41:48.2465652Z   proxy | 2026/11/17 17:41:48 [041] 200 https://registry.npmjs.org:443/playwright
+2026-11-17T17:41:48.6288838Z   proxy | 2026/11/17 17:41:48 [042] GET https://registry.npmjs.org:443/@vitest%2fbrowser-preview
+2026-11-17T17:41:48.6540618Z   proxy | 2026/11/17 17:41:48 [042] 200 https://registry.npmjs.org:443/@vitest%2fbrowser-preview
+2026-11-17T17:41:48.6748569Z   proxy | 2026/11/17 17:41:48 [043] GET https://registry.npmjs.org:443/@vitest%2fbrowser-webdriverio
+2026-11-17T17:41:48.7179834Z   proxy | 2026/11/17 17:41:48 [043] 200 https://registry.npmjs.org:443/@vitest%2fbrowser-webdriverio
+2026-11-17T17:41:48.7226348Z   proxy | 2026/11/17 17:41:48 [044] GET https://registry.npmjs.org:443/webdriverio
+2026-11-17T17:41:48.7720885Z   proxy | 2026/11/17 17:41:48 [044] 200 https://registry.npmjs.org:443/webdriverio
+2026-11-17T17:41:48.8259917Z   proxy | 2026/11/17 17:41:48 [045] GET https://registry.npmjs.org:443/puppeteer-core
+2026-11-17T17:41:48.8595047Z   proxy | 2026/11/17 17:41:48 [045] 200 https://registry.npmjs.org:443/puppeteer-core
+2026-11-17T17:41:48.8859126Z   proxy | 2026/11/17 17:41:48 [046] GET https://registry.npmjs.org:443/@vitest%2fcoverage-istanbul
+2026-11-17T17:41:48.9264990Z   proxy | 2026/11/17 17:41:48 [046] 200 https://registry.npmjs.org:443/@vitest%2fcoverage-istanbul
+2026-11-17T17:41:48.9402878Z   proxy | 2026/11/17 17:41:48 [047] GET https://registry.npmjs.org:443/@vitest%2fcoverage-v8
+2026-11-17T17:41:48.9989976Z   proxy | 2026/11/17 17:41:48 [047] 200 https://registry.npmjs.org:443/@vitest%2fcoverage-v8
+2026-11-17T17:41:49.0137868Z   proxy | 2026/11/17 17:41:49 [048] GET https://registry.npmjs.org:443/@vitest%2fbrowser
+2026-11-17T17:41:49.0840935Z   proxy | 2026/11/17 17:41:49 [048] 200 https://registry.npmjs.org:443/@vitest%2fbrowser
+2026-11-17T17:41:49.1006106Z   proxy | 2026/11/17 17:41:49 [049] GET https://registry.npmjs.org:443/@vitest%2fui
+2026-11-17T17:41:49.1751572Z   proxy | 2026/11/17 17:41:49 [049] 200 https://registry.npmjs.org:443/@vitest%2fui
+2026-11-17T17:41:49.1956869Z   proxy | 2026/11/17 17:41:49 [050] GET https://registry.npmjs.org:443/happy-dom
+2026-11-17T17:41:49.2467308Z   proxy | 2026/11/17 17:41:49 [050] 200 https://registry.npmjs.org:443/happy-dom
+2026-11-17T17:41:49.3192230Z   proxy | 2026/11/17 17:41:49 [051] GET https://registry.npmjs.org:443/jsdom
+2026-11-17T17:41:49.3682940Z   proxy | 2026/11/17 17:41:49 [051] 200 https://registry.npmjs.org:443/jsdom
+2026-11-17T17:41:49.3871339Z   proxy | 2026/11/17 17:41:49 [052] GET https://registry.npmjs.org:443/@napi-rs%2fcanvas
+2026-11-17T17:41:49.4232660Z   proxy | 2026/11/17 17:41:49 [052] 200 https://registry.npmjs.org:443/@napi-rs%2fcanvas
+2026-11-17T17:41:49.4454031Z   proxy | 2026/11/17 17:41:49 [053] GET https://registry.npmjs.org:443/vite
+2026-11-17T17:41:49.5827585Z   proxy | 2026/11/17 17:41:49 [053] 200 https://registry.npmjs.org:443/vite
+2026-11-17T17:41:51.1984137Z   proxy | 2026/11/17 17:41:51 [054] GET https://registry.npmjs.org:443/@vitejs%2fdevtools
+2026-11-17T17:41:51.2410207Z   proxy | 2026/11/17 17:41:51 [054] 200 https://registry.npmjs.org:443/@vitejs%2fdevtools
+2026-11-17T17:41:51.2522499Z   proxy | 2026/11/17 17:41:51 [055] GET https://registry.npmjs.org:443/@vitejs%2fdevtools-oxc
+2026-11-17T17:41:51.2759000Z   proxy | 2026/11/17 17:41:51 [055] 200 https://registry.npmjs.org:443/@vitejs%2fdevtools-oxc
+2026-11-17T17:41:51.2814266Z   proxy | 2026/11/17 17:41:51 [056] GET https://registry.npmjs.org:443/@vitejs%2fdevtools-rolldown
+2026-11-17T17:41:51.3281526Z   proxy | 2026/11/17 17:41:51 [056] 200 https://registry.npmjs.org:443/@vitejs%2fdevtools-rolldown
+2026-11-17T17:41:51.3365519Z   proxy | 2026/11/17 17:41:51 [057] GET https://registry.npmjs.org:443/@vitejs%2fdevtools-vite
+2026-11-17T17:41:51.3633236Z   proxy | 2026/11/17 17:41:51 [057] 200 https://registry.npmjs.org:443/@vitejs%2fdevtools-vite
+2026-11-17T17:41:51.3696104Z   proxy | 2026/11/17 17:41:51 [058] GET https://registry.npmjs.org:443/@vitejs%2fdevtools-vitest
+2026-11-17T17:41:51.3955462Z   proxy | 2026/11/17 17:41:51 [058] 200 https://registry.npmjs.org:443/@vitejs%2fdevtools-vitest
+2026-11-17T17:41:51.4003571Z   proxy | 2026/11/17 17:41:51 [059] GET https://registry.npmjs.org:443/esbuild
+2026-11-17T17:41:51.4783860Z   proxy | 2026/11/17 17:41:51 [059] 200 https://registry.npmjs.org:443/esbuild
+2026-11-17T17:41:51.5142867Z   proxy | 2026/11/17 17:41:51 [060] GET https://registry.npmjs.org:443/jiti
+2026-11-17T17:41:51.5469225Z   proxy | 2026/11/17 17:41:51 [060] 200 https://registry.npmjs.org:443/jiti
+2026-11-17T17:41:51.5583666Z   proxy | 2026/11/17 17:41:51 [061] GET https://registry.npmjs.org:443/less
+2026-11-17T17:41:51.5815437Z   proxy | 2026/11/17 17:41:51 [061] 200 https://registry.npmjs.org:443/less
+2026-11-17T17:41:51.6225282Z   proxy | 2026/11/17 17:41:51 [062] GET https://registry.npmjs.org:443/sass
+2026-11-17T17:41:51.6688828Z   proxy | 2026/11/17 17:41:51 [062] 200 https://registry.npmjs.org:443/sass
+2026-11-17T17:41:51.6872639Z   proxy | 2026/11/17 17:41:51 [063] GET https://registry.npmjs.org:443/sass-embedded
+2026-11-17T17:41:51.7106462Z   proxy | 2026/11/17 17:41:51 [063] 200 https://registry.npmjs.org:443/sass-embedded
+2026-11-17T17:41:51.7225615Z   proxy | 2026/11/17 17:41:51 [064] GET https://registry.npmjs.org:443/stylus
+2026-11-17T17:41:51.7407558Z   proxy | 2026/11/17 17:41:51 [064] 200 https://registry.npmjs.org:443/stylus
+2026-11-17T17:41:51.7507975Z   proxy | 2026/11/17 17:41:51 [065] GET https://registry.npmjs.org:443/sugarss
+2026-11-17T17:41:51.7642365Z   proxy | 2026/11/17 17:41:51 [065] 200 https://registry.npmjs.org:443/sugarss
+2026-11-17T17:41:51.7697186Z   proxy | 2026/11/17 17:41:51 [066] GET https://registry.npmjs.org:443/postcss
+2026-11-17T17:41:51.8189527Z   proxy | 2026/11/17 17:41:51 [066] 200 https://registry.npmjs.org:443/postcss
+2026-11-17T17:41:51.8363076Z   proxy | 2026/11/17 17:41:51 [067] GET https://registry.npmjs.org:443/terser
+2026-11-17T17:41:51.8636800Z   proxy | 2026/11/17 17:41:51 [067] 200 https://registry.npmjs.org:443/terser
+2026-11-17T17:41:51.8866714Z   proxy | 2026/11/17 17:41:51 [068] GET https://registry.npmjs.org:443/tsx
+2026-11-17T17:41:51.9115447Z   proxy | 2026/11/17 17:41:51 [068] 200 https://registry.npmjs.org:443/tsx
+2026-11-17T17:41:51.9218363Z   proxy | 2026/11/17 17:41:51 [069] GET https://registry.npmjs.org:443/yaml
+2026-11-17T17:41:51.9426593Z   proxy | 2026/11/17 17:41:51 [069] 200 https://registry.npmjs.org:443/yaml
+2026-11-17T17:41:51.9927517Z   proxy | 2026/11/17 17:41:51 [070] GET https://registry.npmjs.org:443/@firebase%2fapp
+2026-11-17T17:41:51.9937922Z   proxy | 2026/11/17 17:41:51 [071] GET https://registry.npmjs.org:443/@firebase%2fauth
+2026-11-17T17:41:52.0053507Z   proxy | 2026/11/17 17:41:52 [073] GET https://registry.npmjs.org:443/@firebase%2futil
+2026-11-17T17:41:52.0471570Z   proxy | 2026/11/17 17:41:52 [070] 200 https://registry.npmjs.org:443/@firebase%2fapp
+2026-11-17T17:41:52.0519355Z   proxy | 2026/11/17 17:41:52 [071] 200 https://registry.npmjs.org:443/@firebase%2fauth
+2026-11-17T17:41:52.0648501Z   proxy | 2026/11/17 17:41:52 [073] 200 https://registry.npmjs.org:443/@firebase%2futil
+2026-11-17T17:41:52.5609752Z   proxy | 2026/11/17 17:41:52 [074] GET https://registry.npmjs.org:443/@firebase%2fstorage
+2026-11-17T17:41:52.6130739Z   proxy | 2026/11/17 17:41:52 [074] 200 https://registry.npmjs.org:443/@firebase%2fstorage
+2026-11-17T17:41:52.6752162Z   proxy | 2026/11/17 17:41:52 [075] GET https://registry.npmjs.org:443/@firebase%2fdatabase
+2026-11-17T17:41:52.7306347Z   proxy | 2026/11/17 17:41:52 [075] 200 https://registry.npmjs.org:443/@firebase%2fdatabase
+2026-11-17T17:41:52.8468481Z   proxy | 2026/11/17 17:41:52 [076] GET https://registry.npmjs.org:443/@firebase%2fanalytics
+2026-11-17T17:41:52.9004007Z   proxy | 2026/11/17 17:41:52 [076] 200 https://registry.npmjs.org:443/@firebase%2fanalytics
+2026-11-17T17:41:53.1403859Z   proxy | 2026/11/17 17:41:53 [077] GET https://registry.npmjs.org:443/@firebase%2fapp-check
+2026-11-17T17:41:53.1782286Z   proxy | 2026/11/17 17:41:53 [077] 200 https://registry.npmjs.org:443/@firebase%2fapp-check
+2026-11-17T17:41:53.2052911Z   proxy | 2026/11/17 17:41:53 [078] GET https://registry.npmjs.org:443/@firebase%2fapp-types
+2026-11-17T17:41:53.2572574Z   proxy | 2026/11/17 17:41:53 [078] 200 https://registry.npmjs.org:443/@firebase%2fapp-types
+2026-11-17T17:41:53.4272332Z   proxy | 2026/11/17 17:41:53 [079] GET https://registry.npmjs.org:443/@firebase%2ffirestore
+2026-11-17T17:41:53.4747881Z   proxy | 2026/11/17 17:41:53 [080] GET https://registry.npmjs.org:443/@firebase%2ffunctions
+2026-11-17T17:41:53.4839657Z   proxy | 2026/11/17 17:41:53 [079] 200 https://registry.npmjs.org:443/@firebase%2ffirestore
+2026-11-17T17:41:53.5375391Z   proxy | 2026/11/17 17:41:53 [081] GET https://registry.npmjs.org:443/@firebase%2fmessaging
+2026-11-17T17:41:53.5385748Z 2026/11/17 17:41:53 [080] 200 https://registry.npmjs.org:443/@firebase%2ffunctions
+2026-11-17T17:41:53.6026265Z   proxy | 2026/11/17 17:41:53 [081] 200 https://registry.npmjs.org:443/@firebase%2fmessaging
+2026-11-17T17:41:54.0186573Z   proxy | 2026/11/17 17:41:54 [082] GET https://registry.npmjs.org:443/@firebase%2fapp-compat
+2026-11-17T17:41:54.0440231Z   proxy | 2026/11/17 17:41:54 [082] 200 https://registry.npmjs.org:443/@firebase%2fapp-compat
+2026-11-17T17:41:54.1346939Z   proxy | 2026/11/17 17:41:54 [083] GET https://registry.npmjs.org:443/@firebase%2fauth-compat
+2026-11-17T17:41:54.1912329Z   proxy | 2026/11/17 17:41:54 [083] 200 https://registry.npmjs.org:443/@firebase%2fauth-compat
+2026-11-17T17:41:54.2741445Z   proxy | 2026/11/17 17:41:54 [084] GET https://registry.npmjs.org:443/@firebase%2fperformance
+2026-11-17T17:41:54.3271875Z   proxy | 2026/11/17 17:41:54 [084] 200 https://registry.npmjs.org:443/@firebase%2fperformance
+2026-11-17T17:41:54.4154373Z   proxy | 2026/11/17 17:41:54 [085] GET https://registry.npmjs.org:443/@firebase%2finstallations
+2026-11-17T17:41:54.4629280Z   proxy | 2026/11/17 17:41:54 [085] 200 https://registry.npmjs.org:443/@firebase%2finstallations
+2026-11-17T17:41:54.5640245Z   proxy | 2026/11/17 17:41:54 [086] GET https://registry.npmjs.org:443/@firebase%2fremote-config
+2026-11-17T17:41:54.6125905Z   proxy | 2026/11/17 17:41:54 [086] 200 https://registry.npmjs.org:443/@firebase%2fremote-config
+2026-11-17T17:41:54.8337335Z   proxy | 2026/11/17 17:41:54 [087] GET https://registry.npmjs.org:443/@firebase%2fstorage-compat
+2026-11-17T17:41:54.8917526Z   proxy | 2026/11/17 17:41:54 [088] GET https://registry.npmjs.org:443/@firebase%2fdatabase-compat
+2026-11-17T17:41:54.8963597Z   proxy | 2026/11/17 17:41:54 [087] 200 https://registry.npmjs.org:443/@firebase%2fstorage-compat
+2026-11-17T17:41:54.9612118Z   proxy | 2026/11/17 17:41:54 [088] 200 https://registry.npmjs.org:443/@firebase%2fdatabase-compat
+2026-11-17T17:41:55.0590860Z   proxy | 2026/11/17 17:41:55 [089] GET https://registry.npmjs.org:443/@firebase%2fanalytics-compat
+2026-11-17T17:41:55.0993273Z   proxy | 2026/11/17 17:41:55 [090] GET https://registry.npmjs.org:443/@firebase%2fapp-check-compat
+2026-11-17T17:41:55.1215825Z   proxy | 2026/11/17 17:41:55 [089] 200 https://registry.npmjs.org:443/@firebase%2fanalytics-compat
+2026-11-17T17:41:55.1600003Z   proxy | 2026/11/17 17:41:55 [091] GET https://registry.npmjs.org:443/@firebase%2ffirestore-compat
+2026-11-17T17:41:55.1649528Z   proxy | 2026/11/17 17:41:55 [090] 200 https://registry.npmjs.org:443/@firebase%2fapp-check-compat
+2026-11-17T17:41:55.2406257Z   proxy | 2026/11/17 17:41:55 [091] 200 https://registry.npmjs.org:443/@firebase%2ffirestore-compat
+2026-11-17T17:41:55.3151847Z   proxy | 2026/11/17 17:41:55 [092] GET https://registry.npmjs.org:443/@firebase%2ffunctions-compat
+2026-11-17T17:41:55.3677348Z   proxy | 2026/11/17 17:41:55 [093] GET https://registry.npmjs.org:443/@firebase%2fmessaging-compat
+2026-11-17T17:41:55.3691652Z   proxy | 2026/11/17 17:41:55 [092] 200 https://registry.npmjs.org:443/@firebase%2ffunctions-compat
+2026-11-17T17:41:55.4357587Z   proxy | 2026/11/17 17:41:55 [093] 200 https://registry.npmjs.org:443/@firebase%2fmessaging-compat
+2026-11-17T17:41:55.4572219Z   proxy | 2026/11/17 17:41:55 [094] GET https://registry.npmjs.org:443/@firebase%2fperformance-compat
+2026-11-17T17:41:55.4862243Z   proxy | 2026/11/17 17:41:55 [094] 200 https://registry.npmjs.org:443/@firebase%2fperformance-compat
+2026-11-17T17:41:55.5902388Z   proxy | 2026/11/17 17:41:55 [095] GET https://registry.npmjs.org:443/@firebase%2finstallations-compat
+2026-11-17T17:41:55.6466275Z   proxy | 2026/11/17 17:41:55 [095] 200 https://registry.npmjs.org:443/@firebase%2finstallations-compat
+2026-11-17T17:41:55.6766669Z   proxy | 2026/11/17 17:41:55 [096] GET https://registry.npmjs.org:443/@firebase%2fremote-config-compat
+2026-11-17T17:41:55.7338200Z   proxy | 2026/11/17 17:41:55 [097] GET https://registry.npmjs.org:443/bmp-js
+2026-11-17T17:41:55.7339408Z 2026/11/17 17:41:55 [096] 200 https://registry.npmjs.org:443/@firebase%2fremote-config-compat
+2026-11-17T17:41:55.7456612Z   proxy | 2026/11/17 17:41:55 [097] 200 https://registry.npmjs.org:443/bmp-js
+2026-11-17T17:41:55.7916068Z   proxy | 2026/11/17 17:41:55 [098] GET https://registry.npmjs.org:443/idb-keyval
+2026-11-17T17:41:55.8088033Z   proxy | 2026/11/17 17:41:55 [098] 200 https://registry.npmjs.org:443/idb-keyval
+2026-11-17T17:41:55.8193451Z   proxy | 2026/11/17 17:41:55 [099] GET https://registry.npmjs.org:443/is-url
+2026-11-17T17:41:55.8341902Z   proxy | 2026/11/17 17:41:55 [099] 200 https://registry.npmjs.org:443/is-url
+2026-11-17T17:41:55.8511730Z   proxy | 2026/11/17 17:41:55 [100] GET https://registry.npmjs.org:443/node-fetch
+2026-11-17T17:41:55.8551359Z   proxy | 2026/11/17 17:41:55 [101] GET https://registry.npmjs.org:443/opencollective-postinstall
+2026-11-17T17:41:55.8693219Z   proxy | 2026/11/17 17:41:55 [101] 200 https://registry.npmjs.org:443/opencollective-postinstall
+2026-11-17T17:41:55.8837353Z   proxy | 2026/11/17 17:41:55 [100] 200 https://registry.npmjs.org:443/node-fetch
+2026-11-17T17:41:55.9004786Z   proxy | 2026/11/17 17:41:55 [102] GET https://registry.npmjs.org:443/regenerator-runtime
+2026-11-17T17:41:55.9172076Z   proxy | 2026/11/17 17:41:55 [102] 200 https://registry.npmjs.org:443/regenerator-runtime
+2026-11-17T17:41:55.9333726Z   proxy | 2026/11/17 17:41:55 [103] GET https://registry.npmjs.org:443/tesseract.js-core
+2026-11-17T17:41:55.9498845Z   proxy | 2026/11/17 17:41:55 [104] GET https://registry.npmjs.org:443/wasm-feature-detect
+2026-11-17T17:41:55.9528203Z   proxy | 2026/11/17 17:41:55 [103] 200 https://registry.npmjs.org:443/tesseract.js-core
+2026-11-17T17:41:55.9624065Z   proxy | 2026/11/17 17:41:55 [105] GET https://registry.npmjs.org:443/zlibjs
+2026-11-17T17:41:55.9671923Z   proxy | 2026/11/17 17:41:55 [104] 200 https://registry.npmjs.org:443/wasm-feature-detect
+2026-11-17T17:41:55.9699060Z   proxy | 2026/11/17 17:41:55 [106] GET https://registry.npmjs.org:443/chai
+2026-11-17T17:41:55.9752987Z   proxy | 2026/11/17 17:41:55 [107] GET https://registry.npmjs.org:443/obug
+2026-11-17T17:41:55.9757463Z   proxy | 2026/11/17 17:41:55 [105] 200 https://registry.npmjs.org:443/zlibjs
+2026-11-17T17:41:55.9800327Z   proxy | 2026/11/17 17:41:55 [108] GET https://registry.npmjs.org:443/std-env
+2026-11-17T17:41:55.9897465Z   proxy | 2026/11/17 17:41:55 [107] 200 https://registry.npmjs.org:443/obug
+2026-11-17T17:41:55.9938198Z   proxy | 2026/11/17 17:41:55 [106] 200 https://registry.npmjs.org:443/chai
+2026-11-17T17:41:55.9953317Z   proxy | 2026/11/17 17:41:55 [109] GET https://registry.npmjs.org:443/tinyexec
+2026-11-17T17:41:55.9991481Z   proxy | 2026/11/17 17:41:55 [108] 200 https://registry.npmjs.org:443/std-env
+2026-11-17T17:41:56.0049592Z   proxy | 2026/11/17 17:41:56 [110] GET https://registry.npmjs.org:443/tinybench
+2026-11-17T17:41:56.0090806Z   proxy | 2026/11/17 17:41:56 [111] GET https://registry.npmjs.org:443/@types%2fchai
+2026-11-17T17:41:56.0128121Z   proxy | 2026/11/17 17:41:56 [109] 200 https://registry.npmjs.org:443/tinyexec
+2026-11-17T17:41:56.0188235Z   proxy | 2026/11/17 17:41:56 [112] GET https://registry.npmjs.org:443/expect-type
+2026-11-17T17:41:56.0228636Z   proxy | 2026/11/17 17:41:56 [110] 200 https://registry.npmjs.org:443/tinybench
+2026-11-17T17:41:56.0281605Z   proxy | 2026/11/17 17:41:56 [111] 200 https://registry.npmjs.org:443/@types%2fchai
+2026-11-17T17:41:56.0294543Z   proxy | 2026/11/17 17:41:56 [113] GET https://registry.npmjs.org:443/@vitest%2fmocker
+2026-11-17T17:41:56.0355160Z   proxy | 2026/11/17 17:41:56 [112] 200 https://registry.npmjs.org:443/expect-type
+2026-11-17T17:41:56.0411211Z   proxy | 2026/11/17 17:41:56 [114] GET https://registry.npmjs.org:443/es-module-lexer
+2026-11-17T17:41:56.0473099Z   proxy | 2026/11/17 17:41:56 [115] GET https://registry.npmjs.org:443/why-is-node-running
+2026-11-17T17:41:56.0579639Z   proxy | 2026/11/17 17:41:56 [113] 200 https://registry.npmjs.org:443/@vitest%2fmocker
+2026-11-17T17:41:56.0585931Z   proxy | 2026/11/17 17:41:56 [114] 200 https://registry.npmjs.org:443/es-module-lexer
+2026-11-17T17:41:56.0613243Z   proxy | 2026/11/17 17:41:56 [115] 200 https://registry.npmjs.org:443/why-is-node-running
+2026-11-17T17:41:56.0800297Z   proxy | 2026/11/17 17:41:56 [116] GET https://registry.npmjs.org:443/@tailwindcss%2foxide-android-arm64
+2026-11-17T17:41:56.1336421Z   proxy | 2026/11/17 17:41:56 [116] 200 https://registry.npmjs.org:443/@tailwindcss%2foxide-android-arm64
+2026-11-17T17:41:56.1716162Z   proxy | 2026/11/17 17:41:56 [117] GET https://registry.npmjs.org:443/@tailwindcss%2foxide-darwin-arm64
+2026-11-17T17:41:56.2310203Z   proxy | 2026/11/17 17:41:56 [117] 200 https://registry.npmjs.org:443/@tailwindcss%2foxide-darwin-arm64
+2026-11-17T17:41:56.2901826Z   proxy | 2026/11/17 17:41:56 [118] GET https://registry.npmjs.org:443/@tailwindcss%2foxide-darwin-x64
+2026-11-17T17:41:56.3481611Z   proxy | 2026/11/17 17:41:56 [118] 200 https://registry.npmjs.org:443/@tailwindcss%2foxide-darwin-x64
+2026-11-17T17:41:56.3978518Z   proxy | 2026/11/17 17:41:56 [119] GET https://registry.npmjs.org:443/@tailwindcss%2foxide-freebsd-x64
+2026-11-17T17:41:56.4557240Z   proxy | 2026/11/17 17:41:56 [119] 200 https://registry.npmjs.org:443/@tailwindcss%2foxide-freebsd-x64
+2026-11-17T17:41:56.5546519Z   proxy | 2026/11/17 17:41:56 [120] GET https://registry.npmjs.org:443/@tailwindcss%2foxide-linux-arm-gnueabihf
+2026-11-17T17:41:56.6126066Z   proxy | 2026/11/17 17:41:56 [120] 200 https://registry.npmjs.org:443/@tailwindcss%2foxide-linux-arm-gnueabihf
+2026-11-17T17:41:56.6605966Z   proxy | 2026/11/17 17:41:56 [121] GET https://registry.npmjs.org:443/@tailwindcss%2foxide-linux-arm64-gnu
+2026-11-17T17:41:56.7190143Z   proxy | 2026/11/17 17:41:56 [121] 200 https://registry.npmjs.org:443/@tailwindcss%2foxide-linux-arm64-gnu
+2026-11-17T17:41:56.7648701Z   proxy | 2026/11/17 17:41:56 [122] GET https://registry.npmjs.org:443/@tailwindcss%2foxide-linux-arm64-musl
+2026-11-17T17:41:57.1280642Z   proxy | 2026/11/17 17:41:57 [122] 200 https://registry.npmjs.org:443/@tailwindcss%2foxide-linux-arm64-musl
+2026-11-17T17:41:57.1740547Z   proxy | 2026/11/17 17:41:57 [123] GET https://registry.npmjs.org:443/@tailwindcss%2foxide-linux-x64-musl
+2026-11-17T17:41:57.2338232Z   proxy | 2026/11/17 17:41:57 [123] 200 https://registry.npmjs.org:443/@tailwindcss%2foxide-linux-x64-musl
+2026-11-17T17:41:57.2820641Z   proxy | 2026/11/17 17:41:57 [124] GET https://registry.npmjs.org:443/@tailwindcss%2foxide-win32-arm64-msvc
+2026-11-17T17:41:57.3365280Z   proxy | 2026/11/17 17:41:57 [124] 200 https://registry.npmjs.org:443/@tailwindcss%2foxide-win32-arm64-msvc
+2026-11-17T17:41:57.3646829Z   proxy | 2026/11/17 17:41:57 [125] GET https://registry.npmjs.org:443/@tailwindcss%2foxide-win32-x64-msvc
+2026-11-17T17:41:57.4090111Z   proxy | 2026/11/17 17:41:57 [125] 200 https://registry.npmjs.org:443/@tailwindcss%2foxide-win32-x64-msvc
+2026-11-17T17:41:57.4832460Z   proxy | 2026/11/17 17:41:57 [126] GET https://registry.npmjs.org:443/@esbuild%2faix-ppc64
+2026-11-17T17:41:57.5027301Z   proxy | 2026/11/17 17:41:57 [126] 200 https://registry.npmjs.org:443/@esbuild%2faix-ppc64
+2026-11-17T17:41:57.5076111Z   proxy | 2026/11/17 17:41:57 [127] GET https://registry.npmjs.org:443/@esbuild%2fandroid-arm
+2026-11-17T17:41:57.5354801Z   proxy | 2026/11/17 17:41:57 [127] 200 https://registry.npmjs.org:443/@esbuild%2fandroid-arm
+2026-11-17T17:41:57.5454585Z   proxy | 2026/11/17 17:41:57 [128] GET https://registry.npmjs.org:443/@esbuild%2fandroid-arm64
+2026-11-17T17:41:57.5747614Z   proxy | 2026/11/17 17:41:57 [128] 200 https://registry.npmjs.org:443/@esbuild%2fandroid-arm64
+2026-11-17T17:41:57.5849720Z   proxy | 2026/11/17 17:41:57 [129] GET https://registry.npmjs.org:443/@esbuild%2fandroid-x64
+2026-11-17T17:41:57.6148721Z   proxy | 2026/11/17 17:41:57 [129] 200 https://registry.npmjs.org:443/@esbuild%2fandroid-x64
+2026-11-17T17:41:57.6219340Z   proxy | 2026/11/17 17:41:57 [130] GET https://registry.npmjs.org:443/@esbuild%2fdarwin-arm64
+2026-11-17T17:41:57.6474889Z   proxy | 2026/11/17 17:41:57 [130] 200 https://registry.npmjs.org:443/@esbuild%2fdarwin-arm64
+2026-11-17T17:41:57.7119171Z   proxy | 2026/11/17 17:41:57 [131] GET https://registry.npmjs.org:443/@esbuild%2fdarwin-x64
+2026-11-17T17:41:57.7396580Z   proxy | 2026/11/17 17:41:57 [131] 200 https://registry.npmjs.org:443/@esbuild%2fdarwin-x64
+2026-11-17T17:41:57.7445290Z   proxy | 2026/11/17 17:41:57 [132] GET https://registry.npmjs.org:443/@esbuild%2ffreebsd-arm64
+2026-11-17T17:41:57.7862572Z   proxy | 2026/11/17 17:41:57 [132] 200 https://registry.npmjs.org:443/@esbuild%2ffreebsd-arm64
+2026-11-17T17:41:57.7930120Z   proxy | 2026/11/17 17:41:57 [133] GET https://registry.npmjs.org:443/@esbuild%2ffreebsd-x64
+2026-11-17T17:41:57.8339022Z   proxy | 2026/11/17 17:41:57 [133] 200 https://registry.npmjs.org:443/@esbuild%2ffreebsd-x64
+2026-11-17T17:41:57.8397558Z   proxy | 2026/11/17 17:41:57 [134] GET https://registry.npmjs.org:443/@esbuild%2flinux-arm
+2026-11-17T17:41:57.8669501Z   proxy | 2026/11/17 17:41:57 [134] 200 https://registry.npmjs.org:443/@esbuild%2flinux-arm
+2026-11-17T17:41:57.8739375Z   proxy | 2026/11/17 17:41:57 [135] GET https://registry.npmjs.org:443/@esbuild%2flinux-arm64
+2026-11-17T17:41:57.8982169Z   proxy | 2026/11/17 17:41:57 [135] 200 https://registry.npmjs.org:443/@esbuild%2flinux-arm64
+2026-11-17T17:41:57.9064268Z   proxy | 2026/11/17 17:41:57 [136] GET https://registry.npmjs.org:443/@esbuild%2flinux-ia32
+2026-11-17T17:41:57.9341096Z   proxy | 2026/11/17 17:41:57 [136] 200 https://registry.npmjs.org:443/@esbuild%2flinux-ia32
+2026-11-17T17:41:57.9412413Z   proxy | 2026/11/17 17:41:57 [137] GET https://registry.npmjs.org:443/@esbuild%2flinux-loong64
+2026-11-17T17:41:57.9676961Z   proxy | 2026/11/17 17:41:57 [137] 200 https://registry.npmjs.org:443/@esbuild%2flinux-loong64
+2026-11-17T17:41:57.9746096Z   proxy | 2026/11/17 17:41:57 [138] GET https://registry.npmjs.org:443/@esbuild%2flinux-mips64el
+2026-11-17T17:41:58.0034381Z   proxy | 2026/11/17 17:41:58 [138] 200 https://registry.npmjs.org:443/@esbuild%2flinux-mips64el
+2026-11-17T17:41:58.0103135Z   proxy | 2026/11/17 17:41:58 [139] GET https://registry.npmjs.org:443/@esbuild%2flinux-ppc64
+2026-11-17T17:41:58.0297839Z   proxy | 2026/11/17 17:41:58 [139] 200 https://registry.npmjs.org:443/@esbuild%2flinux-ppc64
+2026-11-17T17:41:58.0415739Z   proxy | 2026/11/17 17:41:58 [140] GET https://registry.npmjs.org:443/@esbuild%2flinux-riscv64
+2026-11-17T17:41:58.0643367Z   proxy | 2026/11/17 17:41:58 [140] 200 https://registry.npmjs.org:443/@esbuild%2flinux-riscv64
+2026-11-17T17:41:58.0719170Z   proxy | 2026/11/17 17:41:58 [141] GET https://registry.npmjs.org:443/@esbuild%2flinux-s390x
+2026-11-17T17:41:58.1027730Z   proxy | 2026/11/17 17:41:58 [141] 200 https://registry.npmjs.org:443/@esbuild%2flinux-s390x
+2026-11-17T17:41:58.1108637Z   proxy | 2026/11/17 17:41:58 [142] GET https://registry.npmjs.org:443/@esbuild%2fnetbsd-arm64
+2026-11-17T17:41:58.1316965Z   proxy | 2026/11/17 17:41:58 [142] 200 https://registry.npmjs.org:443/@esbuild%2fnetbsd-arm64
+2026-11-17T17:41:58.1366429Z   proxy | 2026/11/17 17:41:58 [143] GET https://registry.npmjs.org:443/@esbuild%2fnetbsd-x64
+2026-11-17T17:41:58.1697752Z   proxy | 2026/11/17 17:41:58 [143] 200 https://registry.npmjs.org:443/@esbuild%2fnetbsd-x64
+2026-11-17T17:41:58.1807834Z   proxy | 2026/11/17 17:41:58 [144] GET https://registry.npmjs.org:443/@esbuild%2fopenbsd-arm64
+2026-11-17T17:41:58.2121346Z   proxy | 2026/11/17 17:41:58 [144] 200 https://registry.npmjs.org:443/@esbuild%2fopenbsd-arm64
+2026-11-17T17:41:58.2314899Z   proxy | 2026/11/17 17:41:58 [145] GET https://registry.npmjs.org:443/@esbuild%2fopenbsd-x64
+2026-11-17T17:41:58.2567328Z   proxy | 2026/11/17 17:41:58 [145] 200 https://registry.npmjs.org:443/@esbuild%2fopenbsd-x64
+2026-11-17T17:41:58.2647319Z   proxy | 2026/11/17 17:41:58 [146] GET https://registry.npmjs.org:443/@esbuild%2fopenharmony-arm64
+2026-11-17T17:41:58.2851840Z   proxy | 2026/11/17 17:41:58 [146] 200 https://registry.npmjs.org:443/@esbuild%2fopenharmony-arm64
+2026-11-17T17:41:58.2897835Z   proxy | 2026/11/17 17:41:58 [147] GET https://registry.npmjs.org:443/@esbuild%2fsunos-x64
+2026-11-17T17:41:58.3225548Z   proxy | 2026/11/17 17:41:58 [147] 200 https://registry.npmjs.org:443/@esbuild%2fsunos-x64
+2026-11-17T17:41:58.3347028Z   proxy | 2026/11/17 17:41:58 [148] GET https://registry.npmjs.org:443/@esbuild%2fwin32-arm64
+2026-11-17T17:41:58.3623264Z   proxy | 2026/11/17 17:41:58 [148] 200 https://registry.npmjs.org:443/@esbuild%2fwin32-arm64
+2026-11-17T17:41:58.3693125Z   proxy | 2026/11/17 17:41:58 [149] GET https://registry.npmjs.org:443/@esbuild%2fwin32-ia32
+2026-11-17T17:41:58.3971220Z   proxy | 2026/11/17 17:41:58 [149] 200 https://registry.npmjs.org:443/@esbuild%2fwin32-ia32
+2026-11-17T17:41:58.4033759Z   proxy | 2026/11/17 17:41:58 [150] GET https://registry.npmjs.org:443/@esbuild%2fwin32-x64
+2026-11-17T17:41:58.4324422Z   proxy | 2026/11/17 17:41:58 [150] 200 https://registry.npmjs.org:443/@esbuild%2fwin32-x64
+2026-11-17T17:41:58.4917023Z   proxy | 2026/11/17 17:41:58 [151] GET https://registry.npmjs.org:443/@firebase%2flogger
+2026-11-17T17:41:58.4921759Z   proxy | 2026/11/17 17:41:58 [152] GET https://registry.npmjs.org:443/@firebase%2fcomponent
+2026-11-17T17:41:58.4932664Z   proxy | 2026/11/17 17:41:58 [153] GET https://registry.npmjs.org:443/idb
+2026-11-17T17:41:58.5341274Z   proxy | 2026/11/17 17:41:58 [153] 200 https://registry.npmjs.org:443/idb
+2026-11-17T17:41:58.5390192Z   proxy | 2026/11/17 17:41:58 [154] GET https://registry.npmjs.org:443/@firebase%2flogger
+2026-11-17T17:41:58.5446597Z   proxy | 2026/11/17 17:41:58 [151] 200 https://registry.npmjs.org:443/@firebase%2flogger
+2026-11-17T17:41:58.5454168Z   proxy | 2026/11/17 17:41:58 [152] 200 https://registry.npmjs.org:443/@firebase%2fcomponent
+2026-11-17T17:41:58.6217327Z   proxy | 2026/11/17 17:41:58 [154] 200 https://registry.npmjs.org:443/@firebase%2flogger
+2026-11-17T17:41:58.8776109Z   proxy | 2026/11/17 17:41:58 [155] GET https://registry.npmjs.org:443/@firebase%2fanalytics-types
+2026-11-17T17:41:58.9299192Z   proxy | 2026/11/17 17:41:58 [155] 200 https://registry.npmjs.org:443/@firebase%2fanalytics-types
+2026-11-17T17:41:58.9747976Z   proxy | 2026/11/17 17:41:58 [156] GET https://registry.npmjs.org:443/@firebase%2fapp-check-types
+2026-11-17T17:41:59.0277070Z   proxy | 2026/11/17 17:41:59 [156] 200 https://registry.npmjs.org:443/@firebase%2fapp-check-types
+2026-11-17T17:41:59.1292040Z   proxy | 2026/11/17 17:41:59 [157] GET https://registry.npmjs.org:443/selenium-webdriver
+2026-11-17T17:41:59.1464325Z   proxy | 2026/11/17 17:41:59 [157] 200 https://registry.npmjs.org:443/selenium-webdriver
+2026-11-17T17:41:59.1490817Z   proxy | 2026/11/17 17:41:59 [158] GET https://registry.npmjs.org:443/selenium-webdriver
+2026-11-17T17:41:59.1595931Z   proxy | 2026/11/17 17:41:59 [159] GET https://registry.npmjs.org:443/@firebase%2fauth-types
+2026-11-17T17:41:59.1697526Z   proxy | 2026/11/17 17:41:59 [158] 200 https://registry.npmjs.org:443/selenium-webdriver
+2026-11-17T17:41:59.1910158Z   proxy | 2026/11/17 17:41:59 [160] GET https://registry.npmjs.org:443/faye-websocket
+2026-11-17T17:41:59.1979110Z   proxy | 2026/11/17 17:41:59 [161] GET https://registry.npmjs.org:443/@firebase%2fauth-interop-types
+2026-11-17T17:41:59.2052837Z   proxy | 2026/11/17 17:41:59 [160] 200 https://registry.npmjs.org:443/faye-websocket
+2026-11-17T17:41:59.2102165Z   proxy | 2026/11/17 17:41:59 [162] GET https://registry.npmjs.org:443/@firebase%2fdatabase-types
+2026-11-17T17:41:59.2107734Z   proxy | 2026/11/17 17:41:59 [159] 200 https://registry.npmjs.org:443/@firebase%2fauth-types
+2026-11-17T17:41:59.2701884Z   proxy | 2026/11/17 17:41:59 [161] 200 https://registry.npmjs.org:443/@firebase%2fauth-interop-types
+2026-11-17T17:41:59.3608900Z   proxy | 2026/11/17 17:41:59 [162] 200 https://registry.npmjs.org:443/@firebase%2fdatabase-types
+2026-11-17T17:41:59.5445306Z   proxy | 2026/11/17 17:41:59 [163] GET https://registry.npmjs.org:443/@grpc%2fproto-loader
+2026-11-17T17:41:59.5486556Z   proxy | 2026/11/17 17:41:59 [164] GET https://registry.npmjs.org:443/@grpc%2fgrpc-js
+2026-11-17T17:41:59.5723929Z   proxy | 2026/11/17 17:41:59 [163] 200 https://registry.npmjs.org:443/@grpc%2fproto-loader
+2026-11-17T17:41:59.5828335Z   proxy | 2026/11/17 17:41:59 [164] 200 https://registry.npmjs.org:443/@grpc%2fgrpc-js
+2026-11-17T17:41:59.5908491Z   proxy | 2026/11/17 17:41:59 [165] GET https://registry.npmjs.org:443/@firebase%2fwebchannel-wrapper
+2026-11-17T17:41:59.6063663Z   proxy | 2026/11/17 17:41:59 [166] GET https://registry.npmjs.org:443/@firebase%2ffirestore-types
+2026-11-17T17:41:59.6469392Z   proxy | 2026/11/17 17:41:59 [165] 200 https://registry.npmjs.org:443/@firebase%2fwebchannel-wrapper
+2026-11-17T17:41:59.6589128Z   proxy | 2026/11/17 17:41:59 [166] 200 https://registry.npmjs.org:443/@firebase%2ffirestore-types
+2026-11-17T17:41:59.6706467Z   proxy | 2026/11/17 17:41:59 [167] GET https://registry.npmjs.org:443/@firebase%2fapp-check-interop-types
+2026-11-17T17:41:59.7494989Z   proxy | 2026/11/17 17:41:59 [167] 200 https://registry.npmjs.org:443/@firebase%2fapp-check-interop-types
+2026-11-17T17:41:59.8516649Z   proxy | 2026/11/17 17:41:59 [168] GET https://registry.npmjs.org:443/@firebase%2fmessaging-interop-types
+2026-11-17T17:41:59.9034964Z   proxy | 2026/11/17 17:41:59 [168] 200 https://registry.npmjs.org:443/@firebase%2fmessaging-interop-types
+2026-11-17T17:41:59.9164771Z   proxy | 2026/11/17 17:41:59 [169] GET https://registry.npmjs.org:443/@firebase%2ffunctions-types
+2026-11-17T17:41:59.9686390Z   proxy | 2026/11/17 17:41:59 [169] 200 https://registry.npmjs.org:443/@firebase%2ffunctions-types
+2026-11-17T17:42:00.0375926Z   proxy | 2026/11/17 17:42:00 [170] GET https://registry.npmjs.org:443/@firebase%2finstallations-types
+2026-11-17T17:42:00.0905295Z   proxy | 2026/11/17 17:42:00 [171] GET https://registry.npmjs.org:443/@firebase%2fperformance-types
+2026-11-17T17:42:00.0907779Z   proxy | 2026/11/17 17:42:00 [170] 200 https://registry.npmjs.org:443/@firebase%2finstallations-types
+2026-11-17T17:42:00.1550202Z   proxy | 2026/11/17 17:42:00 [171] 200 https://registry.npmjs.org:443/@firebase%2fperformance-types
+2026-11-17T17:42:00.2664542Z   proxy | 2026/11/17 17:42:00 [172] GET https://registry.npmjs.org:443/@firebase%2fremote-config-types
+2026-11-17T17:42:00.3087480Z   proxy | 2026/11/17 17:42:00 [173] GET https://registry.npmjs.org:443/@firebase%2fstorage-types
+2026-11-17T17:42:00.3242605Z   proxy | 2026/11/17 17:42:00 [172] 200 https://registry.npmjs.org:443/@firebase%2fremote-config-types
+2026-11-17T17:42:00.3982464Z   proxy | 2026/11/17 17:42:00 [173] 200 https://registry.npmjs.org:443/@firebase%2fstorage-types
+2026-11-17T17:42:00.6895850Z   proxy | 2026/11/17 17:42:00 [174] GET https://registry.npmjs.org:443/encoding
+2026-11-17T17:42:00.7032122Z   proxy | 2026/11/17 17:42:00 [174] 200 https://registry.npmjs.org:443/encoding
+2026-11-17T17:42:00.7121045Z   proxy | 2026/11/17 17:42:00 [175] GET https://registry.npmjs.org:443/whatwg-url
+2026-11-17T17:42:00.7127815Z   proxy | 2026/11/17 17:42:00 [176] GET https://registry.npmjs.org:443/tmp
+2026-11-17T17:42:00.7137095Z   proxy | 2026/11/17 17:42:00 [177] GET https://registry.npmjs.org:443/jszip
+2026-11-17T17:42:00.7281656Z   proxy | 2026/11/17 17:42:00 [176] 200 https://registry.npmjs.org:443/tmp
+2026-11-17T17:42:00.7303688Z   proxy | 2026/11/17 17:42:00 [175] 200 https://registry.npmjs.org:443/whatwg-url
+2026-11-17T17:42:00.7472293Z   proxy | 2026/11/17 17:42:00 [177] 200 https://registry.npmjs.org:443/jszip
+2026-11-17T17:42:00.8294213Z   proxy | 2026/11/17 17:42:00 [178] GET https://registry.npmjs.org:443/websocket-driver
+2026-11-17T17:42:00.8465819Z   proxy | 2026/11/17 17:42:00 [178] 200 https://registry.npmjs.org:443/websocket-driver
+2026-11-17T17:42:00.8623941Z   proxy | 2026/11/17 17:42:00 [179] GET https://registry.npmjs.org:443/@js-sdsl%2fordered-map
+2026-11-17T17:42:00.8632887Z   proxy | 2026/11/17 17:42:00 [180] GET https://registry.npmjs.org:443/long
+2026-11-17T17:42:00.8694777Z   proxy | 2026/11/17 17:42:00 [181] GET https://registry.npmjs.org:443/yargs
+2026-11-17T17:42:00.8787585Z   proxy | 2026/11/17 17:42:00 [180] 200 https://registry.npmjs.org:443/long
+2026-11-17T17:42:00.8868609Z   proxy | 2026/11/17 17:42:00 [182] GET https://registry.npmjs.org:443/protobufjs
+2026-11-17T17:42:00.8951993Z   proxy | 2026/11/17 17:42:00 [179] 200 https://registry.npmjs.org:443/@js-sdsl%2fordered-map
+2026-11-17T17:42:00.9008420Z   proxy | 2026/11/17 17:42:00 [183] GET https://registry.npmjs.org:443/@types%2flong
+2026-11-17T17:42:00.9034230Z   proxy | 2026/11/17 17:42:00 [181] 200 https://registry.npmjs.org:443/yargs
+2026-11-17T17:42:00.9119303Z   proxy | 2026/11/17 17:42:00 [182] 200 https://registry.npmjs.org:443/protobufjs
+2026-11-17T17:42:00.9254853Z   proxy | 2026/11/17 17:42:00 [183] 200 https://registry.npmjs.org:443/@types%2flong
+2026-11-17T17:42:00.9359434Z   proxy | 2026/11/17 17:42:00 [184] GET https://registry.npmjs.org:443/lodash.camelcase
+2026-11-17T17:42:00.9506968Z   proxy | 2026/11/17 17:42:00 [184] 200 https://registry.npmjs.org:443/lodash.camelcase
+2026-11-17T17:42:00.9855796Z   proxy | 2026/11/17 17:42:00 [185] GET https://registry.npmjs.org:443/@protobufjs%2finquire
+2026-11-17T17:42:00.9862929Z   proxy | 2026/11/17 17:42:00 [186] GET https://registry.npmjs.org:443/y18n
+2026-11-17T17:42:00.9869486Z   proxy | 2026/11/17 17:42:00 [187] GET https://registry.npmjs.org:443/cliui
+2026-11-17T17:42:01.0017587Z   proxy | 2026/11/17 17:42:01 [186] 200 https://registry.npmjs.org:443/y18n
+2026-11-17T17:42:01.0074754Z   proxy | 2026/11/17 17:42:01 [188] GET https://registry.npmjs.org:443/yargs-parser
+2026-11-17T17:42:01.0250102Z   proxy | 2026/11/17 17:42:01 [187] 200 https://registry.npmjs.org:443/cliui
+2026-11-17T17:42:01.0265749Z   proxy | 2026/11/17 17:42:01 [188] 200 https://registry.npmjs.org:443/yargs-parser
+2026-11-17T17:42:01.0309281Z   proxy | 2026/11/17 17:42:01 [189] GET https://registry.npmjs.org:443/get-caller-file
+2026-11-17T17:42:01.0425722Z   proxy | 2026/11/17 17:42:01 [190] GET https://registry.npmjs.org:443/require-directory
+2026-11-17T17:42:01.0476269Z   proxy | 2026/11/17 17:42:01 [189] 200 https://registry.npmjs.org:443/get-caller-file
+2026-11-17T17:42:01.0555760Z   proxy | 2026/11/17 17:42:01 [185] 200 https://registry.npmjs.org:443/@protobufjs%2finquire
+2026-11-17T17:42:01.0563590Z   proxy | 2026/11/17 17:42:01 [190] 200 https://registry.npmjs.org:443/require-directory
+2026-11-17T17:42:01.0652832Z   proxy | 2026/11/17 17:42:01 [191] GET https://registry.npmjs.org:443/http-parser-js
+2026-11-17T17:42:01.0662294Z   proxy | 2026/11/17 17:42:01 [192] GET https://registry.npmjs.org:443/websocket-extensions
+2026-11-17T17:42:01.0811379Z   proxy | 2026/11/17 17:42:01 [191] 200 https://registry.npmjs.org:443/http-parser-js
+2026-11-17T17:42:01.0863031Z   proxy | 2026/11/17 17:42:01 [192] 200 https://registry.npmjs.org:443/websocket-extensions
+2026-11-17T17:42:01.0910541Z   proxy | 2026/11/17 17:42:01 [193] GET https://registry.npmjs.org:443/lightningcss-android-arm64
+2026-11-17T17:42:01.1059582Z   proxy | 2026/11/17 17:42:01 [193] 200 https://registry.npmjs.org:443/lightningcss-android-arm64
+2026-11-17T17:42:01.1095585Z   proxy | 2026/11/17 17:42:01 [194] GET https://registry.npmjs.org:443/lightningcss-darwin-arm64
+2026-11-17T17:42:01.1346806Z   proxy | 2026/11/17 17:42:01 [194] 200 https://registry.npmjs.org:443/lightningcss-darwin-arm64
+2026-11-17T17:42:01.1397269Z   proxy | 2026/11/17 17:42:01 [195] GET https://registry.npmjs.org:443/lightningcss-darwin-x64
+2026-11-17T17:42:01.1811073Z   proxy | 2026/11/17 17:42:01 [195] 200 https://registry.npmjs.org:443/lightningcss-darwin-x64
+2026-11-17T17:42:01.1873458Z   proxy | 2026/11/17 17:42:01 [196] GET https://registry.npmjs.org:443/lightningcss-freebsd-x64
+2026-11-17T17:42:01.2170157Z   proxy | 2026/11/17 17:42:01 [196] 200 https://registry.npmjs.org:443/lightningcss-freebsd-x64
+2026-11-17T17:42:01.2218694Z   proxy | 2026/11/17 17:42:01 [197] GET https://registry.npmjs.org:443/lightningcss-linux-arm-gnueabihf
+2026-11-17T17:42:01.2402102Z   proxy | 2026/11/17 17:42:01 [197] 200 https://registry.npmjs.org:443/lightningcss-linux-arm-gnueabihf
+2026-11-17T17:42:01.2452726Z   proxy | 2026/11/17 17:42:01 [198] GET https://registry.npmjs.org:443/lightningcss-linux-arm64-gnu
+2026-11-17T17:42:01.2610117Z   proxy | 2026/11/17 17:42:01 [198] 200 https://registry.npmjs.org:443/lightningcss-linux-arm64-gnu
+2026-11-17T17:42:01.2645921Z   proxy | 2026/11/17 17:42:01 [199] GET https://registry.npmjs.org:443/lightningcss-linux-arm64-musl
+2026-11-17T17:42:01.2808750Z   proxy | 2026/11/17 17:42:01 [199] 200 https://registry.npmjs.org:443/lightningcss-linux-arm64-musl
+2026-11-17T17:42:01.2856327Z   proxy | 2026/11/17 17:42:01 [200] GET https://registry.npmjs.org:443/lightningcss-linux-x64-musl
+2026-11-17T17:42:01.3032625Z   proxy | 2026/11/17 17:42:01 [200] 200 https://registry.npmjs.org:443/lightningcss-linux-x64-musl
+2026-11-17T17:42:01.3086805Z   proxy | 2026/11/17 17:42:01 [201] GET https://registry.npmjs.org:443/lightningcss-win32-arm64-msvc
+2026-11-17T17:42:01.3261050Z   proxy | 2026/11/17 17:42:01 [201] 200 https://registry.npmjs.org:443/lightningcss-win32-arm64-msvc
+2026-11-17T17:42:01.3297067Z   proxy | 2026/11/17 17:42:01 [202] GET https://registry.npmjs.org:443/lightningcss-win32-x64-msvc
+2026-11-17T17:42:01.3462484Z   proxy | 2026/11/17 17:42:01 [202] 200 https://registry.npmjs.org:443/lightningcss-win32-x64-msvc
+2026-11-17T17:42:01.3555587Z   proxy | 2026/11/17 17:42:01 [203] GET https://registry.npmjs.org:443/@rolldown%2fbinding-android-arm-eabi
+2026-11-17T17:42:01.3957107Z   proxy | 2026/11/17 17:42:01 [203] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-android-arm-eabi
+2026-11-17T17:42:01.4009519Z   proxy | 2026/11/17 17:42:01 [204] GET https://registry.npmjs.org:443/@rolldown%2fbinding-android-arm64
+2026-11-17T17:42:01.4678432Z   proxy | 2026/11/17 17:42:01 [204] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-android-arm64
+2026-11-17T17:42:01.4745090Z   proxy | 2026/11/17 17:42:01 [205] GET https://registry.npmjs.org:443/@rolldown%2fbinding-darwin-arm64
+2026-11-17T17:42:01.5302621Z   proxy | 2026/11/17 17:42:01 [205] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-darwin-arm64
+2026-11-17T17:42:01.5458828Z   proxy | 2026/11/17 17:42:01 [206] GET https://registry.npmjs.org:443/@rolldown%2fbinding-darwin-x64
+2026-11-17T17:42:01.5934289Z   proxy | 2026/11/17 17:42:01 [206] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-darwin-x64
+2026-11-17T17:42:01.6167739Z   proxy | 2026/11/17 17:42:01 [207] GET https://registry.npmjs.org:443/@rolldown%2fbinding-freebsd-x64
+2026-11-17T17:42:01.6616067Z   proxy | 2026/11/17 17:42:01 [207] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-freebsd-x64
+2026-11-17T17:42:01.6789512Z   proxy | 2026/11/17 17:42:01 [208] GET https://registry.npmjs.org:443/@rolldown%2fbinding-linux-arm-gnueabihf
+2026-11-17T17:42:01.7307125Z   proxy | 2026/11/17 17:42:01 [208] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-linux-arm-gnueabihf
+2026-11-17T17:42:01.7526280Z   proxy | 2026/11/17 17:42:01 [209] GET https://registry.npmjs.org:443/@rolldown%2fbinding-linux-arm64-gnu
+2026-11-17T17:42:01.7993291Z   proxy | 2026/11/17 17:42:01 [209] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-linux-arm64-gnu
+2026-11-17T17:42:01.8193892Z   proxy | 2026/11/17 17:42:01 [210] GET https://registry.npmjs.org:443/@rolldown%2fbinding-linux-arm64-musl
+2026-11-17T17:42:01.8659140Z   proxy | 2026/11/17 17:42:01 [210] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-linux-arm64-musl
+2026-11-17T17:42:01.8847645Z   proxy | 2026/11/17 17:42:01 [211] GET https://registry.npmjs.org:443/@rolldown%2fbinding-linux-ppc64-gnu
+2026-11-17T17:42:01.9111091Z   proxy | 2026/11/17 17:42:01 [211] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-linux-ppc64-gnu
+2026-11-17T17:42:01.9160123Z   proxy | 2026/11/17 17:42:01 [212] GET https://registry.npmjs.org:443/@rolldown%2fbinding-linux-s390x-gnu
+2026-11-17T17:42:01.9413398Z   proxy | 2026/11/17 17:42:01 [212] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-linux-s390x-gnu
+2026-11-17T17:42:01.9468700Z   proxy | 2026/11/17 17:42:01 [213] GET https://registry.npmjs.org:443/@rolldown%2fbinding-linux-x64-musl
+2026-11-17T17:42:02.0001901Z   proxy | 2026/11/17 17:42:01 [213] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-linux-x64-musl
+2026-11-17T17:42:02.0223042Z   proxy | 2026/11/17 17:42:02 [214] GET https://registry.npmjs.org:443/@rolldown%2fbinding-openharmony-arm64
+2026-11-17T17:42:02.0504881Z   proxy | 2026/11/17 17:42:02 [214] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-openharmony-arm64
+2026-11-17T17:42:02.0551849Z   proxy | 2026/11/17 17:42:02 [215] GET https://registry.npmjs.org:443/@rolldown%2fbinding-win32-arm64-msvc
+2026-11-17T17:42:02.1046509Z   proxy | 2026/11/17 17:42:02 [215] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-win32-arm64-msvc
+2026-11-17T17:42:02.1232499Z   proxy | 2026/11/17 17:42:02 [216] GET https://registry.npmjs.org:443/@rolldown%2fbinding-win32-x64-msvc
+2026-11-17T17:42:02.1943471Z   proxy | 2026/11/17 17:42:02 [216] 200 https://registry.npmjs.org:443/@rolldown%2fbinding-win32-x64-msvc
+2026-11-17T17:42:02.2210877Z   proxy | 2026/11/17 17:42:02 [217] GET https://registry.npmjs.org:443/lie
+2026-11-17T17:42:02.2215064Z   proxy | 2026/11/17 17:42:02 [218] GET https://registry.npmjs.org:443/pako
+2026-11-17T17:42:02.2222925Z   proxy | 2026/11/17 17:42:02 [219] GET https://registry.npmjs.org:443/setimmediate
+2026-11-17T17:42:02.2359714Z   proxy | 2026/11/17 17:42:02 [217] 200 https://registry.npmjs.org:443/lie
+2026-11-17T17:42:02.2374150Z   proxy | 2026/11/17 17:42:02 [218] 200 https://registry.npmjs.org:443/pako
+2026-11-17T17:42:02.2424724Z   proxy | 2026/11/17 17:42:02 [220] GET https://registry.npmjs.org:443/readable-stream
+2026-11-17T17:42:02.2457559Z   proxy | 2026/11/17 17:42:02 [219] 200 https://registry.npmjs.org:443/setimmediate
+2026-11-17T17:42:02.2638197Z   proxy | 2026/11/17 17:42:02 [220] 200 https://registry.npmjs.org:443/readable-stream
+2026-11-17T17:42:02.2781226Z   proxy | 2026/11/17 17:42:02 [221] GET https://registry.npmjs.org:443/immediate
+2026-11-17T17:42:02.2785472Z   proxy | 2026/11/17 17:42:02 [222] GET https://registry.npmjs.org:443/isarray
+2026-11-17T17:42:02.2790356Z   proxy | 2026/11/17 17:42:02 [223] GET https://registry.npmjs.org:443/safe-buffer
+2026-11-17T17:42:02.2927738Z   proxy | 2026/11/17 17:42:02 [222] 200 https://registry.npmjs.org:443/isarray
+2026-11-17T17:42:02.2962723Z   proxy | 2026/11/17 17:42:02 [221] 200 https://registry.npmjs.org:443/immediate
+2026-11-17T17:42:02.2990601Z   proxy | 2026/11/17 17:42:02 [224] GET https://registry.npmjs.org:443/core-util-is
+2026-11-17T17:42:02.3033472Z   proxy | 2026/11/17 17:42:02 [225] GET https://registry.npmjs.org:443/string_decoder
+2026-11-17T17:42:02.3163206Z   proxy | 2026/11/17 17:42:02 [223] 200 https://registry.npmjs.org:443/safe-buffer
+2026-11-17T17:42:02.3172767Z   proxy | 2026/11/17 17:42:02 [225] 200 https://registry.npmjs.org:443/string_decoder
+2026-11-17T17:42:02.3214532Z   proxy | 2026/11/17 17:42:02 [224] 200 https://registry.npmjs.org:443/core-util-is
+2026-11-17T17:42:02.3302490Z   proxy | 2026/11/17 17:42:02 [226] GET https://registry.npmjs.org:443/process-nextick-args
+2026-11-17T17:42:02.3436098Z   proxy | 2026/11/17 17:42:02 [226] 200 https://registry.npmjs.org:443/process-nextick-args
+2026-11-17T17:42:02.3587612Z   proxy | 2026/11/17 17:42:02 [227] GET https://registry.npmjs.org:443/fsevents
+2026-11-17T17:42:02.3774003Z   proxy | 2026/11/17 17:42:02 [227] 200 https://registry.npmjs.org:443/fsevents
+2026-11-17T17:42:02.3849112Z   proxy | 2026/11/17 17:42:02 [228] GET https://registry.npmjs.org:443/@typescript%2ftypescript-aix-ppc64
+2026-11-17T17:42:02.4112837Z   proxy | 2026/11/17 17:42:02 [228] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-aix-ppc64
+2026-11-17T17:42:02.4160319Z   proxy | 2026/11/17 17:42:02 [229] GET https://registry.npmjs.org:443/@typescript%2ftypescript-darwin-arm64
+2026-11-17T17:42:02.4465518Z   proxy | 2026/11/17 17:42:02 [229] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-darwin-arm64
+2026-11-17T17:42:02.4536547Z   proxy | 2026/11/17 17:42:02 [230] GET https://registry.npmjs.org:443/@typescript%2ftypescript-darwin-x64
+2026-11-17T17:42:02.4841097Z   proxy | 2026/11/17 17:42:02 [230] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-darwin-x64
+2026-11-17T17:42:02.4936037Z   proxy | 2026/11/17 17:42:02 [231] GET https://registry.npmjs.org:443/@typescript%2ftypescript-freebsd-arm64
+2026-11-17T17:42:02.5307831Z   proxy | 2026/11/17 17:42:02 [231] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-freebsd-arm64
+2026-11-17T17:42:02.5356388Z   proxy | 2026/11/17 17:42:02 [232] GET https://registry.npmjs.org:443/@typescript%2ftypescript-freebsd-x64
+2026-11-17T17:42:02.5689706Z   proxy | 2026/11/17 17:42:02 [232] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-freebsd-x64
+2026-11-17T17:42:02.5729219Z   proxy | 2026/11/17 17:42:02 [233] GET https://registry.npmjs.org:443/@typescript%2ftypescript-linux-arm
+2026-11-17T17:42:02.6017172Z   proxy | 2026/11/17 17:42:02 [233] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-linux-arm
+2026-11-17T17:42:02.6082881Z   proxy | 2026/11/17 17:42:02 [234] GET https://registry.npmjs.org:443/@typescript%2ftypescript-linux-arm64
+2026-11-17T17:42:02.6554390Z   proxy | 2026/11/17 17:42:02 [234] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-linux-arm64
+2026-11-17T17:42:02.6650960Z   proxy | 2026/11/17 17:42:02 [235] GET https://registry.npmjs.org:443/@typescript%2ftypescript-linux-loong64
+2026-11-17T17:42:02.6884442Z   proxy | 2026/11/17 17:42:02 [235] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-linux-loong64
+2026-11-17T17:42:02.6929632Z   proxy | 2026/11/17 17:42:02 [236] GET https://registry.npmjs.org:443/@typescript%2ftypescript-linux-mips64el
+2026-11-17T17:42:02.7193202Z   proxy | 2026/11/17 17:42:02 [236] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-linux-mips64el
+2026-11-17T17:42:02.7234117Z   proxy | 2026/11/17 17:42:02 [237] GET https://registry.npmjs.org:443/@typescript%2ftypescript-linux-ppc64
+2026-11-17T17:42:02.7571835Z   proxy | 2026/11/17 17:42:02 [237] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-linux-ppc64
+2026-11-17T17:42:02.7612306Z   proxy | 2026/11/17 17:42:02 [238] GET https://registry.npmjs.org:443/@typescript%2ftypescript-linux-riscv64
+2026-11-17T17:42:02.7908464Z   proxy | 2026/11/17 17:42:02 [238] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-linux-riscv64
+2026-11-17T17:42:02.7958715Z   proxy | 2026/11/17 17:42:02 [239] GET https://registry.npmjs.org:443/@typescript%2ftypescript-linux-s390x
+2026-11-17T17:42:02.8201623Z   proxy | 2026/11/17 17:42:02 [239] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-linux-s390x
+2026-11-17T17:42:02.8241974Z   proxy | 2026/11/17 17:42:02 [240] GET https://registry.npmjs.org:443/@typescript%2ftypescript-netbsd-arm64
+2026-11-17T17:42:02.8472905Z   proxy | 2026/11/17 17:42:02 [240] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-netbsd-arm64
+2026-11-17T17:42:02.8511172Z   proxy | 2026/11/17 17:42:02 [241] GET https://registry.npmjs.org:443/@typescript%2ftypescript-netbsd-x64
+2026-11-17T17:42:02.8771197Z   proxy | 2026/11/17 17:42:02 [241] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-netbsd-x64
+2026-11-17T17:42:02.8819852Z   proxy | 2026/11/17 17:42:02 [242] GET https://registry.npmjs.org:443/@typescript%2ftypescript-openbsd-arm64
+2026-11-17T17:42:02.9061237Z   proxy | 2026/11/17 17:42:02 [242] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-openbsd-arm64
+2026-11-17T17:42:02.9102997Z   proxy | 2026/11/17 17:42:02 [243] GET https://registry.npmjs.org:443/@typescript%2ftypescript-openbsd-x64
+2026-11-17T17:42:02.9414779Z   proxy | 2026/11/17 17:42:02 [243] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-openbsd-x64
+2026-11-17T17:42:02.9454982Z   proxy | 2026/11/17 17:42:02 [244] GET https://registry.npmjs.org:443/@typescript%2ftypescript-sunos-x64
+2026-11-17T17:42:02.9764660Z   proxy | 2026/11/17 17:42:02 [244] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-sunos-x64
+2026-11-17T17:42:02.9802290Z   proxy | 2026/11/17 17:42:02 [245] GET https://registry.npmjs.org:443/@typescript%2ftypescript-win32-arm64
+2026-11-17T17:42:03.0377867Z   proxy | 2026/11/17 17:42:03 [245] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-win32-arm64
+2026-11-17T17:42:03.0467970Z   proxy | 2026/11/17 17:42:03 [246] GET https://registry.npmjs.org:443/@typescript%2ftypescript-win32-x64
+2026-11-17T17:42:03.0910094Z   proxy | 2026/11/17 17:42:03 [246] 200 https://registry.npmjs.org:443/@typescript%2ftypescript-win32-x64
+2026-11-17T17:42:03.1149268Z   proxy | 2026/11/17 17:42:03 [247] GET https://registry.npmjs.org:443/msw
+2026-11-17T17:42:03.1549875Z   proxy | 2026/11/17 17:42:03 [247] 200 https://registry.npmjs.org:443/msw
+2026-11-17T17:42:03.1990674Z   proxy | 2026/11/17 17:42:03 [248] GET https://registry.npmjs.org:443/graphql
+2026-11-17T17:42:03.2297688Z   proxy | 2026/11/17 17:42:03 [248] 200 https://registry.npmjs.org:443/graphql
+2026-11-17T17:42:03.2512264Z   proxy | 2026/11/17 17:42:03 [249] GET https://registry.npmjs.org:443/typescript
+2026-11-17T17:42:03.3093201Z   proxy | 2026/11/17 17:42:03 [249] 200 https://registry.npmjs.org:443/typescript
+2026-11-17T17:42:04.0794417Z   proxy | 2026/11/17 17:42:04 [250] GET https://registry.npmjs.org:443/@types%2fdeep-eql
+2026-11-17T17:42:04.0795829Z 2026/11/17 17:42:04 [251] GET https://registry.npmjs.org:443/assertion-error
+2026-11-17T17:42:04.0796929Z   proxy | 2026/11/17 17:42:04 [252] GET https://registry.npmjs.org:443/@vitest%2fspy
+2026-11-17T17:42:04.0923563Z   proxy | 2026/11/17 17:42:04 [251] 200 https://registry.npmjs.org:443/assertion-error
+2026-11-17T17:42:04.0968324Z   proxy | 2026/11/17 17:42:04 [253] GET https://registry.npmjs.org:443/estree-walker
+2026-11-17T17:42:04.1174445Z   proxy | 2026/11/17 17:42:04 [253] 200 https://registry.npmjs.org:443/estree-walker
+2026-11-17T17:42:04.1207000Z   proxy | 2026/11/17 17:42:04 [250] 200 https://registry.npmjs.org:443/@types%2fdeep-eql
+2026-11-17T17:42:04.1354276Z   proxy | 2026/11/17 17:42:04 [252] 200 https://registry.npmjs.org:443/@vitest%2fspy
+2026-11-17T17:42:04.1522743Z   proxy | 2026/11/17 17:42:04 [254] GET https://registry.npmjs.org:443/@types%2festree
+2026-11-17T17:42:04.1739986Z   proxy | 2026/11/17 17:42:04 [254] 200 https://registry.npmjs.org:443/@types%2festree
+2026-11-17T17:42:04.1894297Z   proxy | 2026/11/17 17:42:04 [255] GET https://registry.npmjs.org:443/tr46
+2026-11-17T17:42:04.1899552Z   proxy | 2026/11/17 17:42:04 [256] GET https://registry.npmjs.org:443/webidl-conversions
+2026-11-17T17:42:04.2062043Z   proxy | 2026/11/17 17:42:04 [255] 200 https://registry.npmjs.org:443/tr46
+2026-11-17T17:42:04.2092572Z   proxy | 2026/11/17 17:42:04 [256] 200 https://registry.npmjs.org:443/webidl-conversions
+2026-11-17T17:42:04.4941596Z updater | 2026/11/17 17:42:04 INFO <job_1712510136> Process PID: 1293 completed with status: pid 1293 exit 0
+2026-11-17T17:42:04.4942745Z 2026/11/17 17:42:04 INFO <job_1712510136> Total execution time: 36.36 seconds
+2026-11-17T17:42:04.4955655Z updater | 2026/11/17 17:42:04 INFO <job_1712510136> VulnerabilityAuditor: audit result not viable: downgrades_dependencies
+2026-11-17T17:42:04.5837986Z   proxy | 2026/11/17 17:42:04 [258] HEAD https://registry.npmjs.org:443/@grpc/grpc-js/-/grpc-js-1.13.6.tgz
+2026-11-17T17:42:04.6323837Z   proxy | 2026/11/17 17:42:04 [258] 200 https://registry.npmjs.org:443/@grpc/grpc-js/-/grpc-js-1.13.6.tgz
+2026-11-17T17:42:04.6377661Z updater | 2026/11/17 17:42:04 INFO <job_1712510136> Started process PID: 1319 with command: node /opt/npm_and_yarn/dist/run.js
+2026-11-17T17:42:05.4472659Z updater | 2026/11/17 17:42:05 INFO <job_1712510136> Process PID: 1319 completed with status: pid 1319 exit 0
+2026-11-17T17:42:05.4473739Z 2026/11/17 17:42:05 INFO <job_1712510136> Total execution time: 0.81 seconds
+2026-11-17T17:42:05.4482225Z updater | 2026/11/17 17:42:05 INFO <job_1712510136> Requirements to unlock update_not_possible
+2026-11-17T17:42:05.4483814Z updater | 2026/11/17 17:42:05 INFO <job_1712510136> Requirements update strategy bump_versions
+2026-11-17T17:42:05.4523044Z updater | 2026/11/17 17:42:05 INFO <job_1712510136> Started process PID: 1332 with command: node /opt/npm_and_yarn/dist/run.js
+2026-11-17T17:42:06.2099035Z updater | 2026/11/17 17:42:06 INFO <job_1712510136> Process PID: 1332 completed with status: pid 1332 exit 0
+2026-11-17T17:42:06.2147553Z 2026/11/17 17:42:06 INFO <job_1712510136> Total execution time: 0.76 seconds
+2026-11-17T17:42:06.2148785Z updater | 2026/11/17 17:42:06 INFO <job_1712510136> Started process PID: 1345 with command: node /opt/npm_and_yarn/dist/run.js
+2026-11-17T17:42:06.9596003Z updater | 2026/11/17 17:42:06 INFO <job_1712510136> Process PID: 1345 completed with status: pid 1345 exit 0
+2026-11-17T17:42:06.9597530Z updater | 2026/11/17 17:42:06 INFO <job_1712510136> Total execution time: 0.75 seconds
+2026-11-17T17:42:06.9604938Z updater | 2026/11/17 17:42:06 INFO <job_1712510136> The latest possible version that can be installed is 1.9.16 because of the following conflicting dependencies:
+2026-11-17T17:42:06.9606223Z 
+2026-11-17T17:42:06.9607055Z   firebase@13.2.0 requires @grpc/grpc-js@~1.9.0 via @firebase/firestore@4.19.1
+2026-11-17T17:42:06.9608474Z   A patched version exists for @grpc/grpc-js, but the available update path would downgrade firebase from 13.2.0 to 9.14.0 because:
+2026-11-17T17:42:06.9609661Z The following packages currently require @grpc/grpc-js through these dependency edges:
+2026-11-17T17:42:06.9610229Z   - firebase: requires @grpc/grpc-js@~1.9.0 (via @firebase/firestore@4.19.1)
+2026-11-17T17:42:06.9610880Z 
+2026-11-17T17:42:06.9611328Z These edges help explain why npm selected a downgrade path. To resolve this, either:
+2026-11-17T17:42:06.9612172Z   1. Update firebase to versions that support the patched @grpc/grpc-js, or
+2026-11-17T17:42:06.9613161Z   2. Add an override/resolution to pin @grpc/grpc-js to a non-vulnerable version compatible with your dependencies
+2026-11-17T17:42:06.9613785Z 2026/11/17 17:42:06 INFO <job_1712510136> The earliest fixed version is 1.13.6.
+2026-11-17T17:42:07.0108388Z   proxy | 2026/11/17 17:42:07 [260] POST /update_jobs/1712510136/record_update_job_error
+2026-11-17T17:42:07.0736842Z   proxy | 2026/11/17 17:42:07 [260] 204 /update_jobs/1712510136/record_update_job_error
+2026-11-17T17:42:07.1557192Z   proxy | 2026/11/17 17:42:07 [262] POST /update_jobs/1712510136/record_ecosystem_meta
+2026-11-17T17:42:07.2061562Z   proxy | 2026/11/17 17:42:07 [262] 204 /update_jobs/1712510136/record_ecosystem_meta
+2026-11-17T17:42:07.3028073Z   proxy | 2026/11/17 17:42:07 [264] PATCH /update_jobs/1712510136/mark_as_processed
+2026-11-17T17:42:07.5497021Z   proxy | 2026/11/17 17:42:07 [264] 204 /update_jobs/1712510136/mark_as_processed
+2026-11-17T17:42:07.5504686Z updater | 2026/11/17 17:42:07 INFO <job_1712510136> Finished job processing
+2026-11-17T17:42:07.5536511Z updater | 2026/11/17 17:42:07 INFO Results:
+2026-11-17T17:42:07.5537540Z Dependabot encountered '1' error(s) during execution, please check the logs for more details.
+2026-11-17T17:42:07.5540869Z +--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+2026-11-17T17:42:07.5552749Z |                                                                                                                                                                                                                                                                                                                         Errors                                                                                                                                                                                                                                                                                                                         |
+2026-11-17T17:42:07.5557358Z +------------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+2026-11-17T17:42:07.5561928Z | Type                         | Details                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+2026-11-17T17:42:07.5566369Z +------------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+2026-11-17T17:42:07.5570933Z | security_update_not_possible | {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+2026-11-17T17:42:07.5574490Z |                              |   "dependency-name": "@grpc/grpc-js",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+2026-11-17T17:42:07.5577905Z |                              |   "latest-resolvable-version": "1.9.16",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+2026-11-17T17:42:07.5581520Z |                              |   "lowest-non-vulnerable-version": "1.13.6",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+2026-11-17T17:42:07.5584912Z |                              |   "conflicting-dependencies": [                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+2026-11-17T17:42:07.5588320Z |                              |     {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+2026-11-17T17:42:07.5592014Z |                              |       "explanation": "firebase@13.2.0 requires @grpc/grpc-js@~1.9.0 via @firebase/firestore@4.19.1",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+2026-11-17T17:42:07.5595639Z |                              |       "name": "@firebase/firestore",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+2026-11-17T17:42:07.5598813Z |                              |       "version": "4.19.1",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+2026-11-17T17:42:07.5602188Z |                              |       "requirement": "~1.9.0"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+2026-11-17T17:42:07.5605276Z |                              |     },                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+2026-11-17T17:42:07.5608611Z |                              |     {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+2026-11-17T17:42:07.5612121Z |                              |       "dependency_name": "@grpc/grpc-js",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+2026-11-17T17:42:07.5615788Z |                              |       "fix_available": false,                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+2026-11-17T17:42:07.5619055Z |                              |       "fix_updates": [],                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+2026-11-17T17:42:07.5621806Z |                              |       "top_level_ancestors": [],                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+2026-11-17T17:42:07.5624396Z |                              |       "blocking_dependencies": [                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+2026-11-17T17:42:07.5627733Z |                              |         {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+2026-11-17T17:42:07.5630957Z |                              |           "name": "@firebase/firestore",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+2026-11-17T17:42:07.5634146Z |                              |           "version": "4.19.1",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+2026-11-17T17:42:07.5637481Z |                              |           "requirement": "~1.9.0",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+2026-11-17T17:42:07.5640940Z |                              |           "top_level_ancestor": "firebase"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+2026-11-17T17:42:07.5644002Z |                              |         }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+2026-11-17T17:42:07.5647193Z |                              |       ],                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+2026-11-17T17:42:07.5652277Z |                              |       "explanation": "A patched version exists for @grpc/grpc-js, but the available update path would downgrade firebase from 13.2.0 to 9.14.0 because:\nThe following packages currently require @grpc/grpc-js through these dependency edges:\n  - firebase: requires @grpc/grpc-js@~1.9.0 (via @firebase/firestore@4.19.1)\n\nThese edges help explain why npm selected a downgrade path. To resolve this, either:\n  1. Update firebase to versions that support the patched @grpc/grpc-js, or\n  2. Add an override/resolution to pin @grpc/grpc-js to a non-vulnerable version compatible with your dependencies" |
+2026-11-17T17:42:07.5657261Z |                              |     }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+2026-11-17T17:42:07.5660093Z |                              |   ]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+2026-11-17T17:42:07.5663222Z |                              | }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+2026-11-17T17:42:07.5667234Z +------------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+2026-11-17T17:42:07.6850100Z Failure running container 48f50234fdfe921f793b7d2ed3803dcfd2224a6a6a745b497c71e41c03affb4f: Error: Command failed with exit code 1: /bin/sh -c $DEPENDABOT_HOME/dependabot-updater/bin/run update_files
+2026-11-17T17:42:08.2594877Z Cleaned up container 48f50234fdfe921f793b7d2ed3803dcfd2224a6a6a745b497c71e41c03affb4f
+2026-11-17T17:42:08.2720047Z   proxy | 2026/11/17 17:42:08 0/249 calls cached (0%)
+2026-11-17T17:42:08.2722532Z   proxy | 2026/11/17 17:42:08 Posting metrics to remote API endpoint
+2026-11-17T17:42:08.8832257Z ##[error]Dependabot encountered an error performing the update
+
+Error: The updater encountered one or more errors.
+
+For more information see: https://github.com/leancelot/lifeedy/network/updates/1712510136 (write access to the repository is required to view the log)
+2026-11-17T17:42:08.8841052Z 🤖 ~ finished: error reported to Dependabot ~
