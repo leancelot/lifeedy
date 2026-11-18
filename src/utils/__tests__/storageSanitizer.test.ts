@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { CURRENT_DATA_VERSION, DEFAULT_WIDGETS, sanitizeLegacyPayload } from '../storageSanitizer';
+import {
+  CURRENT_DATA_VERSION,
+  DEFAULT_WIDGETS,
+  sanitizeLegacyPayload,
+  serializeAppPayloadSafely,
+} from '../storageSanitizer';
 
 describe('sanitizeLegacyPayload', () => {
   it('retorna objeto vazio para entradas nulas ou inválidas sem lançar exceção', () => {
@@ -129,5 +134,38 @@ describe('sanitizeLegacyPayload', () => {
     expect(sanitized.draftNotes?.[0].images).toHaveLength(1);
     expect(sanitized.draftNotes?.[0].audios?.[0].durationSec).toBe(12);
     expect(sanitized.specialDates?.[0].title).toBe('Aniversário da Ana');
+  });
+
+  it('deduplica IDs repetidos, aceita backups v3 e gera checksum consistente', () => {
+    const payloadV3 = {
+      version: 3,
+      lastUpdated: '2026-11-17T10:00:00.000Z',
+      userName: 'Leandro',
+      onboardingCompleted: true,
+      tasks: [
+        { id: 'dup-1', title: 'Primeira versão', completed: false, dueDate: '2026-11-18', priority: 'high', category: 'trabalho', subtasks: [] },
+        { id: 'dup-1', title: 'Cópia duplicada', completed: true, dueDate: '2026-11-18', priority: 'low', category: 'trabalho', subtasks: [] },
+      ],
+      transactions: [],
+      financialGoals: [],
+      budgetLimits: [],
+      draftNotes: [],
+    };
+
+    const sanitized = sanitizeLegacyPayload(payloadV3);
+    expect(sanitized.tasks).toHaveLength(1);
+    expect(sanitized.tasks?.[0].title).toBe('Primeira versão');
+
+    const serialized = serializeAppPayloadSafely({
+      version: CURRENT_DATA_VERSION,
+      lastUpdated: '2026-11-18T10:00:00.000Z',
+      tasks: sanitized.tasks || [],
+      transactions: [],
+      financialGoals: [],
+      budgetLimits: [],
+      draftNotes: [],
+    });
+    expect(serialized.checksum).toMatch(/^[0-9a-f]{8}$/);
+    expect(serialized.byteSize).toBeGreaterThan(20);
   });
 });

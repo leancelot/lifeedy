@@ -8,6 +8,7 @@ import {
   CURRENT_DATA_VERSION,
   DEFAULT_WIDGETS,
   sanitizeLegacyPayload,
+  serializeAppPayloadSafely,
 } from '../utils/storageSanitizer';
 import {
   BackupCountsSummary,
@@ -72,8 +73,12 @@ import {
   checkNativeNotificationPermission,
   isNotificationSupported,
   getNotificationPermission,
+  NOTIFICATION_CHANNELS,
+  NotificationNavigationTarget,
+  registerNotificationActionListener,
   requestNotificationPermission,
   sendWebNotification,
+  syncScheduledNativeNotifications,
 } from '../services/notificationService';
 import {
   hapticSuccess,
@@ -90,7 +95,23 @@ import {
   installPendingApk,
   isNativeSelfUpdateSupported,
   openInstallUnknownAppsSettings,
+  openPlayStoreListing,
 } from '../services/appUpdaterBridge';
+import {
+  AndroidPermissionsStatus,
+  AndroidPermissionTarget,
+  clearNativeVaultBackup,
+  getAndroidPermissionsStatus,
+  isAndroidNativeHealthSupported,
+  loadNativeVaultBackup,
+  openAndroidPermissionSettings,
+  saveNativeVaultBackup,
+} from '../services/appHealthBridge';
+import {
+  getAutoErrorReportEnabled,
+  recordAppError,
+  sendDiagnosticReport,
+} from '../services/errorJournalService';
 import {
   checkForGitHubUpdates,
   clearDismissedUpdateVersion,
@@ -319,9 +340,10 @@ interface AppContextType {
     onConfirm: () => Promise<void> | void;
   }) => void;
 
-  // In-app Updater
+  // In-app Updater & Distribution Channel
   installedAppVersion: string;
   installedBuildNumber: number;
+  distributionChannel: 'githubApk' | 'playStore' | 'web';
   appUpdateResult: UpdateCheckResult | null;
   isCheckingAppUpdate: boolean;
   updateDownloadState: AppUpdateDownloadState;
@@ -332,10 +354,27 @@ interface AppContextType {
     force?: boolean;
   }) => Promise<UpdateCheckResult | null>;
   startInAppUpdate: () => Promise<void>;
+  openPlayStoreUpdate: () => Promise<void>;
   openUnknownSourcesAndAwaitReturn: () => Promise<void>;
   retryInstallPendingApk: () => Promise<void>;
   dismissUpdateBanner: () => void;
   resetUpdateDownloadState: () => void;
+
+  // Connectivity, Android Permissions, Vault Health & Notification Routing
+  isOnline: boolean;
+  justReconnected: boolean;
+  dismissReconnectedBanner: () => void;
+  androidPermissions: AndroidPermissionsStatus | null;
+  refreshAndroidPermissions: () => Promise<AndroidPermissionsStatus | null>;
+  openAndroidSettings: (target: AndroidPermissionTarget) => Promise<void>;
+  vaultStatus: {
+    lastSavedAt: string | null;
+    checksum: string | null;
+    byteSize: number;
+    recoveredFromNative: boolean;
+  };
+  pendingNotificationTarget: { target: NotificationNavigationTarget; itemId?: string } | null;
+  consumeNotificationTarget: () => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -569,6 +608,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
+  // Network Connectivity & Reconnection state
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine !== false : true
+  );
+  const [justReconnected, setJustReconnected] = useState<boolean>(false);
+  const wasOfflineRef = useRef<boolean>(typeof navigator !== 'undefined' ? navigator.onLine === false : false);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const dismissReconnectedBanner = useCallback(() => {
+    setJustReconnected(false);
+  }, []);
+
+  // Android Permissions & Vault Health state
+  const [distributionChannel, setDistributionChannel] = useState<'githubApk' | 'playStore' | 'web'>(() =>
+    Capacitor.isNativePlatform() ? 'githubApk' : 'web'
+  );
+  const [androidPermissions, setAndroidPermissions] = useState<AndroidPermissionsStatus | null>(null);
+  const [vaultStatus, setVaultStatus] = useState<{
+    lastSavedAt: string | null;
+    checksum: string | null;
+    byteSize: number;
+    recoveredFromNative: boolean;
+  }>({
+    lastSavedAt: null,
+    checksum: null,
+    byteSize: 0,
+    recoveredFromNative: false,
+  });
+
+  // Notification tap routing state
+  const [pendingNotificationTarget, setPendingNotificationTarget] = useState<{
+    target: NotificationNavigationTarget;
+    itemId?: string;
+  } | null>(null);
+
+  const consumeNotificationTarget = useCallback(() => {
+    setPendingNotificationTarget(null);
+  }, []);
+
+  const refreshAndroidPermissions = useCallback(async () => {
+    if (!isAndroidNativeHealthSupported()) return null;
+    const status = await getAndroidPermissionsStatus();
+    if (status) {
+      setAndroidPermissions(status);
+      setDistributionChannel(status.distributionChannel);
+    }
+    return status;
+  }, []);
+
+  const openAndroidSettings = useCallback(async (target: AndroidPermissionTarget) => {
+    hapticImpactLight();
+    await openAndroidPermissionSettings(target);
+  }, []);
+
   // In-app Updater state & lifecycle
   const [installedAppVersion, setInstalledAppVersion] = useState<string>(CURRENT_APP_VERSION);
   const [installedBuildNumber, setInstalledBuildNumber] = useState<number>(CURRENT_BUILD_NUMBER);
@@ -686,7 +779,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await openInstallUnknownAppsSettings();
   }, []);
 
+  const openPlayStoreUpdate = useCallback(async () => {
+    hapticImpactLight();
+    const opened = await openPlayStoreListing();
+    if (!opened) {
+      try {
+        await Browser.open({
+          url: 'https://play.google.com/store/apps/details?id=com.vidaorganizada.app',
+        });
+      } catch {
+        window.open(
+          'https://play.google.com/store/apps/details?id=com.vidaorganizada.app',
+          '_blank',
+          'noopener,noreferrer'
+        );
+      }
+    }
+  }, []);
+
   const startInAppUpdate = useCallback(async () => {
+    if (distributionChannel === 'playStore') {
+      await openPlayStoreUpdate();
+      return;
+    }
+
     const cfg = getStoredGitHubConfig();
     const target = resolveInstallableUpdateTarget(appUpdateResult, cfg.token);
     if (!target) return;
@@ -713,6 +829,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             totalBytes: 0,
           });
         } catch (err: any) {
+          recordAppError('updater.artifactDownload', err);
           setUpdateDownloadState({
             status: 'error',
             progress: 0,
@@ -754,6 +871,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         url: target.url,
         token: target.needsToken ? cfg.token : undefined,
         fileName: target.fileName,
+        expectedSha256: target.expectedSha256,
       });
 
       if (res.status === 'permission_required') {
@@ -777,6 +895,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }));
       }
     } catch (err: any) {
+      recordAppError('updater.nativeInstall', err);
       setUpdateDownloadState({
         status: 'error',
         progress: 0,
@@ -785,7 +904,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         error: err?.message || 'Não foi possível baixar a atualização.',
       });
     }
-  }, [appUpdateResult]);
+  }, [appUpdateResult, distributionChannel, openPlayStoreUpdate]);
 
   const dismissUpdateBanner = useCallback(() => {
     hapticSelection();
@@ -836,6 +955,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           installedVersionRef.current = { version: formattedVer, build: effectiveBuild };
           setInstalledAppVersion(formattedVer);
           setInstalledBuildNumber(effectiveBuild);
+          if (nativeInfo.distributionChannel) {
+            setDistributionChannel(nativeInfo.distributionChannel);
+          }
 
           const lastSeen = getLastSeenNativeBuild();
           if (effectiveBuild > lastSeen) {
@@ -855,6 +977,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
+        await refreshAndroidPermissions();
+
         progressHandle = await addUpdateProgressListener((ev) => {
           if (cancelled) return;
           setUpdateDownloadState((prev) => ({
@@ -868,6 +992,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         appStateHandle = await CapApp.addListener('appStateChange', ({ isActive }) => {
           if (!isActive || cancelled) return;
+          void refreshAndroidPermissions();
+          checkNativeNotificationPermission()
+            .then((perm) => {
+              if (!cancelled) setNotificationPermission(perm);
+            })
+            .catch(() => {});
+
           if (updateStateStatusRef.current === 'permission_required') {
             canRequestPackageInstalls()
               .then((canInstall) => {
@@ -902,7 +1033,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (progressHandle) void progressHandle.remove();
       if (appStateHandle) void appStateHandle.remove();
     };
-  }, [checkForUpdatesNow, retryInstallPendingApk]);
+  }, [checkForUpdatesNow, refreshAndroidPermissions, retryInstallPendingApk]);
 
   const [notificationsList, setNotificationsList] = useState<AppNotification[]>(() => {
     try {
@@ -971,7 +1102,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   });
 
-  // Save to local storage on changes
+  // Save to local storage + atomic Android native vault mirror on changes
+  const nativeVaultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const vaultBootRecoveredRef = useRef<boolean>(false);
+
   useEffect(() => {
     const payload: AppDataPayload = {
       version: CURRENT_DATA_VERSION,
@@ -987,11 +1121,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       dashboardWidgets,
       pendingBankNotifications,
     };
+
+    const { json, checksum, byteSize } = serializeAppPayloadSafely(payload);
     try {
-      localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(payload));
+      localStorage.setItem(STORAGE_KEY_DATA, json);
+      setVaultStatus((prev) => ({
+        ...prev,
+        lastSavedAt: payload.lastUpdated,
+        checksum,
+        byteSize,
+      }));
     } catch (e) {
+      recordAppError('localStorage.persist', e, `bytes=${byteSize}`);
       console.error('Falha ao salvar dados no LocalStorage:', e);
     }
+
+    if (isAndroidNativeHealthSupported()) {
+      if (nativeVaultTimerRef.current) clearTimeout(nativeVaultTimerRef.current);
+      nativeVaultTimerRef.current = setTimeout(() => {
+        void saveNativeVaultBackup(json);
+      }, 450);
+    }
+
+    return () => {
+      if (nativeVaultTimerRef.current) {
+        clearTimeout(nativeVaultTimerRef.current);
+      }
+    };
   }, [
     userName,
     onboardingCompleted,
@@ -1644,7 +1800,111 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     triggerAutoSync();
   };
 
-  // Web Notifications Engine: Silent checks (sem sons)
+  // Recover automatically from Android native atomic vault if WebView localStorage started empty
+  useEffect(() => {
+    if (vaultBootRecoveredRef.current || !isAndroidNativeHealthSupported()) return;
+    vaultBootRecoveredRef.current = true;
+
+    const webHasData = hasMeaningfulLocalData({
+      tasks,
+      transactions,
+      financialGoals,
+      draftNotes,
+      specialDates,
+      pendingBankNotifications,
+    });
+    if (webHasData) return;
+
+    loadNativeVaultBackup()
+      .then((res) => {
+        if (!res.found || !res.payloadJson) return;
+        try {
+          const parsed = JSON.parse(res.payloadJson);
+          const sanitized = sanitizeLegacyPayload(parsed);
+          const vaultHasData = hasMeaningfulLocalData({
+            tasks: sanitized.tasks || [],
+            transactions: sanitized.transactions || [],
+            financialGoals: sanitized.financialGoals || [],
+            draftNotes: sanitized.draftNotes || [],
+            specialDates: sanitized.specialDates || [],
+            pendingBankNotifications: sanitized.pendingBankNotifications || [],
+          });
+          if (vaultHasData || sanitized.onboardingCompleted) {
+            applySanitizedPayload(sanitized);
+            setVaultStatus((prev) => ({
+              ...prev,
+              recoveredFromNative: true,
+            }));
+          }
+        } catch (err) {
+          recordAppError('nativeVault.recover', err);
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Network Online / Offline listener + auto-reconnect feedback
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleOffline = () => {
+      wasOfflineRef.current = true;
+      setIsOnline(false);
+      setJustReconnected(false);
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+    };
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      if (wasOfflineRef.current) {
+        wasOfflineRef.current = false;
+        setJustReconnected(true);
+        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = setTimeout(() => {
+          setJustReconnected(false);
+        }, 5000);
+        void checkForUpdatesNow({ force: false });
+      }
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+    };
+  }, [checkForUpdatesNow]);
+
+  // Register native notification tap deep-link listener
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let cleanup: (() => void) | null = null;
+    registerNotificationActionListener((target, itemId) => {
+      setPendingNotificationTarget({ target, itemId });
+    }).then((unsub) => {
+      cleanup = unsub;
+    });
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, []);
+
+  // Background Native Notification Scheduler (Tasks, Calendar Events, Birthdays & Recurring Finance Bills)
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || notificationPermission !== 'granted') return;
+    const timer = setTimeout(() => {
+      void syncScheduledNativeNotifications({
+        tasks,
+        calendarEvents,
+        transactions,
+      });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [tasks, calendarEvents, transactions, notificationPermission]);
+
+  // Web & Foreground Notifications Engine
   useEffect(() => {
     const checkReminders = () => {
       const now = new Date();
@@ -1670,7 +1930,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 ? `Horário de vencimento agora (${task.dueTime})!`
                 : `Vence em aproximadamente ${Math.ceil(diffMinutes)} minuto(s) às ${task.dueTime}.`;
 
-            sendWebNotification(title, { body, tag: key });
+            sendWebNotification(title, {
+              body,
+              tag: key,
+              channelId: NOTIFICATION_CHANNELS.TASKS,
+              targetTab: 'agenda',
+            });
 
             const newNotif: AppNotification = {
               id: 'notif-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
@@ -1708,7 +1973,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 ? `Iniciando agora (${startTimeFormatted})!${event.location ? ` • ${event.location}` : ''}`
                 : `Inicia em ${Math.ceil(diffMinutes)} minuto(s) às ${startTimeFormatted}.${event.location ? ` Local: ${event.location}` : ''}`;
 
-            sendWebNotification(title, { body, tag: key });
+            sendWebNotification(title, {
+              body,
+              tag: key,
+              channelId: NOTIFICATION_CHANNELS.TASKS,
+              targetTab: 'agenda',
+            });
 
             const newNotif: AppNotification = {
               id: 'notif-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
@@ -1729,14 +1999,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearInterval(interval);
   }, [tasks, calendarEvents]);
 
-  // Request browser notification permission
+  // Request browser or native notification permission & schedule reminders immediately
   const enableNotifications = async (): Promise<boolean> => {
     const perm = await requestNotificationPermission();
     setNotificationPermission(perm);
+    if (Capacitor.isNativePlatform()) {
+      void refreshAndroidPermissions();
+    }
     if (perm === 'granted') {
       sendWebNotification('🔔 Notificações Ativadas!', {
-        body: 'Você agora receberá alertas visuais sobre prazos e compromissos.',
+        body: 'Você agora receberá lembretes de tarefas, agenda e alertas financeiros mesmo em segundo plano.',
+        channelId: NOTIFICATION_CHANNELS.TASKS,
+        targetTab: 'agenda',
       });
+      if (Capacitor.isNativePlatform()) {
+        void syncScheduledNativeNotifications({ tasks, calendarEvents, transactions });
+      }
       return true;
     }
     return false;
@@ -1863,6 +2141,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {
         // ignore
       }
+      void clearNativeVaultBackup();
 
       if (cloudResetResult) {
         setDriveSyncInfo({
@@ -2810,16 +3089,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         confirmDestructiveAction,
         installedAppVersion,
         installedBuildNumber,
+        distributionChannel,
         appUpdateResult,
         isCheckingAppUpdate,
         updateDownloadState,
         isUpdateBannerDismissed,
         checkForUpdatesNow,
         startInAppUpdate,
+        openPlayStoreUpdate,
         openUnknownSourcesAndAwaitReturn,
         retryInstallPendingApk,
         dismissUpdateBanner,
         resetUpdateDownloadState,
+        isOnline,
+        justReconnected,
+        dismissReconnectedBanner,
+        androidPermissions,
+        refreshAndroidPermissions,
+        openAndroidSettings,
+        vaultStatus,
+        pendingNotificationTarget,
+        consumeNotificationTarget,
       }}
     >
       {children}

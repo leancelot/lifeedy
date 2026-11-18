@@ -43,6 +43,7 @@ import {
   saveGitHubConfig,
 } from '../../services/githubUpdateService';
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
+import { DiagnosticsAndPermissionsSection } from './DiagnosticsAndPermissionsSection';
 
 interface AccountSettingsModalProps {
   isOpen: boolean;
@@ -82,11 +83,13 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     openStartFromScratchModal,
     installedAppVersion,
     installedBuildNumber,
+    distributionChannel,
     appUpdateResult,
     isCheckingAppUpdate,
     updateDownloadState,
     checkForUpdatesNow,
     startInAppUpdate,
+    openPlayStoreUpdate,
     openUnknownSourcesAndAwaitReturn,
     retryInstallPendingApk,
   } = useApp();
@@ -694,7 +697,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
             </div>
           </section>
 
-          {/* 4. Versão, Atualizações & Recomeçar */}
+          {/* 4. Saúde Android, Permissões & Diário de Erros */}
+          <DiagnosticsAndPermissionsSection />
+
+          {/* 5. Versão, Atualizações & Recomeçar */}
           <section className="pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <button
@@ -897,10 +903,19 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
                     {!isDownloadingNow && updateDownloadState.status !== 'permission_required' && (
                       <div className="flex flex-wrap gap-2">
-                        {nativeSelfUpdate &&
-                        installTarget &&
-                        (installTarget.kind === 'release_apk' ||
-                          installTarget.kind === 'actions_artifact_zip') ? (
+                        {distributionChannel === 'playStore' ? (
+                          <button
+                            type="button"
+                            onClick={() => void openPlayStoreUpdate()}
+                            className="pressable min-h-[36px] px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Atualizar na Play Store</span>
+                          </button>
+                        ) : nativeSelfUpdate &&
+                          installTarget &&
+                          (installTarget.kind === 'release_apk' ||
+                            installTarget.kind === 'actions_artifact_zip') ? (
                           <button
                             type="button"
                             onClick={() => void startInAppUpdate()}

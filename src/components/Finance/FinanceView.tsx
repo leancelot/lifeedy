@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -49,8 +49,11 @@ import {
   PendingRecurringExpense,
 } from '../../utils/financeForecastUtils';
 
-const ReceiptScannerModal = lazy(() =>
-  import('./ReceiptScannerModal').then((m) => ({ default: m.ReceiptScannerModal }))
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
+
+const ReceiptScannerModal = lazyWithRetry(
+  () => import('./ReceiptScannerModal').then((m) => ({ default: m.ReceiptScannerModal })),
+  'receipt-scanner-modal'
 );
 
 const DISMISSED_RECURRING_STORAGE_KEY = 'vidaorganizada_dismissed_recurring_v1';

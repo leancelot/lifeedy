@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.security.MessageDigest;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -60,10 +61,15 @@ public class AppUpdaterPlugin extends Plugin {
         }
         try {
             PackageInfo info = getPackageInfoCompat(context, context.getPackageName());
+            String channel = BuildConfig.DISTRIBUTION_CHANNEL != null
+                ? BuildConfig.DISTRIBUTION_CHANNEL
+                : "githubApk";
             JSObject res = new JSObject();
             res.put("packageName", context.getPackageName());
             res.put("versionName", info.versionName != null ? info.versionName : "1.0.0");
             res.put("versionCode", PackageInfoCompat.getLongVersionCode(info));
+            res.put("distributionChannel", channel);
+            res.put("supportsSelfUpdate", "githubApk".equals(channel));
             call.resolve(res);
         } catch (Exception e) {
             call.reject("Não foi possível ler a versão instalada: " + e.getMessage());
@@ -71,11 +77,45 @@ public class AppUpdaterPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void openPlayStoreListing(PluginCall call) {
+        Context context = getContext();
+        if (context == null) {
+            call.reject("Contexto Android indisponível.");
+            return;
+        }
+        String pkg = context.getPackageName();
+        try {
+            Intent marketIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + pkg));
+            marketIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(marketIntent);
+            JSObject res = new JSObject();
+            res.put("opened", true);
+            call.resolve(res);
+        } catch (Exception ignored) {
+            try {
+                Intent webIntent = new Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("https://play.google.com/store/apps/details?id=" + pkg)
+                );
+                webIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(webIntent);
+                JSObject res = new JSObject();
+                res.put("opened", true);
+                call.resolve(res);
+            } catch (Exception e) {
+                call.reject("Não foi possível abrir a página na Play Store.");
+            }
+        }
+    }
+
+    @PluginMethod
     public void canRequestPackageInstalls(PluginCall call) {
         Context context = getContext();
-        boolean canInstall = canInstallPackages(context);
+        boolean supportsSelf = "githubApk".equals(BuildConfig.DISTRIBUTION_CHANNEL);
+        boolean canInstall = supportsSelf && canInstallPackages(context);
         JSObject res = new JSObject();
         res.put("canInstall", canInstall);
+        res.put("supportsSelfUpdate", supportsSelf);
         res.put("sdkInt", Build.VERSION.SDK_INT);
         call.resolve(res);
     }
@@ -184,9 +224,15 @@ public class AppUpdaterPlugin extends Plugin {
 
     @PluginMethod
     public void downloadAndInstallApk(PluginCall call) {
+        if (!"githubApk".equals(BuildConfig.DISTRIBUTION_CHANNEL)) {
+            call.reject("Esta versão foi distribuída pela Google Play Store e deve ser atualizada pela loja.");
+            return;
+        }
+
         String downloadUrl = call.getString("url", "").trim();
         String token = call.getString("token", "").trim();
         String requestedName = call.getString("fileName", "Lifeedy-update.apk").trim();
+        String expectedSha256 = call.getString("expectedSha256", "").trim().toLowerCase(Locale.ROOT);
 
         if (downloadUrl.isEmpty()) {
             call.reject("URL de download da atualização não informada.");
@@ -232,8 +278,27 @@ public class AppUpdaterPlugin extends Plugin {
                     );
                 }
 
-                savePendingApkPath(context, apkFile.getAbsolutePath());
+                String actualSha256 = computeSha256(apkFile);
+                if (!expectedSha256.isEmpty() && !expectedSha256.equals(actualSha256)) {
+                    throw new IOException("Falha na verificação de integridade SHA-256 do APK baixado.");
+                }
+
+                long installedVersionCode = 0L;
+                try {
+                    PackageInfo currentInfo = getPackageInfoCompat(context, context.getPackageName());
+                    installedVersionCode = PackageInfoCompat.getLongVersionCode(currentInfo);
+                } catch (Exception ignored) {
+                    // Proceed cleanly if installed package info lookup fails
+                }
+
                 long archiveVersionCode = PackageInfoCompat.getLongVersionCode(archiveInfo);
+                if (installedVersionCode > 0L && archiveVersionCode < installedVersionCode) {
+                    throw new IOException(
+                        "O APK baixado (build #" + archiveVersionCode + ") é mais antigo que o instalado (#" + installedVersionCode + ")."
+                    );
+                }
+
+                savePendingApkPath(context, apkFile.getAbsolutePath());
                 String archiveVersionName = archiveInfo.versionName != null ? archiveInfo.versionName : "";
 
                 if (!canInstallPackages(context)) {
@@ -242,6 +307,7 @@ public class AppUpdaterPlugin extends Plugin {
                     res.put("versionName", archiveVersionName);
                     res.put("versionCode", archiveVersionCode);
                     res.put("fileSize", apkFile.length());
+                    res.put("sha256", actualSha256);
                     call.resolve(res);
                     return;
                 }
@@ -254,6 +320,7 @@ public class AppUpdaterPlugin extends Plugin {
                 res.put("versionName", archiveVersionName);
                 res.put("versionCode", archiveVersionCode);
                 res.put("fileSize", apkFile.length());
+                res.put("sha256", actualSha256);
                 call.resolve(res);
             } catch (Exception e) {
                 call.reject(e.getMessage() != null ? e.getMessage() : "Falha ao baixar atualização.");
@@ -505,6 +572,29 @@ public class AppUpdaterPlugin extends Plugin {
         for (File child : children) {
             //noinspection ResultOfMethodCallIgnored
             child.delete();
+        }
+    }
+
+    private static String computeSha256(File file) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream in = new BufferedInputStream(new FileInputStream(file), 32 * 1024)) {
+                byte[] buffer = new byte[32 * 1024];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    digest.update(buffer, 0, read);
+                }
+            }
+            byte[] hashBytes = digest.digest();
+            StringBuilder hex = new StringBuilder(hashBytes.length * 2);
+            for (byte b : hashBytes) {
+                hex.append(String.format(Locale.ROOT, "%02x", b));
+            }
+            return hex.toString();
+        } catch (IOException ioEx) {
+            throw ioEx;
+        } catch (Exception e) {
+            throw new IOException("Falha ao calcular SHA-256 do APK: " + e.getMessage(), e);
         }
     }
 

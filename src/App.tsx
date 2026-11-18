@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { Fingerprint, Lock } from 'lucide-react';
@@ -25,23 +25,19 @@ import {
 import { QuickActionFab } from './components/Common/QuickActionFab';
 import { ToastUndo } from './components/Common/ToastUndo';
 import { InAppUpdateBanner } from './components/Common/InAppUpdateBanner';
+import { NetworkStatusBanner } from './components/Common/NetworkStatusBanner';
 import { NativeConnectBridge } from './components/Auth/NativeConnectBridge';
+import { AccountSettingsModal } from './components/Account/AccountSettingsModal';
+import { NotificationCenterModal } from './components/Notifications/NotificationCenterModal';
+import { lazyWithRetry } from './utils/lazyWithRetry';
 
-const AgendaTasksView = lazy(() =>
-  import('./components/Agenda/AgendaTasksView').then((m) => ({ default: m.AgendaTasksView }))
+const AgendaTasksView = lazyWithRetry(
+  () => import('./components/Agenda/AgendaTasksView').then((m) => ({ default: m.AgendaTasksView })),
+  'agenda-view'
 );
-const FinanceView = lazy(() =>
-  import('./components/Finance/FinanceView').then((m) => ({ default: m.FinanceView }))
-);
-const AccountSettingsModal = lazy(() =>
-  import('./components/Account/AccountSettingsModal').then((m) => ({
-    default: m.AccountSettingsModal,
-  }))
-);
-const NotificationCenterModal = lazy(() =>
-  import('./components/Notifications/NotificationCenterModal').then((m) => ({
-    default: m.NotificationCenterModal,
-  }))
+const FinanceView = lazyWithRetry(
+  () => import('./components/Finance/FinanceView').then((m) => ({ default: m.FinanceView })),
+  'finance-view'
 );
 
 const TabLoadingFallback: React.FC = () => (
@@ -58,7 +54,13 @@ const TabLoadingFallback: React.FC = () => (
 );
 
 const MainApp: React.FC = () => {
-  const { onboardingCompleted, theme, financeLockEnabled } = useApp();
+  const {
+    onboardingCompleted,
+    theme,
+    financeLockEnabled,
+    pendingNotificationTarget,
+    consumeNotificationTarget,
+  } = useApp();
   const backNavigation = useBackNavigation();
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [agendaQuickOpen, setAgendaQuickOpen] = useState<'task' | 'event' | null>(null);
@@ -233,6 +235,25 @@ const MainApp: React.FC = () => {
     };
   }, [backNavigation, currentTab]);
 
+  // Route user directly when tapping an Android LocalNotification
+  useEffect(() => {
+    if (!pendingNotificationTarget) return;
+    setIsQuickMenuOpen(false);
+    setIsNotificationCenterOpen(false);
+
+    if (pendingNotificationTarget.target === 'agenda') {
+      setIsAccountModalOpen(false);
+      setCurrentTab('agenda');
+    } else if (pendingNotificationTarget.target === 'financas') {
+      setIsAccountModalOpen(false);
+      setCurrentTab('financas');
+    } else if (pendingNotificationTarget.target === 'updates') {
+      setIsAccountModalOpen(true);
+    }
+
+    consumeNotificationTarget();
+  }, [pendingNotificationTarget, consumeNotificationTarget]);
+
   if (!onboardingCompleted) {
     return <OnboardingView />;
   }
@@ -252,6 +273,7 @@ const MainApp: React.FC = () => {
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 pt-3 sm:pt-6 keyboard-safe-main">
+        <NetworkStatusBanner />
         <InAppUpdateBanner />
         <div key={currentTab} className="animate-tab-enter">
           {currentTab === 'dashboard' && <DashboardView setCurrentTab={setCurrentTab} />}
@@ -346,22 +368,18 @@ const MainApp: React.FC = () => {
       />
 
       {isAccountModalOpen && (
-        <Suspense fallback={null}>
-          <AccountSettingsModal
-            isOpen={isAccountModalOpen}
-            onClose={() => setIsAccountModalOpen(false)}
-          />
-        </Suspense>
+        <AccountSettingsModal
+          isOpen={isAccountModalOpen}
+          onClose={() => setIsAccountModalOpen(false)}
+        />
       )}
 
       {isNotificationCenterOpen && (
-        <Suspense fallback={null}>
-          <NotificationCenterModal
-            isOpen={isNotificationCenterOpen}
-            onClose={() => setIsNotificationCenterOpen(false)}
-            onOpenAgenda={() => setCurrentTab('agenda')}
-          />
-        </Suspense>
+        <NotificationCenterModal
+          isOpen={isNotificationCenterOpen}
+          onClose={() => setIsNotificationCenterOpen(false)}
+          onOpenAgenda={() => setCurrentTab('agenda')}
+        />
       )}
     </div>
   );

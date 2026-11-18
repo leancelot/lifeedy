@@ -264,6 +264,53 @@ Extraia com a máxima precisão os dados financeiros para lançamento de despesa
   }
 });
 
+interface SanitizedDiagnosticReport {
+  reportId: string;
+  receivedAt: string;
+  appVersion: string;
+  buildNumber: number;
+  distributionChannel: string;
+  platform: string;
+  userNote: string;
+  errorCount: number;
+}
+
+const recentDiagnosticReports: SanitizedDiagnosticReport[] = [];
+
+app.post('/api/diagnostics/report', (req, res) => {
+  try {
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+    const recentErrors = Array.isArray(body.recentErrors) ? body.recentErrors.slice(0, 25) : [];
+    const reportId = `diag-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const receivedAt = new Date().toISOString();
+
+    const record: SanitizedDiagnosticReport = {
+      reportId,
+      receivedAt,
+      appVersion: String(body.appVersion || 'unknown').slice(0, 32),
+      buildNumber: Number(body.buildNumber) || 0,
+      distributionChannel: String(body.distributionChannel || 'web').slice(0, 32),
+      platform: String(body.platform || 'web').slice(0, 32),
+      userNote: String(body.userNote || '').slice(0, 400),
+      errorCount: recentErrors.length,
+    };
+
+    recentDiagnosticReports.unshift(record);
+    if (recentDiagnosticReports.length > 50) {
+      recentDiagnosticReports.length = 50;
+    }
+
+    return res.status(201).json({
+      ok: true,
+      reportId,
+      receivedAt,
+    });
+  } catch (err) {
+    console.error('Erro ao registrar relatório de diagnóstico:', err);
+    return res.status(500).json({ error: 'Não foi possível registrar o diagnóstico.' });
+  }
+});
+
 app.use('/api/*', (_req, res) => {
   res.status(404).json({ error: 'Rota de API não encontrada.' });
 });

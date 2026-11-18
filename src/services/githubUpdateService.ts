@@ -106,6 +106,13 @@ export interface InstallableUpdateTarget {
   fileName: string;
   size: number;
   needsToken: boolean;
+  expectedSha256?: string;
+}
+
+export function extractReleaseSha256(body?: string | null): string | undefined {
+  if (!body) return undefined;
+  const match = body.match(/SHA-256:\s*`?([a-fA-F0-9]{64})`?/i);
+  return match ? match[1].toLowerCase() : undefined;
 }
 
 export const AUTO_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
@@ -600,6 +607,7 @@ export function resolveInstallableUpdateTarget(
       fileName: result.apkAsset.name || 'Lifeedy-update.apk',
       size: result.apkAsset.size || 0,
       needsToken: useApiAsset,
+      expectedSha256: extractReleaseSha256(result.latestRelease?.body),
     };
   }
 

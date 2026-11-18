@@ -1,13 +1,23 @@
-name: Build Android APK
+name: Build Android APK & Play Store AAB
 
 on:
   push:
     branches: [ "main", "master" ]
   workflow_dispatch:
+    inputs:
+      build_target:
+        description: "Destino da compilação"
+        required: true
+        default: "githubApk"
+        type: choice
+        options:
+          - githubApk
+          - playStore_aab
+          - both
 
 jobs:
   build-apk:
-    name: Compilar APK Android
+    name: Compilar Pacote Android
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -68,9 +78,10 @@ jobs:
           fi
           npx cap sync android
 
-      - name: Compilar APK com Gradle
+      - name: Compilar APK direto (githubApk) e/ou AAB Play Store
         id: gradle_build
         env:
+          BUILD_TARGET: ${{ inputs.build_target || 'githubApk' }}
           APP_VERSION_CODE: ${{ github.run_number }}
           APP_VERSION_NAME: ${{ steps.app_meta.outputs.version_name }}
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -79,24 +90,35 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           cd android
-          # Corrige possíveis quebras de linha CRLF do Windows no script gradlew
           sed -i -e 's/\r$//' gradlew || true
           chmod +x gradlew
-          # Aponta explicitamente para o SDK Android do runner
           echo "sdk.dir=${ANDROID_HOME}" > local.properties
 
+          HAS_KEYSTORE="false"
           if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
             echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > app/release.keystore
             export ANDROID_KEYSTORE_PATH="$(pwd)/app/release.keystore"
-            ./gradlew assembleRelease --no-daemon --stacktrace
-            echo "apk_dir=android/app/build/outputs/apk/release" >> "$GITHUB_OUTPUT"
-          else
-            ./gradlew assembleDebug --no-daemon --stacktrace
-            echo "apk_dir=android/app/build/outputs/apk/debug" >> "$GITHUB_OUTPUT"
+            HAS_KEYSTORE="true"
           fi
 
-      - name: Preparar APK versionado para distribuição
+          if [ "$BUILD_TARGET" = "githubApk" ] || [ "$BUILD_TARGET" = "both" ]; then
+            if [ "$HAS_KEYSTORE" = "true" ]; then
+              ./gradlew assembleGithubApkRelease --no-daemon --stacktrace
+              echo "apk_dir=android/app/build/outputs/apk/githubApk/release" >> "$GITHUB_OUTPUT"
+            else
+              ./gradlew assembleGithubApkDebug --no-daemon --stacktrace
+              echo "apk_dir=android/app/build/outputs/apk/githubApk/debug" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+          if [ "$BUILD_TARGET" = "playStore_aab" ] || [ "$BUILD_TARGET" = "both" ]; then
+            APP_MINIFY=true ./gradlew bundlePlayStoreRelease --no-daemon --stacktrace
+            echo "aab_dir=android/app/build/outputs/bundle/playStoreRelease" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Preparar APK versionado e SHA-256
         id: prep_apk
+        if: ${{ steps.gradle_build.outputs.apk_dir != '' }}
         run: |
           APP_VERSION="${{ steps.app_meta.outputs.app_version }}"
           RELEASE_TAG="${{ steps.app_meta.outputs.release_tag }}"
@@ -106,11 +128,27 @@ jobs:
           if [ -n "$APK_SOURCE" ] && [ "$APK_SOURCE" != "$APK_DEST" ]; then
             cp "$APK_SOURCE" "$APK_DEST"
           fi
+          SHA256=$(sha256sum "$APK_DEST" | awk '{print $1}')
           echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
           echo "apk_path=${APK_DEST}" >> "$GITHUB_OUTPUT"
+          echo "apk_sha256=${SHA256}" >> "$GITHUB_OUTPUT"
 
-      - name: Salvar APK como Artefato para Download
+      - name: Preparar AAB Play Store
+        id: prep_aab
+        if: ${{ steps.gradle_build.outputs.aab_dir != '' }}
+        run: |
+          RELEASE_TAG="${{ steps.app_meta.outputs.release_tag }}"
+          AAB_DIR="${{ steps.gradle_build.outputs.aab_dir }}"
+          AAB_SOURCE=$(find "$AAB_DIR" -maxdepth 1 -name '*.aab' | head -n 1)
+          AAB_DEST="${AAB_DIR}/Lifeedy-PlayStore-${RELEASE_TAG}.aab"
+          if [ -n "$AAB_SOURCE" ] && [ "$AAB_SOURCE" != "$AAB_DEST" ]; then
+            cp "$AAB_SOURCE" "$AAB_DEST"
+          fi
+          echo "aab_path=${AAB_DEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Salvar APK como Artefato
+        if: ${{ steps.prep_apk.outputs.apk_path != '' }}
         uses: actions/upload-artifact@v5
         with:
           name: Lifeedy-APK
@@ -118,16 +156,28 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+      - name: Salvar AAB Play Store como Artefato
+        if: ${{ steps.prep_aab.outputs.aab_path != '' }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: Lifeedy-PlayStore-AAB
+          path: ${{ steps.prep_aab.outputs.aab_path }}
+          retention-days: 30
+          if-no-files-found: error
+
       - name: Publicar APK como Release no GitHub
+        if: ${{ steps.prep_apk.outputs.apk_path != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ steps.prep_apk.outputs.release_tag }}"
           APK_FILE="${{ steps.prep_apk.outputs.apk_path }}"
+          SHA256="${{ steps.prep_apk.outputs.apk_sha256 }}"
+          NOTES="APK gerado automaticamente pelo GitHub Actions no commit ${{ github.sha }}.\n\nAtualizável diretamente por cima da versão instalada sem desinstalar.\n\nSHA-256: \`${SHA256}\`"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK_FILE" --clobber
           else
             gh release create "$TAG" "$APK_FILE" \
               --title "Lifeedy ${{ steps.prep_apk.outputs.app_version }} (Build #${{ github.run_number }})" \
-              --notes "APK gerado automaticamente pelo GitHub Actions no commit ${{ github.sha }}. Atualizável diretamente dentro do aplicativo sem desinstalar."
+              --notes "$(printf '%b' "$NOTES")"
           fi

@@ -7,11 +7,12 @@ import {
   DraftNote,
   FinancialGoal,
   LocalSpecialDate,
+  PendingBankNotification,
   TaskItem,
   Transaction,
 } from '../types';
 
-export const CURRENT_DATA_VERSION = 3;
+export const CURRENT_DATA_VERSION = 4;
 export const DEFAULT_WIDGETS = [
   'overview',
   'schedule',
@@ -60,6 +61,124 @@ const LEGACY_SEED_BUDGETS: Record<string, number> = {
   saude: 400,
 };
 
+function deduplicateById<T extends { id?: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+    const id = typeof item.id === 'string' ? item.id.trim() : '';
+    if (!id) {
+      result.push(item);
+      continue;
+    }
+    if (!seen.has(id)) {
+      seen.add(id);
+      result.push(item);
+    }
+  }
+  return result;
+}
+
+function normalizeTaskItem(raw: unknown): TaskItem | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.id !== 'string' || !r.id.trim() || typeof r.title !== 'string') return null;
+
+  const subtasks = Array.isArray(r.subtasks)
+    ? r.subtasks
+        .filter((s): s is Record<string, unknown> => Boolean(s && typeof s === 'object'))
+        .map((s, idx) => ({
+          id: typeof s.id === 'string' && s.id ? s.id : `sub-${idx}`,
+          title: typeof s.title === 'string' ? s.title : '',
+          completed: Boolean(s.completed),
+        }))
+        .filter((s) => s.title.trim().length > 0)
+    : [];
+
+  return {
+    id: r.id.trim(),
+    title: r.title,
+    description: typeof r.description === 'string' ? r.description : undefined,
+    dueDate: typeof r.dueDate === 'string' ? r.dueDate : new Date().toISOString().slice(0, 10),
+    dueTime: typeof r.dueTime === 'string' && r.dueTime ? r.dueTime : undefined,
+    priority: r.priority === 'high' || r.priority === 'low' ? r.priority : 'medium',
+    category:
+      r.category === 'trabalho' ||
+      r.category === 'pessoal' ||
+      r.category === 'saude' ||
+      r.category === 'estudos' ||
+      r.category === 'financas'
+        ? r.category
+        : 'outros',
+    completed: Boolean(r.completed),
+    completedAt: typeof r.completedAt === 'string' ? r.completedAt : undefined,
+    subtasks,
+    googleCalendarEventId:
+      typeof r.googleCalendarEventId === 'string' ? r.googleCalendarEventId : undefined,
+    reminderMinutesBefore:
+      typeof r.reminderMinutesBefore === 'number' && Number.isFinite(r.reminderMinutesBefore)
+        ? r.reminderMinutesBefore
+        : undefined,
+  };
+}
+
+function normalizeTransaction(raw: unknown): Transaction | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.id !== 'string' || !r.id.trim() || typeof r.title !== 'string') return null;
+  const amount = Number(r.amount);
+  if (!Number.isFinite(amount)) return null;
+
+  return {
+    id: r.id.trim(),
+    type: r.type === 'receita' ? 'receita' : 'despesa',
+    title: r.title,
+    amount,
+    category:
+      r.category === 'salario' ||
+      r.category === 'investimentos' ||
+      r.category === 'freelance' ||
+      r.category === 'moradia' ||
+      r.category === 'alimentacao' ||
+      r.category === 'transporte' ||
+      r.category === 'saude' ||
+      r.category === 'educacao' ||
+      r.category === 'lazer'
+        ? r.category
+        : 'outros',
+    date: typeof r.date === 'string' ? r.date : new Date().toISOString().slice(0, 10),
+    paymentMethod:
+      r.paymentMethod === 'pix' ||
+      r.paymentMethod === 'cartao_credito' ||
+      r.paymentMethod === 'cartao_debito' ||
+      r.paymentMethod === 'dinheiro' ||
+      r.paymentMethod === 'transferencia'
+        ? r.paymentMethod
+        : undefined,
+    notes: typeof r.notes === 'string' ? r.notes : undefined,
+    recurring: typeof r.recurring === 'boolean' ? r.recurring : undefined,
+  };
+}
+
+function normalizeGoal(raw: unknown): FinancialGoal | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.id !== 'string' || !r.id.trim() || typeof r.title !== 'string') return null;
+  const targetAmount = Number(r.targetAmount);
+  const currentAmount = Number(r.currentAmount);
+  if (!Number.isFinite(targetAmount) || !Number.isFinite(currentAmount)) return null;
+
+  return {
+    id: r.id.trim(),
+    title: r.title,
+    targetAmount,
+    currentAmount,
+    targetDate: typeof r.targetDate === 'string' ? r.targetDate : '',
+    category: typeof r.category === 'string' ? r.category : 'outros',
+    color: typeof r.color === 'string' ? r.color : undefined,
+  };
+}
+
 function normalizeDraftNote(raw: unknown): DraftNote | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
@@ -101,7 +220,8 @@ function normalizeDraftNote(raw: unknown): DraftNote | null {
           id: typeof aud.id === 'string' && aud.id ? aud.id : `aud-${idx}-${Date.now()}`,
           dataUrl: String(aud.dataUrl),
           mimeType: typeof aud.mimeType === 'string' ? aud.mimeType : 'audio/webm',
-          durationSec: typeof aud.durationSec === 'number' && Number.isFinite(aud.durationSec) ? aud.durationSec : 0,
+          durationSec:
+            typeof aud.durationSec === 'number' && Number.isFinite(aud.durationSec) ? aud.durationSec : 0,
           createdAt: typeof aud.createdAt === 'string' ? aud.createdAt : new Date().toISOString(),
         }))
     : undefined;
@@ -128,59 +248,102 @@ function normalizeDraftNote(raw: unknown): DraftNote | null {
 
 function normalizeSpecialDates(raw: unknown): LocalSpecialDate[] {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
-    .filter(
-      (item) =>
-        typeof item.id === 'string' &&
-        typeof item.title === 'string' &&
-        typeof item.monthDay === 'string' &&
-        item.title.trim().length > 0
-    )
-    .map((item) => ({
-      id: String(item.id),
-      title: String(item.title).trim(),
-      monthDay: String(item.monthDay).trim(),
-      category:
-        item.category === 'birthday' || item.category === 'holiday' || item.category === 'commemorative'
-          ? item.category
-          : 'commemorative',
-      notes: typeof item.notes === 'string' ? item.notes : undefined,
-      recurringYearly: item.recurringYearly !== false,
-      createdAt: typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString(),
-    }));
+  return deduplicateById(
+    raw
+      .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+      .filter(
+        (item) =>
+          typeof item.id === 'string' &&
+          typeof item.title === 'string' &&
+          typeof item.monthDay === 'string' &&
+          item.title.trim().length > 0
+      )
+      .map((item) => ({
+        id: String(item.id),
+        title: String(item.title).trim(),
+        monthDay: String(item.monthDay).trim(),
+        category:
+          item.category === 'birthday' || item.category === 'holiday' || item.category === 'commemorative'
+            ? item.category
+            : ('commemorative' as const),
+        notes: typeof item.notes === 'string' ? item.notes : undefined,
+        recurringYearly: item.recurringYearly !== false,
+        createdAt: typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString(),
+      }))
+  );
+}
+
+/**
+ * Deterministic 32-bit FNV-1a checksum hex string for quick payload integrity detection
+ */
+export function computePayloadChecksum(serialized: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < serialized.length; i++) {
+    hash ^= serialized.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+export function serializeAppPayloadSafely(payload: AppDataPayload): {
+  json: string;
+  checksum: string;
+  byteSize: number;
+} {
+  const json = JSON.stringify(payload);
+  const checksum = computePayloadChecksum(json);
+  const byteSize =
+    typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(json).length : json.length;
+  return { json, checksum, byteSize };
 }
 
 export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
 
   const record = parsed as Record<string, unknown>;
-  const isLegacyVersion =
-    typeof record.version !== 'number' || record.version < CURRENT_DATA_VERSION;
+  // Backward compatibility: support v1/v2/v3 payloads (removing legacy seed items if version < 3)
+  const isPreSanitizedSeedVersion =
+    typeof record.version !== 'number' || record.version < 3;
 
-  const rawTasks: TaskItem[] = Array.isArray(record.tasks) ? (record.tasks as TaskItem[]) : [];
-  const rawTxs: Transaction[] = Array.isArray(record.transactions)
-    ? (record.transactions as Transaction[])
-    : [];
-  const rawGoals: FinancialGoal[] = Array.isArray(record.financialGoals)
-    ? (record.financialGoals as FinancialGoal[])
-    : [];
+  const rawTasks = deduplicateById(
+    Array.isArray(record.tasks)
+      ? record.tasks.map(normalizeTaskItem).filter((t): t is TaskItem => t !== null)
+      : []
+  );
+  const rawTxs = deduplicateById(
+    Array.isArray(record.transactions)
+      ? record.transactions.map(normalizeTransaction).filter((tx): tx is Transaction => tx !== null)
+      : []
+  );
+  const rawGoals = deduplicateById(
+    Array.isArray(record.financialGoals)
+      ? record.financialGoals.map(normalizeGoal).filter((g): g is FinancialGoal => g !== null)
+      : []
+  );
   const rawBudgets: BudgetLimit[] = Array.isArray(record.budgetLimits)
-    ? (record.budgetLimits as BudgetLimit[])
+    ? (record.budgetLimits as BudgetLimit[]).filter(
+        (b) => b && typeof b === 'object' && typeof b.category === 'string' && Number.isFinite(b.monthlyLimit)
+      )
     : [];
-  const rawDrafts: DraftNote[] = Array.isArray(record.draftNotes)
-    ? record.draftNotes.map(normalizeDraftNote).filter((d): d is DraftNote => d !== null)
-    : [];
+  const rawDrafts = deduplicateById(
+    Array.isArray(record.draftNotes)
+      ? record.draftNotes.map(normalizeDraftNote).filter((d): d is DraftNote => d !== null)
+      : []
+  );
   const specialDates = normalizeSpecialDates(record.specialDates);
   const dashboardWidgets = Array.isArray(record.dashboardWidgets)
-    ? (record.dashboardWidgets as string[])
+    ? (record.dashboardWidgets.filter((w): w is string => typeof w === 'string') as string[])
     : DEFAULT_WIDGETS;
-  const pendingBankNotifications = Array.isArray(record.pendingBankNotifications)
-    ? (record.pendingBankNotifications as AppDataPayload['pendingBankNotifications'])
+  const pendingBankNotifications: PendingBankNotification[] = Array.isArray(
+    record.pendingBankNotifications
+  )
+    ? deduplicateById(record.pendingBankNotifications as PendingBankNotification[])
     : [];
 
-  if (!isLegacyVersion) {
+  if (!isPreSanitizedSeedVersion) {
     return {
+      version: typeof record.version === 'number' ? record.version : CURRENT_DATA_VERSION,
+      lastUpdated: typeof record.lastUpdated === 'string' ? record.lastUpdated : undefined,
       userName: typeof record.userName === 'string' ? record.userName : '',
       onboardingCompleted: Boolean(record.onboardingCompleted),
       tasks: rawTasks,
@@ -214,6 +377,8 @@ export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> 
   const draftNotes = rawDrafts.filter((d) => LEGACY_SEED_DRAFTS[d.id] !== d.title);
 
   return {
+    version: CURRENT_DATA_VERSION,
+    lastUpdated: typeof record.lastUpdated === 'string' ? record.lastUpdated : undefined,
     userName: typeof record.userName === 'string' ? record.userName : '',
     onboardingCompleted: Boolean(record.onboardingCompleted),
     tasks,

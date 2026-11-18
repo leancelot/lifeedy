@@ -37,6 +37,23 @@ android {
         }
     }
 
+    buildFeatures {
+        buildConfig true
+    }
+
+    flavorDimensions "distribution"
+    productFlavors {
+        githubApk {
+            dimension "distribution"
+            isDefault true
+            buildConfigField "String", "DISTRIBUTION_CHANNEL", '"githubApk"'
+        }
+        playStore {
+            dimension "distribution"
+            buildConfigField "String", "DISTRIBUTION_CHANNEL", '"playStore"'
+        }
+    }
+
     defaultConfig {
         applicationId "com.vidaorganizada.app"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -56,8 +73,10 @@ android {
         }
         release {
             signingConfig signingConfigs.release
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            def shouldMinify = System.getenv('APP_MINIFY') == 'true'
+            minifyEnabled shouldMinify
+            shrinkResources shouldMinify
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
     compileOptions {

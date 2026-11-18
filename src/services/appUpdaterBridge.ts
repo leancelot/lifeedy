@@ -4,6 +4,8 @@ export interface InstalledAppInfo {
   packageName: string;
   versionName: string;
   versionCode: number;
+  distributionChannel?: 'githubApk' | 'playStore';
+  supportsSelfUpdate?: boolean;
 }
 
 export interface PendingApkInfo {
@@ -26,11 +28,13 @@ export interface DownloadAndInstallResult {
   versionName?: string;
   versionCode?: number;
   fileSize?: number;
+  sha256?: string;
 }
 
 interface AppUpdaterPluginInterface {
   getInstalledAppInfo(): Promise<InstalledAppInfo>;
-  canRequestPackageInstalls(): Promise<{ canInstall: boolean; sdkInt: number }>;
+  openPlayStoreListing(): Promise<{ opened: boolean }>;
+  canRequestPackageInstalls(): Promise<{ canInstall: boolean; supportsSelfUpdate?: boolean; sdkInt: number }>;
   openInstallUnknownAppsSettings(): Promise<{ opened: boolean }>;
   hasPendingApk(): Promise<PendingApkInfo>;
   installPendingApk(): Promise<DownloadAndInstallResult>;
@@ -39,6 +43,7 @@ interface AppUpdaterPluginInterface {
     url: string;
     token?: string;
     fileName?: string;
+    expectedSha256?: string;
   }): Promise<DownloadAndInstallResult>;
   addListener(
     eventName: 'updateDownloadProgress',
@@ -58,6 +63,16 @@ export async function getInstalledAppInfo(): Promise<InstalledAppInfo | null> {
     return await AppUpdater.getInstalledAppInfo();
   } catch {
     return null;
+  }
+}
+
+export async function openPlayStoreListing(): Promise<boolean> {
+  if (!isNativeSelfUpdateSupported()) return false;
+  try {
+    const res = await AppUpdater.openPlayStoreListing();
+    return Boolean(res?.opened);
+  } catch {
+    return false;
   }
 }
 
@@ -110,6 +125,7 @@ export async function downloadAndInstallApk(options: {
   url: string;
   token?: string;
   fileName?: string;
+  expectedSha256?: string;
 }): Promise<DownloadAndInstallResult> {
   if (!isNativeSelfUpdateSupported()) {
     throw new Error('Atualização automática de APK disponível apenas no aplicativo Android.');
