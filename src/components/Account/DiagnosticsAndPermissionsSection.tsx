@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   BellRing,
+  Camera,
   CheckCircle2,
   Clock,
   Download,
   FileWarning,
   HardDrive,
   Mail,
+  Mic,
   Package,
   RefreshCw,
   Send,
@@ -16,7 +18,13 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { isAndroidNativeHealthSupported } from '../../services/appHealthBridge';
+import {
+  getWebMediaPermissionsStatus,
+  isAndroidNativeHealthSupported,
+  MediaPermissionTarget,
+  requestMediaPermission,
+  WebMediaPermissionsStatus,
+} from '../../services/appHealthBridge';
 import {
   buildErrorReportMailtoUrl,
   clearErrorJournal,
@@ -37,7 +45,15 @@ const formatBytes = (bytes: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 };
 
-export const DiagnosticsAndPermissionsSection: React.FC = () => {
+export type DiagnosticsSectionMode = 'all' | 'permissions' | 'vault' | 'logs';
+
+interface DiagnosticsAndPermissionsSectionProps {
+  mode?: DiagnosticsSectionMode;
+}
+
+export const DiagnosticsAndPermissionsSection: React.FC<DiagnosticsAndPermissionsSectionProps> = ({
+  mode = 'all',
+}) => {
   const {
     installedAppVersion,
     installedBuildNumber,
@@ -57,13 +73,70 @@ export const DiagnosticsAndPermissionsSection: React.FC = () => {
   const [autoReport, setAutoReport] = useState<boolean>(() => getAutoErrorReportEnabled());
   const [isSendingReport, setIsSendingReport] = useState(false);
   const [diagMessage, setDiagMessage] = useState<string | null>(null);
+  const [webMediaPerms, setWebMediaPerms] = useState<WebMediaPermissionsStatus>({
+    microphone: 'unsupported',
+    camera: 'unsupported',
+  });
+  const [requestingMedia, setRequestingMedia] = useState<MediaPermissionTarget | null>(null);
+
+  const refreshWebMedia = async () => {
+    if (nativeAndroid) return;
+    const status = await getWebMediaPermissionsStatus();
+    setWebMediaPerms(status);
+  };
 
   useEffect(() => {
     setJournalEntries(getErrorJournal());
+    void refreshWebMedia();
     return subscribeErrorJournal((entries) => {
       setJournalEntries(entries);
     });
   }, []);
+
+  const handleRequestMediaAccess = async (target: MediaPermissionTarget) => {
+    hapticImpactLight();
+    setRequestingMedia(target);
+    setDiagMessage(null);
+    const result = await requestMediaPermission(target);
+    setRequestingMedia(null);
+
+    if (nativeAndroid) {
+      await refreshAndroidPermissions();
+    } else {
+      await refreshWebMedia();
+    }
+
+    if (result.granted) {
+      hapticSuccess();
+      setDiagMessage(
+        target === 'microphone'
+          ? 'Permissão de microfone concedida.'
+          : 'Permissão de câmera concedida.'
+      );
+      return;
+    }
+
+    if (nativeAndroid) {
+      setDiagMessage(
+        `Permissão de ${
+          target === 'microphone' ? 'microfone' : 'câmera'
+        } não concedida. Abrindo ajustes do aplicativo...`
+      );
+      void openAndroidSettings('appDetails');
+    } else if (result.state === 'unsupported') {
+      setDiagMessage(
+        `Nenhum recurso de ${
+          target === 'microphone' ? 'microfone' : 'câmera'
+        } disponível neste navegador.`
+      );
+    } else {
+      setDiagMessage(
+        `Acesso bloqueado no navegador. Libere o ${
+          target === 'microphone' ? 'microfone' : 'câmera'
+        } nas configurações do site na barra de endereços.`
+      );
+    }
+  };
 
   const handleExportLog = () => {
     hapticImpactLight();
@@ -117,34 +190,60 @@ export const DiagnosticsAndPermissionsSection: React.FC = () => {
     : notificationPermission === 'granted';
 
   const exactAlarmsGranted = nativeAndroid ? Boolean(androidPermissions?.exactAlarms ?? true) : true;
+  const microphoneGranted = nativeAndroid
+    ? Boolean(androidPermissions?.microphone)
+    : webMediaPerms.microphone === 'granted';
+  const cameraGranted = nativeAndroid
+    ? Boolean(androidPermissions?.camera)
+    : webMediaPerms.camera === 'granted';
   const bankListenerGranted = nativeAndroid ? Boolean(androidPermissions?.bankListener) : false;
   const installPackagesGranted = nativeAndroid
     ? Boolean(androidPermissions?.installPackages)
     : false;
 
-  return (
-    <section className="pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-          Saúde Android, Permissões & Logs
-        </span>
-        {nativeAndroid && (
-          <button
-            type="button"
-            onClick={() => {
-              hapticSelection();
-              void refreshAndroidPermissions();
-            }}
-            className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 inline-flex items-center gap-1 cursor-pointer"
-          >
-            <RefreshCw className="w-3 h-3" />
-            <span>Atualizar</span>
-          </button>
-        )}
-      </div>
+  const microphoneStatusLabel = microphoneGranted
+    ? 'Permitido'
+    : !nativeAndroid && webMediaPerms.microphone === 'denied'
+    ? 'Bloqueado'
+    : 'Pendente';
 
-      {/* Permissões Android & Canal de Notificações */}
-      <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-2.5">
+  const cameraStatusLabel = cameraGranted
+    ? 'Permitida'
+    : !nativeAndroid && webMediaPerms.camera === 'denied'
+    ? 'Bloqueada'
+    : 'Pendente';
+
+  const showPermissions = mode === 'all' || mode === 'permissions';
+  const showVault = mode === 'all' || mode === 'vault';
+  const showLogs = mode === 'all' || mode === 'logs';
+
+  return (
+    <section
+      className={`${mode === 'all' ? 'pt-4 border-t border-zinc-100 dark:border-zinc-800 ' : ''}space-y-3`}
+    >
+      {showPermissions && (
+        <>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+              {nativeAndroid ? 'Permissões do Android' : 'Permissões do navegador'}
+            </span>
+            {nativeAndroid && (
+              <button
+                type="button"
+                onClick={() => {
+                  hapticSelection();
+                  void refreshAndroidPermissions();
+                }}
+                className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 inline-flex items-center gap-1 cursor-pointer min-h-[32px] px-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Atualizar</span>
+              </button>
+            )}
+          </div>
+
+          {/* Permissões Android & Canal de Notificações */}
+          <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-2.5">
         {/* 1. Notificações */}
         <div className="flex items-center justify-between gap-2.5">
           <div className="flex items-center gap-2 min-w-0">
@@ -212,6 +311,64 @@ export const DiagnosticsAndPermissionsSection: React.FC = () => {
             )}
           </div>
         )}
+
+        {/* 3. Microfone (Notas de voz nos rascunhos) */}
+        <div className="flex items-center justify-between gap-2.5 pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
+          <div className="flex items-center gap-2 min-w-0">
+            <Mic
+              className={`w-4 h-4 shrink-0 ${
+                microphoneGranted ? 'text-emerald-500' : 'text-amber-500'
+              }`}
+            />
+            <div className="min-w-0">
+              <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 block">
+                Microfone · {microphoneStatusLabel}
+              </span>
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block truncate">
+                Gravação de notas de voz nos rascunhos
+              </span>
+            </div>
+          </div>
+          {!microphoneGranted && (
+            <button
+              type="button"
+              disabled={requestingMedia === 'microphone'}
+              onClick={() => void handleRequestMediaAccess('microphone')}
+              className="pressable min-h-[34px] px-2.5 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-[11px] font-semibold shrink-0 cursor-pointer"
+            >
+              {requestingMedia === 'microphone' ? 'Pedindo...' : 'Permitir'}
+            </button>
+          )}
+        </div>
+
+        {/* 4. Câmera (Notas fiscais e anexos de foto) */}
+        <div className="flex items-center justify-between gap-2.5 pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
+          <div className="flex items-center gap-2 min-w-0">
+            <Camera
+              className={`w-4 h-4 shrink-0 ${
+                cameraGranted ? 'text-emerald-500' : 'text-zinc-400'
+              }`}
+            />
+            <div className="min-w-0">
+              <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 block">
+                Câmera · {cameraStatusLabel}
+              </span>
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block truncate">
+                Fotos diretas de notas fiscais e anexos
+              </span>
+            </div>
+          </div>
+          {!cameraGranted && (
+            <button
+              type="button"
+              disabled={requestingMedia === 'camera'}
+              onClick={() => void handleRequestMediaAccess('camera')}
+              className="pressable min-h-[34px] px-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50 text-zinc-700 dark:text-zinc-200 text-[11px] font-semibold shrink-0 cursor-pointer"
+            >
+              {requestingMedia === 'camera' ? 'Pedindo...' : 'Permitir'}
+            </button>
+          )}
+        </div>
 
         {/* 3. Leitura Bancária */}
         {nativeAndroid && (
@@ -288,38 +445,43 @@ export const DiagnosticsAndPermissionsSection: React.FC = () => {
             </button>
           </div>
         )}
-      </div>
+          </div>
+        </>
+      )}
 
       {/* Cofre & Integridade dos Dados */}
-      <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 flex items-start gap-2.5">
-        <HardDrive className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
-        <div className="min-w-0 flex-1 space-y-0.5">
-          <div className="flex flex-wrap items-center justify-between gap-1">
-            <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
-              Cofre Local & Integridade
-            </span>
-            {vaultStatus.checksum && (
-              <span className="text-[11px] font-mono tabular-nums text-zinc-400">
-                {formatBytes(vaultStatus.byteSize)} · #{vaultStatus.checksum}
+      {showVault && (
+        <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 flex items-start gap-2.5">
+          <HardDrive className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <div className="flex flex-wrap items-center justify-between gap-1">
+              <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                Cofre Local & Integridade
               </span>
+              {vaultStatus.checksum && (
+                <span className="text-[11px] font-mono tabular-nums text-zinc-400">
+                  {formatBytes(vaultStatus.byteSize)} · #{vaultStatus.checksum}
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              {nativeAndroid
+                ? 'Espelhamento atômico cifrado (AES-256-GCM via Android Keystore) no armazenamento privado do aparelho, com backup automático e sem permissão de extração ADB.'
+                : 'Validação estrutural em runtime, sanitização e deduplicação automática ativas no armazenamento local.'}
+            </p>
+            {vaultStatus.recoveredFromNative && (
+              <p className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1 pt-0.5">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Dados recuperados automaticamente do cofre interno nesta sessão.</span>
+              </p>
             )}
           </div>
-          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
-            {nativeAndroid
-              ? 'Espelhamento atômico ativo no armazenamento interno do Android com cópia de segurança automática.'
-              : 'Validação estrutural e deduplicação automática ativas no armazenamento local.'}
-          </p>
-          {vaultStatus.recoveredFromNative && (
-            <p className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1 pt-0.5">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Dados recuperados automaticamente do cofre interno nesta sessão.</span>
-            </p>
-          )}
         </div>
-      </div>
+      )}
 
       {/* Diário de Erros Local & Envio de Relatórios */}
-      <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-2.5">
+      {showLogs && (
+        <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <FileWarning
@@ -432,7 +594,8 @@ export const DiagnosticsAndPermissionsSection: React.FC = () => {
             )}
           </div>
         )}
-      </div>
+        </div>
+      )}
     </section>
   );
 };

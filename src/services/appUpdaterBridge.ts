@@ -1,4 +1,5 @@
 import { Capacitor, PluginListenerHandle, registerPlugin } from '@capacitor/core';
+import { validateGitHubUpdateUrl } from '../utils/runtimeValidator';
 
 export interface InstalledAppInfo {
   packageName: string;
@@ -130,7 +131,19 @@ export async function downloadAndInstallApk(options: {
   if (!isNativeSelfUpdateSupported()) {
     throw new Error('Atualização automática de APK disponível apenas no aplicativo Android.');
   }
-  return await AppUpdater.downloadAndInstallApk(options);
+  const urlCheck = validateGitHubUpdateUrl(options.url);
+  if (!urlCheck.ok || !urlCheck.data) {
+    throw new Error(urlCheck.error || 'URL de atualização bloqueada por segurança.');
+  }
+  const cleanSha = (options.expectedSha256 || '').trim().toLowerCase();
+  if (cleanSha && !/^[a-f0-9]{64}$/.test(cleanSha)) {
+    throw new Error('Hash SHA-256 da atualização inválido.');
+  }
+  return await AppUpdater.downloadAndInstallApk({
+    ...options,
+    url: urlCheck.data,
+    expectedSha256: cleanSha || undefined,
+  });
 }
 
 export async function addUpdateProgressListener(

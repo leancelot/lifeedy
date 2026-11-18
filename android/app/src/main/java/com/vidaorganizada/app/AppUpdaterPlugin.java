@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.content.pm.SigningInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.SystemClock;
@@ -26,7 +28,9 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -238,6 +242,14 @@ public class AppUpdaterPlugin extends Plugin {
             call.reject("URL de download da atualização não informada.");
             return;
         }
+        if (!isAllowedGitHubDownloadUrl(downloadUrl)) {
+            call.reject("URL de atualização bloqueada por segurança: apenas HTTPS oficial do GitHub é permitido.");
+            return;
+        }
+        if (!expectedSha256.isEmpty() && !expectedSha256.matches("^[a-f0-9]{64}$")) {
+            call.reject("Assinatura SHA-256 informada para a atualização é inválida.");
+            return;
+        }
 
         Context context = getContext();
         if (context == null) {
@@ -280,7 +292,15 @@ public class AppUpdaterPlugin extends Plugin {
 
                 String actualSha256 = computeSha256(apkFile);
                 if (!expectedSha256.isEmpty() && !expectedSha256.equals(actualSha256)) {
+                    clearUpdatesDirectory(context);
                     throw new IOException("Falha na verificação de integridade SHA-256 do APK baixado.");
+                }
+
+                if (!verifyApkSignatureMatchesInstalled(context, apkFile)) {
+                    clearUpdatesDirectory(context);
+                    throw new IOException(
+                        "Assinatura digital do APK incompatível com a versão instalada. Atualização bloqueada por segurança."
+                    );
                 }
 
                 long installedVersionCode = 0L;
@@ -293,6 +313,7 @@ public class AppUpdaterPlugin extends Plugin {
 
                 long archiveVersionCode = PackageInfoCompat.getLongVersionCode(archiveInfo);
                 if (installedVersionCode > 0L && archiveVersionCode < installedVersionCode) {
+                    clearUpdatesDirectory(context);
                     throw new IOException(
                         "O APK baixado (build #" + archiveVersionCode + ") é mais antigo que o instalado (#" + installedVersionCode + ")."
                     );
@@ -335,6 +356,9 @@ public class AppUpdaterPlugin extends Plugin {
         HttpURLConnection conn = null;
 
         for (int redirectCount = 0; redirectCount < MAX_REDIRECTS; redirectCount++) {
+            if (!isAllowedGitHubDownloadUrl(currentUrl)) {
+                throw new IOException("Redirecionamento bloqueado: origem fora do GitHub HTTPS autorizado.");
+            }
             URL url = new URL(currentUrl);
             conn = (HttpURLConnection) url.openConnection();
             conn.setInstanceFollowRedirects(false);
@@ -366,6 +390,9 @@ public class AppUpdaterPlugin extends Plugin {
                     throw new IOException("Redirecionamento inválido ao baixar o APK.");
                 }
                 currentUrl = new URL(url, location).toString();
+                if (!isAllowedGitHubDownloadUrl(currentUrl)) {
+                    throw new IOException("Destino de redirecionamento não autorizado para download de APK.");
+                }
                 continue;
             }
 
@@ -596,6 +623,100 @@ public class AppUpdaterPlugin extends Plugin {
         } catch (Exception e) {
             throw new IOException("Falha ao calcular SHA-256 do APK: " + e.getMessage(), e);
         }
+    }
+
+    private static boolean isAllowedGitHubDownloadUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.isEmpty()) return false;
+        try {
+            URL parsed = new URL(rawUrl);
+            if (!"https".equalsIgnoreCase(parsed.getProtocol())) return false;
+            String host = parsed.getHost() != null ? parsed.getHost().toLowerCase(Locale.ROOT) : "";
+            if (host.isEmpty()) return false;
+            return host.equals("github.com")
+                || host.equals("api.github.com")
+                || host.equals("githubusercontent.com")
+                || host.endsWith(".github.com")
+                || host.endsWith(".githubusercontent.com");
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static boolean verifyApkSignatureMatchesInstalled(Context context, File apkFile) {
+        try {
+            PackageManager pm = context.getPackageManager();
+            PackageInfo installedInfo;
+            PackageInfo archiveInfo;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                int flags = PackageManager.GET_SIGNING_CERTIFICATES;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    installedInfo = pm.getPackageInfo(
+                        context.getPackageName(),
+                        PackageManager.PackageInfoFlags.of(flags)
+                    );
+                    archiveInfo = pm.getPackageArchiveInfo(
+                        apkFile.getAbsolutePath(),
+                        PackageManager.PackageInfoFlags.of(flags)
+                    );
+                } else {
+                    installedInfo = pm.getPackageInfo(context.getPackageName(), flags);
+                    archiveInfo = pm.getPackageArchiveInfo(apkFile.getAbsolutePath(), flags);
+                }
+            } else {
+                installedInfo = pm.getPackageInfo(context.getPackageName(), PackageManager.GET_SIGNATURES);
+                archiveInfo = pm.getPackageArchiveInfo(apkFile.getAbsolutePath(), PackageManager.GET_SIGNATURES);
+            }
+
+            Set<String> installedDigests = extractSigningDigests(installedInfo);
+            Set<String> archiveDigests = extractSigningDigests(archiveInfo);
+
+            if (installedDigests.isEmpty() || archiveDigests.isEmpty()) {
+                return false;
+            }
+            for (String digest : archiveDigests) {
+                if (installedDigests.contains(digest)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Set<String> extractSigningDigests(PackageInfo info) {
+        Set<String> digests = new HashSet<>();
+        if (info == null) return digests;
+
+        Signature[] sigs = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && info.signingInfo != null) {
+            SigningInfo signingInfo = info.signingInfo;
+            sigs = signingInfo.hasMultipleSigners()
+                ? signingInfo.getApkContentsSigners()
+                : signingInfo.getSigningCertificateHistory();
+        }
+        if ((sigs == null || sigs.length == 0) && info.signatures != null) {
+            sigs = info.signatures;
+        }
+        if (sigs == null) return digests;
+
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            for (Signature sig : sigs) {
+                if (sig == null) continue;
+                byte[] hash = md.digest(sig.toByteArray());
+                StringBuilder hex = new StringBuilder(hash.length * 2);
+                for (byte b : hash) {
+                    hex.append(String.format(Locale.ROOT, "%02x", b));
+                }
+                digests.add(hex.toString());
+            }
+        } catch (Exception ignored) {
+            // Return whatever valid digests were collected
+        }
+        return digests;
     }
 
     private static String sanitizeFileName(String raw) {

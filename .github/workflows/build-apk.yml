@@ -46,12 +46,6 @@ jobs:
       - name: Instalar dependências
         run: npm install --legacy-peer-deps
 
-      - name: Preparar configuração do Firebase se ausente
-        run: |
-          if [ ! -f "firebase-applet-config.json" ] && [ -f "firebase-applet-config.example.json" ]; then
-            cp firebase-applet-config.example.json firebase-applet-config.json
-          fi
-
       - name: Ler versão do aplicativo
         id: app_meta
         run: |
@@ -70,6 +64,13 @@ jobs:
           VITE_APP_COMMIT_SHA: ${{ github.sha }}
           VITE_APP_BUILD_NUMBER: ${{ github.run_number }}
           VITE_APP_BUILT_AT: ${{ steps.app_meta.outputs.built_at }}
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY || '' }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID || '' }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID || '' }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN || '' }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET || '' }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID || '' }}
+          VITE_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.VITE_FIREBASE_OAUTH_CLIENT_ID || '' }}
 
       - name: Sincronizar Capacitor Android
         run: |
@@ -112,9 +113,21 @@ jobs:
           fi
 
           if [ "$BUILD_TARGET" = "playStore_aab" ] || [ "$BUILD_TARGET" = "both" ]; then
+            if [ "$HAS_KEYSTORE" != "true" ]; then
+              echo "::error::Compilação AAB para Google Play Store exige os Secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS e ANDROID_KEY_PASSWORD configurados."
+              exit 1
+            fi
             APP_MINIFY=true ./gradlew bundlePlayStoreRelease --no-daemon --stacktrace
             echo "aab_dir=android/app/build/outputs/bundle/playStoreRelease" >> "$GITHUB_OUTPUT"
           fi
+
+          {
+            echo "### Resumo da Compilação Android"
+            echo "- **Destino:** \`${BUILD_TARGET}\`"
+            echo "- **Assinatura:** $([ "$HAS_KEYSTORE" = "true" ] && echo "Keystore de Release configurada" || echo "Assinatura Debug padrão (APK direto)")"
+            echo "- **Firebase Auth:** $([ -n "${{ secrets.VITE_FIREBASE_API_KEY }}" ] && echo "Ativo via Secrets" || echo "Desativado (modo 100% offline)")"
+            echo "- **Servidor APP_URL:** $([ -n "${{ secrets.APP_URL }}" ] && echo "Configurado via Secret" || echo "Não configurado (OCR local no dispositivo)")"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Preparar APK versionado e SHA-256
         id: prep_apk

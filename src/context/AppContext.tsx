@@ -10,6 +10,7 @@ import {
   sanitizeLegacyPayload,
   serializeAppPayloadSafely,
 } from '../utils/storageSanitizer';
+import { validateAndParseBackupJson } from '../utils/runtimeValidator';
 import {
   BackupCountsSummary,
   hasMeaningfulLocalData,
@@ -779,23 +780,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await openInstallUnknownAppsSettings();
   }, []);
 
+  const openExternalSafely = useCallback((url: string) => {
+    if (typeof document === 'undefined') return;
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    anchor.click();
+  }, []);
+
   const openPlayStoreUpdate = useCallback(async () => {
     hapticImpactLight();
+    const storeUrl = 'https://play.google.com/store/apps/details?id=com.vidaorganizada.app';
     const opened = await openPlayStoreListing();
     if (!opened) {
       try {
-        await Browser.open({
-          url: 'https://play.google.com/store/apps/details?id=com.vidaorganizada.app',
-        });
+        await Browser.open({ url: storeUrl });
       } catch {
-        window.open(
-          'https://play.google.com/store/apps/details?id=com.vidaorganizada.app',
-          '_blank',
-          'noopener,noreferrer'
-        );
+        openExternalSafely(storeUrl);
       }
     }
-  }, []);
+  }, [openExternalSafely]);
 
   const startInAppUpdate = useCallback(async () => {
     if (distributionChannel === 'playStore') {
@@ -842,7 +847,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         try {
           await Browser.open({ url: target.url });
         } catch {
-          window.open(target.url, '_blank', 'noopener,noreferrer');
+          openExternalSafely(target.url);
         }
       }
       return;
@@ -852,7 +857,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         await Browser.open({ url: target.url });
       } catch {
-        window.open(target.url, '_blank', 'noopener,noreferrer');
+        openExternalSafely(target.url);
       }
       return;
     }
@@ -2937,11 +2942,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     URL.revokeObjectURL(url);
   };
 
-  // Import JSON backup
+  // Import JSON backup with runtime schema & prototype validation
   const importBackupJson = (content: string): boolean => {
     try {
-      const parsed = JSON.parse(content);
-      const sanitized = sanitizeLegacyPayload(parsed);
+      const validation = validateAndParseBackupJson(content);
+      if (!validation.ok || !validation.data) {
+        recordAppError('backup.import', validation.error || 'Backup JSON inválido');
+        return false;
+      }
+      const sanitized = validation.data.payload;
       if (sanitized.tasks) setTasks(sanitized.tasks);
       if (sanitized.transactions) setTransactions(sanitized.transactions);
       if (sanitized.financialGoals) setFinancialGoals(sanitized.financialGoals);
@@ -2959,6 +2968,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       triggerAutoSync();
       return true;
     } catch (e) {
+      recordAppError('backup.import', e);
       console.error('Erro ao importar JSON:', e);
       return false;
     }

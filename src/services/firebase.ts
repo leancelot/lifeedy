@@ -114,6 +114,9 @@ export const mapGoogleAuthError = (error: unknown): string => {
   const code = err?.code || '';
   const msg = err?.message || '';
 
+  if (msg.includes('VITE_APP_URL')) {
+    return 'URL do servidor de autenticação não configurada neste APK. Defina APP_URL nos Secrets ou conecte na versão Web.';
+  }
   if (!isFirebaseConfigured || msg.includes('não configurada')) {
     return 'Configuração de login Google não carregada no servidor. Atualize a página e tente novamente.';
   }
@@ -243,13 +246,14 @@ export const googleSignIn = async (options?: {
 
     // Se estiver rodando nativamente no Android (Capacitor APK)
     if (Capacitor.isNativePlatform()) {
-      const baseUrl =
-        (import.meta.env.VITE_APP_URL as string) ||
-        'https://ais-dev-3wiiypdjeboooeth4s5qlf-202698123569.us-east1.run.app';
+      const baseUrl = ((import.meta.env.VITE_APP_URL as string) || '').trim().replace(/\/+$/, '');
+      if (!baseUrl) {
+        throw new Error('Autenticação no APK requer VITE_APP_URL configurado.');
+      }
       const hintParam = options?.loginHint
         ? `&login_hint=${encodeURIComponent(options.loginHint)}`
         : '';
-      const bridgeUrl = `${baseUrl.replace(/\/$/, '')}?connect_native=1${hintParam}`;
+      const bridgeUrl = `${baseUrl}?connect_native=1${hintParam}`;
       await Browser.open({ url: bridgeUrl, windowName: '_system' });
       return { isNativeRedirect: true };
     }

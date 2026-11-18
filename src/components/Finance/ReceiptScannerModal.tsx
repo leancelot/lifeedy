@@ -25,6 +25,12 @@ import {
 import { useApp } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import { hapticSelection } from '../../services/hapticsService';
+import {
+  isAndroidNativeHealthSupported,
+  openAndroidPermissionSettings,
+  requestMediaPermission,
+} from '../../services/appHealthBridge';
+import { validateReceiptImageFile } from '../../utils/runtimeValidator';
 import { FinanceCategory, Transaction } from '../../types';
 import confetti from 'canvas-confetti';
 
@@ -69,6 +75,13 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
 
   const handleFileSelected = async (file: File, forceServerRetry = false) => {
     if (!file) return;
+
+    const validation = validateReceiptImageFile(file);
+    if (!validation.ok) {
+      setErrorMsg(validation.error || 'Arquivo de imagem inválido ou não permitido.');
+      setStep('upload');
+      return;
+    }
 
     if (selectedImagePreview) {
       URL.revokeObjectURL(selectedImagePreview);
@@ -397,10 +410,35 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
               </div>
             </div>
 
+            {errorMsg && (
+              <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/70 text-xs text-rose-600 dark:text-rose-400">
+                <span>{errorMsg}</span>
+                {isAndroidNativeHealthSupported() && (
+                  <button
+                    type="button"
+                    onClick={() => void openAndroidPermissionSettings('appDetails')}
+                    className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold shrink-0 cursor-pointer"
+                  >
+                    Abrir ajustes
+                  </button>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={async () => {
+                  setErrorMsg(null);
+                  if (isAndroidNativeHealthSupported()) {
+                    const perm = await requestMediaPermission('camera');
+                    if (!perm.granted) {
+                      setErrorMsg('Permita o acesso à câmera para fotografar notas fiscais.');
+                      return;
+                    }
+                  }
+                  cameraInputRef.current?.click();
+                }}
                 className="pressable flex items-center justify-center gap-2 py-3 px-4 min-h-[44px] rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 cursor-pointer"
               >
                 <Camera className="w-4 h-4" />

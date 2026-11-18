@@ -30,6 +30,12 @@ import {
   pickSupportedAudioMimeType,
 } from '../../services/mediaUtils';
 import {
+  describeMediaPermissionError,
+  isAndroidNativeHealthSupported,
+  openAndroidPermissionSettings,
+  requestMediaPermission,
+} from '../../services/appHealthBridge';
+import {
   buildDraftSummaryNote,
   extractAmountFromDraftText,
   guessFinanceCategoryFromText,
@@ -105,6 +111,7 @@ export const DraftsSection: React.FC = () => {
   const [isQuickRecording, setIsQuickRecording] = useState(false);
   const [quickRecordingSec, setQuickRecordingSec] = useState(0);
   const [quickMediaError, setQuickMediaError] = useState<string | null>(null);
+  const [quickMicDenied, setQuickMicDenied] = useState(false);
   const quickImageInputRef = useRef<HTMLInputElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -335,6 +342,7 @@ export const DraftsSection: React.FC = () => {
 
   const handleToggleQuickAudio = async () => {
     setQuickMediaError(null);
+    setQuickMicDenied(false);
     if (isQuickRecording) {
       if (recorderRef.current && recorderRef.current.state !== 'inactive') {
         recorderRef.current.stop();
@@ -348,6 +356,15 @@ export const DraftsSection: React.FC = () => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setQuickMediaError('Microfone não disponível neste navegador.');
       return;
+    }
+
+    if (isAndroidNativeHealthSupported()) {
+      const perm = await requestMediaPermission('microphone');
+      if (!perm.granted) {
+        setQuickMicDenied(true);
+        setQuickMediaError('Permita o uso do microfone nas configurações do app para gravar notas de voz.');
+        return;
+      }
     }
 
     try {
@@ -411,10 +428,11 @@ export const DraftsSection: React.FC = () => {
           recorder.stop();
         }
       }, 250);
-    } catch {
+    } catch (err) {
       stopQuickAudioTracks();
       setIsQuickRecording(false);
-      setQuickMediaError('Permita o uso do microfone para gravar notas de voz.');
+      setQuickMicDenied(true);
+      setQuickMediaError(describeMediaPermissionError(err, 'microphone'));
     }
   };
 
@@ -774,7 +792,18 @@ export const DraftsSection: React.FC = () => {
         )}
 
         {quickMediaError && (
-          <p className="text-xs text-rose-600 dark:text-rose-400 px-2">{quickMediaError}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1 text-xs text-rose-600 dark:text-rose-400">
+            <span>{quickMediaError}</span>
+            {quickMicDenied && isAndroidNativeHealthSupported() && (
+              <button
+                type="button"
+                onClick={() => void openAndroidPermissionSettings('appDetails')}
+                className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold shrink-0 cursor-pointer"
+              >
+                Abrir ajustes
+              </button>
+            )}
+          </div>
         )}
       </div>
 

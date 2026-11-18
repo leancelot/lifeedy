@@ -62,9 +62,43 @@ export default defineConfig(() => {
         '@': path.resolve(import.meta.dirname, '.'),
       },
     },
+    optimizeDeps: {
+      entries: ['index.html', 'src/main.tsx'],
+    },
+    build: {
+      rolldownOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('firebase') || id.includes('@firebase')) {
+              return 'firebase-vendor';
+            }
+            if (id.includes('tesseract.js')) {
+              return 'ocr-vendor';
+            }
+            if (id.includes('motion') || id.includes('framer-motion')) {
+              return 'motion-vendor';
+            }
+            if (id.includes('lucide-react')) {
+              return 'icons-vendor';
+            }
+            if (id.includes('react-dom') || id.includes('/react/') || id.includes('/scheduler/')) {
+              return 'react-vendor';
+            }
+            return undefined;
+          },
+        },
+      },
+    },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      ws: process.env.DISABLE_HMR === 'true' ? (false as const) : undefined,
+      watch:
+        process.env.DISABLE_HMR === 'true'
+          ? null
+          : {
+              ignored: ['**/android/**', '**/dist/**', '**/.git/**'],
+            },
     },
   };
 });

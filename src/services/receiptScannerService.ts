@@ -41,8 +41,6 @@ export class ReceiptScanError extends Error {
   }
 }
 
-const DEFAULT_HOSTED_URL =
-  'https://ais-pre-3wiiypdjeboooeth4s5qlf-202698123569.us-east1.run.app';
 const SERVER_TIMEOUT_MS = 16000;
 const MAX_UPLOAD_DIMENSION = 1600;
 
@@ -135,19 +133,21 @@ export async function scanReceiptWithAI(
 ): Promise<ReceiptScanResult> {
   const prepared = await prepareReceiptImage(file);
 
-  const isLocalOrigin =
-    typeof window !== 'undefined' &&
-    (window.location.origin.includes('localhost') ||
-      window.location.protocol === 'capacitor:' ||
-      window.location.protocol === 'file:');
+  const isNativeContainer =
+    Capacitor.isNativePlatform() ||
+    (typeof window !== 'undefined' &&
+      (window.location.protocol === 'capacitor:' || window.location.protocol === 'file:'));
 
   const configuredBaseUrl = (import.meta.env.VITE_APP_URL || '').trim().replace(/\/+$/, '');
-  const baseUrl = configuredBaseUrl || (isLocalOrigin ? DEFAULT_HOSTED_URL : '');
-  const endpoint = `${baseUrl}/api/gemini/parse-receipt`;
-  const resolvedEndpoint =
-    endpoint.startsWith('http') || typeof window === 'undefined'
-      ? endpoint
-      : `${window.location.origin}${endpoint}`;
+  const hasRemoteServer = Boolean(configuredBaseUrl) || !isNativeContainer;
+  const endpoint = configuredBaseUrl
+    ? `${configuredBaseUrl}/api/gemini/parse-receipt`
+    : '/api/gemini/parse-receipt';
+  const resolvedEndpoint = !hasRemoteServer
+    ? 'offline-only (VITE_APP_URL não configurado)'
+    : endpoint.startsWith('http') || typeof window === 'undefined'
+    ? endpoint
+    : `${window.location.origin}${endpoint}`;
 
   const diagnostics: ReceiptScanDiagnostics = {
     timestamp: new Date().toISOString(),
@@ -164,7 +164,11 @@ export async function scanReceiptWithAI(
 
   let serverFailedMessage = '';
 
-  if (endpoint404InSession) {
+  if (!hasRemoteServer) {
+    diagnostics.errorCode = 'SERVER_URL_NOT_CONFIGURED';
+    serverFailedMessage =
+      'Servidor de leitura por IA não configurado neste APK (VITE_APP_URL ausente).';
+  } else if (endpoint404InSession) {
     diagnostics.httpStatus = 404;
     diagnostics.errorCode = 'ENDPOINT_NOT_FOUND';
     serverFailedMessage =

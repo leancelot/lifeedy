@@ -31,6 +31,12 @@ import {
   MAX_DRAFT_AUDIO_SECONDS,
   pickSupportedAudioMimeType,
 } from '../../services/mediaUtils';
+import {
+  describeMediaPermissionError,
+  isAndroidNativeHealthSupported,
+  openAndroidPermissionSettings,
+  requestMediaPermission,
+} from '../../services/appHealthBridge';
 
 interface DraftAudioPlayerProps {
   audio: DraftAudioAttachment;
@@ -171,6 +177,7 @@ export const RichDraftModal: React.FC<RichDraftModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [mediaPermissionDenied, setMediaPermissionDenied] = useState(false);
   const itemInputRef = useRef<HTMLInputElement>(null);
 
   const stopRecordingStream = () => {
@@ -281,9 +288,19 @@ export const RichDraftModal: React.FC<RichDraftModalProps> = ({
 
   const startRecording = async () => {
     setMediaError(null);
+    setMediaPermissionDenied(false);
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setMediaError('Gravação de áudio não suportada neste dispositivo ou navegador.');
       return;
+    }
+
+    if (isAndroidNativeHealthSupported()) {
+      const perm = await requestMediaPermission('microphone');
+      if (!perm.granted) {
+        setMediaPermissionDenied(true);
+        setMediaError('Permita o acesso ao microfone nas configurações do app para gravar áudio.');
+        return;
+      }
     }
 
     try {
@@ -344,10 +361,11 @@ export const RichDraftModal: React.FC<RichDraftModalProps> = ({
           recorder.stop();
         }
       }, 250);
-    } catch {
+    } catch (err) {
       stopRecordingStream();
       setIsRecording(false);
-      setMediaError('Permita o acesso ao microfone para gravar áudio neste rascunho.');
+      setMediaPermissionDenied(true);
+      setMediaError(describeMediaPermissionError(err, 'microphone'));
     }
   };
 
@@ -630,7 +648,19 @@ export const RichDraftModal: React.FC<RichDraftModalProps> = ({
 
               <button
                 type="button"
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={async () => {
+                  setMediaError(null);
+                  setMediaPermissionDenied(false);
+                  if (isAndroidNativeHealthSupported()) {
+                    const perm = await requestMediaPermission('camera');
+                    if (!perm.granted) {
+                      setMediaPermissionDenied(true);
+                      setMediaError('Permita o acesso à câmera para tirar fotos neste rascunho.');
+                      return;
+                    }
+                  }
+                  cameraInputRef.current?.click();
+                }}
                 disabled={isProcessingImage}
                 className="pressable min-h-[40px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 inline-flex items-center gap-1.5 cursor-pointer"
               >
@@ -662,9 +692,18 @@ export const RichDraftModal: React.FC<RichDraftModalProps> = ({
             </div>
 
             {mediaError && (
-              <p className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl px-3 py-2">
-                {mediaError}
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl px-3 py-2">
+                <span>{mediaError}</span>
+                {mediaPermissionDenied && isAndroidNativeHealthSupported() && (
+                  <button
+                    type="button"
+                    onClick={() => void openAndroidPermissionSettings('appDetails')}
+                    className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold shrink-0 cursor-pointer"
+                  >
+                    Abrir ajustes
+                  </button>
+                )}
+              </div>
             )}
 
             {/* Prévia das Imagens */}

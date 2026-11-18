@@ -1,3 +1,5 @@
+import { validateGitHubUpdateUrl } from '../utils/runtimeValidator';
+
 export interface GitHubReleaseAsset {
   id: number;
   name: string;
@@ -601,9 +603,12 @@ export function resolveInstallableUpdateTarget(
 
   if (result.apkAsset) {
     const useApiAsset = Boolean(cleanToken && result.apkAsset.api_url);
+    const candidateUrl = useApiAsset ? result.apkAsset.api_url! : result.apkAsset.browser_download_url;
+    const urlCheck = validateGitHubUpdateUrl(candidateUrl);
+    if (!urlCheck.ok || !urlCheck.data) return null;
     return {
       kind: 'release_apk',
-      url: useApiAsset ? result.apkAsset.api_url! : result.apkAsset.browser_download_url,
+      url: urlCheck.data,
       fileName: result.apkAsset.name || 'Lifeedy-update.apk',
       size: result.apkAsset.size || 0,
       needsToken: useApiAsset,
@@ -612,9 +617,11 @@ export function resolveInstallableUpdateTarget(
   }
 
   if (result.latestBuild?.artifactDownloadUrl && cleanToken) {
+    const urlCheck = validateGitHubUpdateUrl(result.latestBuild.artifactDownloadUrl);
+    if (!urlCheck.ok || !urlCheck.data) return null;
     return {
       kind: 'actions_artifact_zip',
-      url: result.latestBuild.artifactDownloadUrl,
+      url: urlCheck.data,
       fileName: `${result.latestBuild.artifactName || 'Lifeedy-APK'}.zip`,
       size: result.latestBuild.artifactSize || 0,
       needsToken: true,

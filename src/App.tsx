@@ -26,9 +26,6 @@ import { QuickActionFab } from './components/Common/QuickActionFab';
 import { ToastUndo } from './components/Common/ToastUndo';
 import { InAppUpdateBanner } from './components/Common/InAppUpdateBanner';
 import { NetworkStatusBanner } from './components/Common/NetworkStatusBanner';
-import { NativeConnectBridge } from './components/Auth/NativeConnectBridge';
-import { AccountSettingsModal } from './components/Account/AccountSettingsModal';
-import { NotificationCenterModal } from './components/Notifications/NotificationCenterModal';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
 const AgendaTasksView = lazyWithRetry(
@@ -38,6 +35,18 @@ const AgendaTasksView = lazyWithRetry(
 const FinanceView = lazyWithRetry(
   () => import('./components/Finance/FinanceView').then((m) => ({ default: m.FinanceView })),
   'finance-view'
+);
+const AccountSettingsModal = lazyWithRetry(
+  () => import('./components/Account/AccountSettingsModal').then((m) => ({ default: m.AccountSettingsModal })),
+  'account-modal'
+);
+const NotificationCenterModal = lazyWithRetry(
+  () => import('./components/Notifications/NotificationCenterModal').then((m) => ({ default: m.NotificationCenterModal })),
+  'notifications-modal'
+);
+const NativeConnectBridge = lazyWithRetry(
+  () => import('./components/Auth/NativeConnectBridge').then((m) => ({ default: m.NativeConnectBridge })),
+  'native-connect-bridge'
 );
 
 const TabLoadingFallback: React.FC = () => (
@@ -368,18 +377,22 @@ const MainApp: React.FC = () => {
       />
 
       {isAccountModalOpen && (
-        <AccountSettingsModal
-          isOpen={isAccountModalOpen}
-          onClose={() => setIsAccountModalOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <AccountSettingsModal
+            isOpen={isAccountModalOpen}
+            onClose={() => setIsAccountModalOpen(false)}
+          />
+        </Suspense>
       )}
 
       {isNotificationCenterOpen && (
-        <NotificationCenterModal
-          isOpen={isNotificationCenterOpen}
-          onClose={() => setIsNotificationCenterOpen(false)}
-          onOpenAgenda={() => setCurrentTab('agenda')}
-        />
+        <Suspense fallback={null}>
+          <NotificationCenterModal
+            isOpen={isNotificationCenterOpen}
+            onClose={() => setIsNotificationCenterOpen(false)}
+            onOpenAgenda={() => setCurrentTab('agenda')}
+          />
+        </Suspense>
       )}
     </div>
   );
@@ -398,7 +411,9 @@ export default function App() {
     <BackNavigationProvider>
       <AppProvider>
         {isConnectNative ? (
-          <NativeConnectBridge />
+          <Suspense fallback={<TabLoadingFallback />}>
+            <NativeConnectBridge />
+          </Suspense>
         ) : (
           <>
             <MainApp />

@@ -3,8 +3,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { createServer as createViteServer, type ViteDevServer } from 'vite';
+import type { GoogleGenAI } from '@google/genai';
 
 dotenv.config();
 
@@ -12,30 +12,176 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
 
-// Enable CORS for mobile app wrappers (Capacitor/Cordova/PWA)
+function resolveServerPort(): number {
+  const portArgIndex = process.argv.indexOf('--port');
+  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
+    const cliPort = Number(process.argv[portArgIndex + 1]);
+    if (Number.isFinite(cliPort) && cliPort > 0) return cliPort;
+  }
+
+  const envPort = Number(process.env.PORT);
+  const nginxPort = Number(process.env.NGINX_PORT);
+  const defaultAppPort = Number(process.env.DEFAULT_APP_PORT) || 3000;
+
+  // In AI Studio dev containers, NGINX listens on NGINX_PORT (8080) and proxies to DEFAULT_APP_PORT (3000)
+  if (process.env.NODE_ENV !== 'production' && nginxPort && envPort === nginxPort) {
+    return defaultAppPort;
+  }
+
+  return Number.isFinite(envPort) && envPort > 0 ? envPort : defaultAppPort;
+}
+
+function resolveServerHost(): string {
+  const hostArgIndex = process.argv.indexOf('--host');
+  if (hostArgIndex !== -1 && process.argv[hostArgIndex + 1]) {
+    return process.argv[hostArgIndex + 1];
+  }
+  return '0.0.0.0';
+}
+
+const PORT = resolveServerPort();
+const HOST = resolveServerHost();
+
+const CONFIGURED_APP_ORIGIN = (() => {
+  const raw = (process.env.APP_URL || process.env.VITE_APP_URL || '').trim();
+  if (!raw) return '';
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return '';
+  }
+})();
+
+function isAllowedCorsOrigin(origin: string | undefined, reqHost: string | undefined): boolean {
+  if (!origin) return true;
+  if (origin === 'capacitor://localhost' || origin === 'ionic://localhost' || origin === 'https://localhost') {
+    return true;
+  }
+  if (CONFIGURED_APP_ORIGIN && origin === CONFIGURED_APP_ORIGIN) {
+    return true;
+  }
+  try {
+    const parsed = new URL(origin);
+    if (reqHost && parsed.host === reqHost) return true;
+    if (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')
+    ) {
+      return true;
+    }
+    if (parsed.protocol === 'https:' && parsed.hostname.endsWith('.run.app')) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://apis.google.com https://accounts.google.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "img-src 'self' data: blob: https:",
+  "media-src 'self' data: blob:",
+  "worker-src 'self' blob:",
+  "connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.github.com https://github.com https://objects.githubusercontent.com https://brasilapi.com.br https://cdn.jsdelivr.net wss:",
+  "frame-src 'self' https://accounts.google.com https://*.firebaseapp.com",
+  "frame-ancestors 'self' https://aistudio.google.com https://*.google.com",
+].join('; ');
+
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('X-Content-Type-Options', 'nosniff');
+  res.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.header('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=()');
+  res.header('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+
+  const origin = req.headers.origin;
+  const allowed = isAllowedCorsOrigin(origin, req.get('host'));
+  if (origin && allowed) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  }
+
   if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
+    return allowed ? res.sendStatus(200) : res.sendStatus(403);
+  }
+  if (origin && !allowed && req.path.startsWith('/api/')) {
+    return res.status(403).json({ error: 'Origem não autorizada para acessar esta API.' });
   }
   next();
 });
 
-// Increase body limit to support base64 photos/receipts
-app.use(express.json({ limit: '25mb' }));
+const rateBuckets = new Map<string, number[]>();
+function createRateLimiter(bucketName: string, maxRequests: number, windowMs: number) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const clientIp = (req.ip || req.socket.remoteAddress || 'unknown').slice(0, 64);
+    const key = `${bucketName}:${clientIp}`;
+    const now = Date.now();
+    const cutoff = now - windowMs;
+    const recent = (rateBuckets.get(key) || []).filter((ts) => ts > cutoff);
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    },
-  },
-});
+    if (recent.length >= maxRequests) {
+      const retryAfterSec = Math.max(1, Math.ceil((recent[0] + windowMs - now) / 1000));
+      res.header('Retry-After', String(retryAfterSec));
+      return res.status(429).json({
+        error: 'Muitas requisições seguidas. Aguarde alguns instantes e tente novamente.',
+      });
+    }
+
+    recent.push(now);
+    rateBuckets.set(key, recent);
+    if (rateBuckets.size > 500) {
+      for (const [entryKey, timestamps] of rateBuckets.entries()) {
+        if (timestamps.every((ts) => ts <= cutoff)) {
+          rateBuckets.delete(entryKey);
+        }
+      }
+    }
+    next();
+  };
+}
+
+const receiptRateLimiter = createRateLimiter('receipt', 15, 5 * 60 * 1000);
+const diagnosticsRateLimiter = createRateLimiter('diagnostics', 20, 5 * 60 * 1000);
+
+// Increase body limit to support base64 photos/receipts
+app.use(express.json({ limit: '18mb' }));
+
+let cachedAiClient: GoogleGenAI | null = null;
+let cachedGenAiSdk: typeof import('@google/genai') | null = null;
+async function getGenAiRuntime(): Promise<{
+  ai: GoogleGenAI;
+  ThinkingLevel: typeof import('@google/genai').ThinkingLevel;
+  Type: typeof import('@google/genai').Type;
+}> {
+  if (!cachedGenAiSdk) {
+    cachedGenAiSdk = await import('@google/genai');
+  }
+  if (!cachedAiClient) {
+    cachedAiClient = new cachedGenAiSdk.GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  }
+  return {
+    ai: cachedAiClient,
+    ThinkingLevel: cachedGenAiSdk.ThinkingLevel,
+    Type: cachedGenAiSdk.Type,
+  };
+}
 
 const RECEIPT_PRIMARY_MODEL = 'gemini-4-hydrogen';
 const RECEIPT_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
@@ -135,7 +281,16 @@ app.get('/api/health', (_req, res) => {
 /**
  * Endpoint for AI Receipt / Nota Fiscal OCR & Financial extraction
  */
-app.post('/api/gemini/parse-receipt', async (req, res) => {
+const ALLOWED_RECEIPT_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+]);
+
+app.post('/api/gemini/parse-receipt', receiptRateLimiter, async (req, res) => {
   try {
     if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({
@@ -143,18 +298,36 @@ app.post('/api/gemini/parse-receipt', async (req, res) => {
       });
     }
 
-    const { imageBase64, mimeType } = req.body;
-    if (!imageBase64) {
+    const { imageBase64, mimeType } = (req.body || {}) as {
+      imageBase64?: unknown;
+      mimeType?: unknown;
+    };
+    if (typeof imageBase64 !== 'string' || !imageBase64.trim()) {
       return res.status(400).json({ error: 'Nenhuma imagem de nota fiscal fornecida.' });
     }
 
-    // Clean potential base64 prefix if passed
-    const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
+    const normalizedMime = typeof mimeType === 'string' && mimeType.trim()
+      ? mimeType.toLowerCase().trim()
+      : 'image/jpeg';
+    if (!ALLOWED_RECEIPT_MIME_TYPES.has(normalizedMime)) {
+      return res.status(400).json({
+        error: 'Formato de imagem não permitido. Use JPG, PNG, WEBP ou HEIC.',
+      });
+    }
+
+    // Clean potential base64 prefix and validate payload size (~12 MB binary max)
+    const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '').trim();
+    if (cleanBase64.length < 32 || cleanBase64.length > 16_500_000) {
+      return res.status(400).json({
+        error: 'Imagem inválida ou acima do limite permitido (12 MB).',
+      });
+    }
+
     const currentYear = new Date().getFullYear();
 
     const imagePart = {
       inlineData: {
-        mimeType: mimeType || 'image/jpeg',
+        mimeType: normalizedMime,
         data: cleanBase64,
       },
     };
@@ -170,6 +343,7 @@ Extraia com a máxima precisão os dados financeiros para lançamento de despesa
 6. notes: Resumo breve dos principais itens ou produtos adquiridos.`,
     };
 
+    const { ai, ThinkingLevel, Type } = await getGenAiRuntime();
     const callReceiptModel = async (model: string) =>
       ai.models.generateContent({
         model,
@@ -277,7 +451,15 @@ interface SanitizedDiagnosticReport {
 
 const recentDiagnosticReports: SanitizedDiagnosticReport[] = [];
 
-app.post('/api/diagnostics/report', (req, res) => {
+function sanitizeServerLogString(raw: unknown, maxLen: number): string {
+  return String(raw || '')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]')
+    .replace(/\b(ya29\.[A-Za-z0-9_-]+|ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|AIza[A-Za-z0-9_-]+)\b/g, '[TOKEN]')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[EMAIL]')
+    .slice(0, maxLen);
+}
+
+app.post('/api/diagnostics/report', diagnosticsRateLimiter, (req, res) => {
   try {
     const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
     const recentErrors = Array.isArray(body.recentErrors) ? body.recentErrors.slice(0, 25) : [];
@@ -287,11 +469,11 @@ app.post('/api/diagnostics/report', (req, res) => {
     const record: SanitizedDiagnosticReport = {
       reportId,
       receivedAt,
-      appVersion: String(body.appVersion || 'unknown').slice(0, 32),
-      buildNumber: Number(body.buildNumber) || 0,
-      distributionChannel: String(body.distributionChannel || 'web').slice(0, 32),
-      platform: String(body.platform || 'web').slice(0, 32),
-      userNote: String(body.userNote || '').slice(0, 400),
+      appVersion: sanitizeServerLogString(body.appVersion || 'unknown', 32),
+      buildNumber: Number.isFinite(Number(body.buildNumber)) ? Number(body.buildNumber) : 0,
+      distributionChannel: sanitizeServerLogString(body.distributionChannel || 'web', 32),
+      platform: sanitizeServerLogString(body.platform || 'web', 32),
+      userNote: sanitizeServerLogString(body.userNote || '', 400),
       errorCount: recentErrors.length,
     };
 
@@ -315,15 +497,36 @@ app.use('/api/*', (_req, res) => {
   res.status(404).json({ error: 'Rota de API não encontrada.' });
 });
 
-async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
+let viteServerPromise: Promise<ViteDevServer> | null = null;
+function getViteServer(): Promise<ViteDevServer> {
+  if (!viteServerPromise) {
+    const hmrDisabled = process.env.DISABLE_HMR === 'true';
+    viteServerPromise = createViteServer({
+      server: {
+        middlewareMode: true,
+        hmr: hmrDisabled ? false : undefined,
+        ws: hmrDisabled ? false : undefined,
+      },
       appType: 'spa',
     });
-    app.use(vite.middlewares);
+  }
+  return viteServerPromise;
+}
+
+async function startServer() {
+  if (process.env.NODE_ENV !== 'production') {
+    app.use(async (req, res, next) => {
+      try {
+        const vite = await getViteServer();
+        vite.middlewares(req, res, next);
+      } catch (e) {
+        next(e);
+      }
+    });
+
     app.use('*', async (req, res, next) => {
       try {
+        const vite = await getViteServer();
         const url = req.originalUrl;
         const htmlPath = path.resolve(__dirname, 'index.html');
         if (fs.existsSync(htmlPath)) {
@@ -344,8 +547,21 @@ async function startServer() {
     });
   }
 
-  app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`Server listening on http://0.0.0.0:${PORT}`);
+  const httpServer = app.listen(PORT, HOST, () => {
+    console.log(`Server listening on http://${HOST}:${PORT}`);
+    if (process.env.NODE_ENV !== 'production') {
+      // Pre-warm Vite right after the HTTP port is bound so readiness checks pass immediately
+      setImmediate(() => {
+        void getViteServer().catch((err) => {
+          console.error('Erro ao inicializar Vite dev middleware:', err);
+        });
+      });
+    }
+  });
+
+  httpServer.on('error', (err) => {
+    console.error(`HTTP server listen error on ${HOST}:${PORT}:`, err);
+    process.exit(1);
   });
 }
 
