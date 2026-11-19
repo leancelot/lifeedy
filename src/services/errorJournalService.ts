@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { getConfiguredAppServerUrl } from '../utils/appServerUrl';
 
 export interface ErrorJournalEntry {
   id: string;
@@ -184,8 +185,8 @@ export function exportErrorJournalText(meta?: {
 }
 
 function resolveApiBaseUrl(): string {
-  const configured = ((import.meta as any).env?.VITE_APP_URL as string | undefined)?.trim() || '';
-  if (configured) return configured.replace(/\/+$/, '');
+  const configured = getConfiguredAppServerUrl();
+  if (configured) return configured;
   if (typeof window !== 'undefined' && window.location?.origin?.startsWith('http')) {
     return window.location.origin;
   }

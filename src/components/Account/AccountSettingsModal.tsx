@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import {
   AlertCircle,
   AlertTriangle,
@@ -14,6 +15,7 @@ import {
   Fingerprint,
   GitBranch,
   GitCommit,
+  Globe,
   Key,
   LogOut,
   Moon,
@@ -49,6 +51,13 @@ import {
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
 import { isFirebaseConfigured } from '../../services/firebase';
 import { validateGitHubRepoSlug } from '../../utils/runtimeValidator';
+import {
+  clearCustomAppServerUrl,
+  getBuiltInAppServerUrl,
+  getConfiguredAppServerUrl,
+  getCustomAppServerUrl,
+  saveCustomAppServerUrl,
+} from '../../utils/appServerUrl';
 import { DiagnosticsAndPermissionsSection } from './DiagnosticsAndPermissionsSection';
 
 export type SettingsCategoryTab = 'general' | 'account' | 'security' | 'system';
@@ -140,6 +149,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [autoCheckUpdates, setAutoCheckUpdates] = useState<boolean>(
     () => getStoredGitHubConfig().autoCheck
   );
+  const [serverUrlDraft, setServerUrlDraft] = useState<string>(() => getConfiguredAppServerUrl());
+  const [hasCustomServerUrl, setHasCustomServerUrl] = useState<boolean>(() =>
+    Boolean(getCustomAppServerUrl())
+  );
 
   useBackHandler(isOpen, () => {
     if (isSyncingAction) return false;
@@ -162,6 +175,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     setGithubRepo(config.repo);
     setGithubToken(config.token);
     setAutoCheckUpdates(config.autoCheck);
+    setServerUrlDraft(getConfiguredAppServerUrl());
+    setHasCustomServerUrl(Boolean(getCustomAppServerUrl()));
 
     if (biometricPlatformSupported) {
       checkBiometricAvailability()
@@ -327,6 +342,28 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     await handleCheckUpdates(updated.repo, updated.token);
   };
 
+  const handleSaveServerUrl = (e: React.FormEvent) => {
+    e.preventDefault();
+    hapticImpactLight();
+    const res = saveCustomAppServerUrl(serverUrlDraft);
+    if (!res.ok || !res.url) {
+      showTempFeedback('error', res.error || 'URL do servidor inválida.');
+      return;
+    }
+    setServerUrlDraft(res.url);
+    setHasCustomServerUrl(true);
+    hapticSuccess();
+    showTempFeedback('success', 'URL do servidor salva! Login Google e leitura por IA liberados.');
+  };
+
+  const handleClearCustomServerUrl = () => {
+    hapticImpactLight();
+    clearCustomAppServerUrl();
+    setHasCustomServerUrl(false);
+    setServerUrlDraft(getBuiltInAppServerUrl());
+    showTempFeedback('success', 'URL personalizada removida. Usando padrão do build.');
+  };
+
   const handleHardRefresh = () => {
     confirmDestructiveAction({
       title: 'Recarregar aplicativo?',
@@ -346,6 +383,9 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
   const nativeSelfUpdate = isNativeSelfUpdateSupported();
+  const isNativeApk = Capacitor.isNativePlatform();
+  const activeServerUrl = getConfiguredAppServerUrl();
+  const canConnectGoogle = isNativeApk ? Boolean(activeServerUrl) : isFirebaseConfigured;
   const installTarget = resolveInstallableUpdateTarget(appUpdateResult, githubToken);
   const isDownloadingNow =
     updateDownloadState.status === 'downloading' ||
@@ -679,13 +719,17 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       </div>
                     )}
                   </div>
-                ) : !isFirebaseConfigured ? (
+                ) : !canConnectGoogle ? (
                   <div className="p-3.5 rounded-2xl border border-amber-200/80 dark:border-amber-900/50 bg-amber-50/70 dark:bg-amber-950/20 space-y-1.5">
                     <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
-                      Login Google aguardando variáveis de ambiente
+                      {isNativeApk
+                        ? 'Informe o servidor do app abaixo para conectar'
+                        : 'Login Google aguardando variáveis de ambiente'}
                     </p>
                     <p className="text-[11px] text-amber-700/90 dark:text-amber-200/80 leading-relaxed">
-                      O app continua 100% funcional localmente. Para ativar o Drive e Agenda, defina as chaves públicas <code className="font-mono">VITE_FIREBASE_*</code> nas variáveis do ambiente/CI sem expor segredos no Git.
+                      {isNativeApk
+                        ? 'O app funciona 100% offline. Cole o endereço Web do Lifeedy no campo "Servidor de Login e IA" abaixo (ou defina APP_URL nos Secrets ao compilar o APK) para ativar o Login Google e Drive.'
+                        : 'O app continua 100% funcional localmente. Para ativar o Drive e Agenda, defina as chaves públicas VITE_FIREBASE_* nas variáveis do ambiente/CI sem expor segredos no Git.'}
                     </p>
                   </div>
                 ) : (
@@ -702,6 +746,48 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       {isAuthenticating ? 'Conectando...' : 'Conectar Google'}
                     </button>
                   </div>
+                )}
+
+                {(isNativeApk || hasCustomServerUrl) && (
+                  <form
+                    onSubmit={handleSaveServerUrl}
+                    className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                        <span>Servidor de Login e IA (APK)</span>
+                      </span>
+                      {hasCustomServerUrl && (
+                        <button
+                          type="button"
+                          onClick={handleClearCustomServerUrl}
+                          className="text-[11px] font-semibold text-zinc-500 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer"
+                        >
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                      Endereço Web do Lifeedy usado pelo APK para autenticar com o Google e ler cupons por IA.
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={serverUrlDraft}
+                        onChange={(e) => setServerUrlDraft(e.target.value)}
+                        placeholder="https://seu-app.run.app"
+                        className="flex-1 h-10 px-3 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!serverUrlDraft.trim()}
+                        className="pressable h-10 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-semibold cursor-pointer shrink-0 whitespace-nowrap"
+                      >
+                        Salvar URL
+                      </button>
+                    </div>
+                  </form>
                 )}
               </section>
 

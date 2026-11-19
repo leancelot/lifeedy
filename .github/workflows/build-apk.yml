@@ -59,7 +59,7 @@ jobs:
       - name: Compilar Web App (Vite)
         run: npm run build
         env:
-          VITE_APP_URL: ${{ secrets.APP_URL || '' }}
+          VITE_APP_URL: ${{ secrets.APP_URL || secrets.VITE_APP_URL || '' }}
           VITE_GITHUB_REPO: ${{ github.repository }}
           VITE_APP_COMMIT_SHA: ${{ github.sha }}
           VITE_APP_BUILD_NUMBER: ${{ github.run_number }}
@@ -126,7 +126,7 @@ jobs:
             echo "- **Destino:** \`${BUILD_TARGET}\`"
             echo "- **Assinatura:** $([ "$HAS_KEYSTORE" = "true" ] && echo "Keystore de Release configurada" || echo "Assinatura Debug padrão (APK direto)")"
             echo "- **Firebase Auth:** $([ -n "${{ secrets.VITE_FIREBASE_API_KEY }}" ] && echo "Ativo via Secrets" || echo "Desativado (modo 100% offline)")"
-            echo "- **Servidor APP_URL:** $([ -n "${{ secrets.APP_URL }}" ] && echo "Configurado via Secret" || echo "Não configurado (OCR local no dispositivo)")"
+            echo "- **Servidor APP_URL:** $([ -n "${{ secrets.APP_URL || secrets.VITE_APP_URL }}" ] && echo "Configurado via Secret" || echo "Não configurado (OCR local no dispositivo)")"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Preparar APK versionado e SHA-256

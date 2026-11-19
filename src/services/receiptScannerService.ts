@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { FinanceCategory, Transaction } from '../types';
 import { extractReceiptTextOffline, parseReceiptOcrText } from './offlineReceiptOcr';
+import { getConfiguredAppServerUrl } from '../utils/appServerUrl';
 
 export interface ParsedReceiptData {
   title: string;
@@ -138,7 +139,7 @@ export async function scanReceiptWithAI(
     (typeof window !== 'undefined' &&
       (window.location.protocol === 'capacitor:' || window.location.protocol === 'file:'));
 
-  const configuredBaseUrl = (import.meta.env.VITE_APP_URL || '').trim().replace(/\/+$/, '');
+  const configuredBaseUrl = getConfiguredAppServerUrl();
   const hasRemoteServer = Boolean(configuredBaseUrl) || !isNativeContainer;
   const endpoint = configuredBaseUrl
     ? `${configuredBaseUrl}/api/gemini/parse-receipt`

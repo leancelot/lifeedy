@@ -13,6 +13,7 @@ import {
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { firebaseConfig } from '../config/firebaseConfig';
+import { getConfiguredAppServerUrl } from '../utils/appServerUrl';
 
 export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.authDomain
@@ -115,7 +116,7 @@ export const mapGoogleAuthError = (error: unknown): string => {
   const msg = err?.message || '';
 
   if (msg.includes('VITE_APP_URL')) {
-    return 'URL do servidor de autenticação não configurada neste APK. Defina APP_URL nos Secrets ou conecte na versão Web.';
+    return 'URL do servidor não configurada neste APK. Informe o link do app em Configurações → Conta → Servidor ou defina APP_URL nos Secrets do GitHub.';
   }
   if (!isFirebaseConfigured || msg.includes('não configurada')) {
     return 'Configuração de login Google não carregada no servidor. Atualize a página e tente novamente.';
@@ -246,7 +247,7 @@ export const googleSignIn = async (options?: {
 
     // Se estiver rodando nativamente no Android (Capacitor APK)
     if (Capacitor.isNativePlatform()) {
-      const baseUrl = ((import.meta.env.VITE_APP_URL as string) || '').trim().replace(/\/+$/, '');
+      const baseUrl = getConfiguredAppServerUrl();
       if (!baseUrl) {
         throw new Error('Autenticação no APK requer VITE_APP_URL configurado.');
       }
