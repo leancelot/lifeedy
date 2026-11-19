@@ -1,5 +1,5 @@
 /**
- * Configuração do Firebase e Google OAuth para o VidaOrganizada.
+ * Configuração do Firebase e Google OAuth para o Lifeedy.
  *
  * Em repositórios públicos, nenhuma chave secreta ou credencial é hardcoded aqui.
  * Os valores são lidos exclusivamente das variáveis de ambiente Vite (VITE_FIREBASE_*)

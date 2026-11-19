@@ -64,7 +64,10 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Zone 2: Desktop Tabs (3 primary areas) */}
-          <nav className="hidden md:flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/70 p-1 rounded-xl border border-zinc-200/60 dark:border-zinc-800">
+          <nav
+            data-tour="nav-bar"
+            className="hidden md:flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/70 p-1 rounded-xl border border-zinc-200/60 dark:border-zinc-800"
+          >
             {[
               { id: 'dashboard', label: 'Início' },
               { id: 'agenda', label: 'Agenda' },
@@ -109,6 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             <button
               type="button"
+              data-tour="notifications"
               onClick={() => {
                 hapticSelection();
                 openNotificationCenter();
@@ -127,6 +131,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             <button
               type="button"
+              data-tour="settings"
               onClick={() => {
                 hapticSelection();
                 openAccountModal();

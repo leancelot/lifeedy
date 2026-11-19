@@ -102,6 +102,7 @@ export const QuickActionFab: React.FC<QuickActionFabProps> = ({
       <div className="hidden md:flex fixed bottom-8 right-8 z-40">
         <button
           type="button"
+          data-tour="quick-add"
           onClick={() => {
             hapticImpactLight();
             setOpen(!isOpen);

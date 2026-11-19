@@ -76,9 +76,6 @@ export default defineConfig(() => {
             if (id.includes('tesseract.js')) {
               return 'ocr-vendor';
             }
-            if (id.includes('motion') || id.includes('framer-motion')) {
-              return 'motion-vendor';
-            }
             if (id.includes('lucide-react')) {
               return 'icons-vendor';
             }

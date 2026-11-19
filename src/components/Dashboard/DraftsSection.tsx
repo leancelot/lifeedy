@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarPlus,
   Check,
@@ -270,6 +270,20 @@ export const DraftsSection: React.FC = () => {
       streamRef.current = null;
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+        try {
+          recorderRef.current.onstop = null;
+          recorderRef.current.stop();
+        } catch {
+          // ignore cleanup stop errors
+        }
+      }
+      stopQuickAudioTracks();
+    };
+  }, []);
 
   const resetComposer = () => {
     setQuickTitle('');

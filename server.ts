@@ -272,7 +272,7 @@ function mapReceiptErrorToPortuguese(info: { code: number; status: string; messa
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
-    service: 'vidaorganizada-api',
+    service: 'lifeedy-api',
     geminiConfigured: Boolean(process.env.GEMINI_API_KEY),
     timestamp: new Date().toISOString(),
   });

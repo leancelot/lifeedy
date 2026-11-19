@@ -27,6 +27,12 @@ import { ToastUndo } from './components/Common/ToastUndo';
 import { InAppUpdateBanner } from './components/Common/InAppUpdateBanner';
 import { NetworkStatusBanner } from './components/Common/NetworkStatusBanner';
 import { lazyWithRetry } from './utils/lazyWithRetry';
+import {
+  QuickTourTarget,
+  hasCompletedQuickTour,
+  markQuickTourCompleted,
+} from './constants/quickTourSteps';
+import type { SettingsCategoryTab } from './components/Account/AccountSettingsModal';
 
 const AgendaTasksView = lazyWithRetry(
   () => import('./components/Agenda/AgendaTasksView').then((m) => ({ default: m.AgendaTasksView })),
@@ -47,6 +53,10 @@ const NotificationCenterModal = lazyWithRetry(
 const NativeConnectBridge = lazyWithRetry(
   () => import('./components/Auth/NativeConnectBridge').then((m) => ({ default: m.NativeConnectBridge })),
   'native-connect-bridge'
+);
+const QuickTourModal = lazyWithRetry(
+  () => import('./components/Common/QuickTourModal').then((m) => ({ default: m.QuickTourModal })),
+  'quick-tour-modal'
 );
 
 const TabLoadingFallback: React.FC = () => (
@@ -75,8 +85,12 @@ const MainApp: React.FC = () => {
   const [agendaQuickOpen, setAgendaQuickOpen] = useState<'task' | 'event' | null>(null);
   const [financeQuickOpen, setFinanceQuickOpen] = useState<'new-transaction' | 'scan-receipt' | null>(null);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [accountInitialTab, setAccountInitialTab] = useState<SettingsCategoryTab>('general');
   const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
   const [isQuickMenuOpen, setIsQuickMenuOpen] = useState(false);
+  const [quickTourDone, setQuickTourDone] = useState<boolean>(() => hasCompletedQuickTour());
+  const [isQuickTourOpen, setIsQuickTourOpen] = useState(false);
+  const prevOnboardingRef = useRef<boolean>(onboardingCompleted);
 
   // Finance biometric gate state (locked when enabled until verified in active foreground session)
   const biometricNative = isBiometricSupportedOnPlatform();
@@ -84,6 +98,27 @@ const MainApp: React.FC = () => {
   const [isUnlockingFinance, setIsUnlockingFinance] = useState<boolean>(false);
   const [financeUnlockError, setFinanceUnlockError] = useState<string | null>(null);
   const autoPromptedTabRef = useRef<boolean>(false);
+
+  // Inicia automaticamente o tour de 4 etapas logo após concluir o onboarding inicial
+  useEffect(() => {
+    const wasIncomplete = !prevOnboardingRef.current;
+    prevOnboardingRef.current = onboardingCompleted;
+    if (wasIncomplete && onboardingCompleted && !hasCompletedQuickTour()) {
+      setIsQuickTourOpen(true);
+    }
+  }, [onboardingCompleted]);
+
+  const finishQuickTour = useCallback((navigateTo?: QuickTourTarget) => {
+    markQuickTourCompleted();
+    setQuickTourDone(true);
+    setIsQuickTourOpen(false);
+    if (navigateTo === 'settings') {
+      setAccountInitialTab('general');
+      setIsAccountModalOpen(true);
+    } else if (navigateTo) {
+      setCurrentTab(navigateTo);
+    }
+  }, []);
 
   // Sync unlock state if user toggles setting
   useEffect(() => {
@@ -257,6 +292,7 @@ const MainApp: React.FC = () => {
       setIsAccountModalOpen(false);
       setCurrentTab('financas');
     } else if (pendingNotificationTarget.target === 'updates') {
+      setAccountInitialTab('system');
       setIsAccountModalOpen(true);
     }
 
@@ -277,7 +313,10 @@ const MainApp: React.FC = () => {
           setIsQuickMenuOpen(false);
           setCurrentTab(tab);
         }}
-        openAccountModal={() => setIsAccountModalOpen(true)}
+        openAccountModal={() => {
+          setAccountInitialTab('general');
+          setIsAccountModalOpen(true);
+        }}
         openNotificationCenter={() => setIsNotificationCenterOpen(true)}
       />
 
@@ -285,7 +324,19 @@ const MainApp: React.FC = () => {
         <NetworkStatusBanner />
         <InAppUpdateBanner />
         <div key={currentTab} className="animate-tab-enter">
-          {currentTab === 'dashboard' && <DashboardView setCurrentTab={setCurrentTab} />}
+          {currentTab === 'dashboard' && (
+            <DashboardView
+              setCurrentTab={setCurrentTab}
+              showTourPrompt={!quickTourDone}
+              onOpenQuickTour={() => {
+                setIsQuickMenuOpen(false);
+                setIsNotificationCenterOpen(false);
+                setIsAccountModalOpen(false);
+                setIsQuickTourOpen(true);
+              }}
+              onDismissTourPrompt={() => finishQuickTour()}
+            />
+          )}
           {currentTab === 'agenda' && (
             <Suspense fallback={<TabLoadingFallback />}>
               <AgendaTasksView
@@ -381,6 +432,18 @@ const MainApp: React.FC = () => {
           <AccountSettingsModal
             isOpen={isAccountModalOpen}
             onClose={() => setIsAccountModalOpen(false)}
+            initialTab={accountInitialTab}
+            onOpenQuickTour={() => setIsQuickTourOpen(true)}
+          />
+        </Suspense>
+      )}
+
+      {isQuickTourOpen && (
+        <Suspense fallback={null}>
+          <QuickTourModal
+            isOpen={isQuickTourOpen}
+            onClose={() => finishQuickTour()}
+            onComplete={(target) => finishQuickTour(target)}
           />
         </Suspense>
       )}

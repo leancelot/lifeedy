@@ -10,9 +10,11 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Compass,
   Plus,
   Sparkles,
   Target,
+  X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
@@ -21,6 +23,9 @@ import { DraftsSection } from './DraftsSection';
 
 interface DashboardViewProps {
   setCurrentTab: (tab: string) => void;
+  showTourPrompt?: boolean;
+  onOpenQuickTour?: () => void;
+  onDismissTourPrompt?: () => void;
 }
 
 const toLocalDateStr = (d: Date): string =>
@@ -35,7 +40,12 @@ const getEventDateKey = (ev: GoogleCalendarEvent): string => {
   return '';
 };
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ setCurrentTab }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({
+  setCurrentTab,
+  showTourPrompt = false,
+  onOpenQuickTour,
+  onDismissTourPrompt,
+}) => {
   const {
     tasks,
     toggleTaskCompletion,
@@ -177,6 +187,49 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ setCurrentTab }) =
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* Coluna Principal: Destaques Úteis + Tarefas de Hoje */}
         <div className="lg:col-span-7 space-y-5">
+          {showTourPrompt && onOpenQuickTour && (
+            <div className="bg-white dark:bg-zinc-900 border border-indigo-200/80 dark:border-indigo-900/60 rounded-2xl px-3.5 py-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <Compass className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                    Tour interativo em 4 cliques
+                  </p>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                    Veja onde ficam a barra rápida, atalhos e ajustes
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    hapticSelection();
+                    onOpenQuickTour();
+                  }}
+                  className="pressable min-h-[40px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
+                >
+                  Ver tour
+                </button>
+                {onDismissTourPrompt && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      hapticSelection();
+                      onDismissTourPrompt();
+                    }}
+                    aria-label="Dispensar tour rápido"
+                    className="pressable w-10 h-10 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Destaques Práticos (Próximo Evento + Meta em Foco) */}
           <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Bloco 1: Próximo na Agenda */}

@@ -7,6 +7,7 @@ import {
   CloudDownload,
   CloudOff,
   CloudUpload,
+  Compass,
   Cpu,
   Download,
   ExternalLink,
@@ -50,12 +51,14 @@ import { isFirebaseConfigured } from '../../services/firebase';
 import { validateGitHubRepoSlug } from '../../utils/runtimeValidator';
 import { DiagnosticsAndPermissionsSection } from './DiagnosticsAndPermissionsSection';
 
+export type SettingsCategoryTab = 'general' | 'account' | 'security' | 'system';
+
 interface AccountSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: SettingsCategoryTab;
+  onOpenQuickTour?: () => void;
 }
-
-type SettingsCategoryTab = 'general' | 'account' | 'security' | 'system';
 
 const CATEGORY_TABS: Array<{
   id: SettingsCategoryTab;
@@ -71,6 +74,8 @@ const CATEGORY_TABS: Array<{
 export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   isOpen,
   onClose,
+  initialTab,
+  onOpenQuickTour,
 }) => {
   const {
     theme,
@@ -149,6 +154,9 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     setFeedback(null);
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
 
     const config = getStoredGitHubConfig();
     setGithubRepo(config.repo);
@@ -160,7 +168,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
         .then((res) => setBiometricAvailable(res.available))
         .catch(() => setBiometricAvailable(false));
     }
-  }, [isOpen, biometricPlatformSupported]);
+  }, [isOpen, initialTab, biometricPlatformSupported]);
 
   if (!isOpen) return null;
 
@@ -514,6 +522,40 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   </button>
                 </div>
               </section>
+
+              {onOpenQuickTour && (
+                <section className="space-y-2.5">
+                  <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 block">
+                    Guia do aplicativo
+                  </span>
+                  <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                        <Compass className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">
+                          Tour interativo (4 cliques)
+                        </span>
+                        <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block">
+                          Aponta barra principal, botão +, avisos e ajustes
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        hapticSelection();
+                        onClose();
+                        onOpenQuickTour();
+                      }}
+                      className="pressable min-h-[40px] px-4 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 cursor-pointer shrink-0 whitespace-nowrap"
+                    >
+                      Ver tour
+                    </button>
+                  </div>
+                </section>
+              )}
 
               <section className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-3">
                 <div className="min-w-0">
