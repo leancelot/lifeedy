@@ -1,0 +1,519 @@
+﻿2026-11-20T10:43:34.7626269Z ##[group]Run cd android
+2026-11-20T10:43:34.7626604Z [36;1mcd android[0m
+2026-11-20T10:43:34.7627019Z [36;1msed -i -e 's/\r$//' gradlew || true[0m
+2026-11-20T10:43:34.7627360Z [36;1mchmod +x gradlew[0m
+2026-11-20T10:43:34.7627712Z [36;1mecho "sdk.dir=${ANDROID_HOME}" > local.properties[0m
+2026-11-20T10:43:34.7628086Z [36;1m[0m
+2026-11-20T10:43:34.7628318Z [36;1mHAS_KEYSTORE="false"[0m
+2026-11-20T10:43:34.7628918Z [36;1mif [ -n "$ANDROID_KEYSTORE_BASE64" ]; then[0m
+2026-11-20T10:43:34.7629417Z [36;1m  echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > app/release.keystore[0m
+2026-11-20T10:43:34.7629964Z [36;1m  export ANDROID_KEYSTORE_PATH="$(pwd)/app/release.keystore"[0m
+2026-11-20T10:43:34.7630402Z [36;1m  HAS_KEYSTORE="true"[0m
+2026-11-20T10:43:34.7630794Z [36;1mfi[0m
+2026-11-20T10:43:34.7631031Z [36;1m[0m
+2026-11-20T10:43:34.7631341Z [36;1mif [ "$HAS_KEYSTORE" = "true" ]; then[0m
+2026-11-20T10:43:34.7631796Z [36;1m  ./gradlew assembleRelease --no-daemon --stacktrace[0m
+2026-11-20T10:43:34.7632374Z [36;1m  echo "apk_dir=android/app/build/outputs/apk/release" >> "$GITHUB_OUTPUT"[0m
+2026-11-20T10:43:34.7632838Z [36;1melse[0m
+2026-11-20T10:43:34.7633145Z [36;1m  ./gradlew assembleDebug --no-daemon --stacktrace[0m
+2026-11-20T10:43:34.7633654Z [36;1m  echo "apk_dir=android/app/build/outputs/apk/debug" >> "$GITHUB_OUTPUT"[0m
+2026-11-20T10:43:34.7634090Z [36;1mfi[0m
+2026-11-20T10:43:34.7634313Z [36;1m[0m
+2026-11-20T10:43:34.7634540Z [36;1mAPK_SHA1=""[0m
+2026-11-20T10:43:34.7634915Z [36;1mif [ "$HAS_KEYSTORE" = "true" ] && [ -f "$ANDROID_KEYSTORE_PATH" ]; then[0m
+2026-11-20T10:43:34.7635954Z [36;1m  APK_SHA1=$(keytool -list -v -keystore "$ANDROID_KEYSTORE_PATH" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" 2>/dev/null | sed -n 's/^[[:space:]]*SHA1:[[:space:]]*//p' | head -n 1 || true)[0m
+2026-11-20T10:43:34.7637036Z [36;1melif [ -f "$HOME/.android/debug.keystore" ]; then[0m
+2026-11-20T10:43:34.7638015Z [36;1m  APK_SHA1=$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | sed -n 's/^[[:space:]]*SHA1:[[:space:]]*//p' | head -n 1 || true)[0m
+2026-11-20T10:43:34.7639080Z [36;1mfi[0m
+2026-11-20T10:43:34.7639313Z [36;1m[0m
+2026-11-20T10:43:34.7639532Z [36;1m{[0m
+2026-11-20T10:43:34.7639845Z [36;1m  echo "### Resumo da Compilação Android (APK Direto)"[0m
+2026-11-20T10:43:34.7640700Z [36;1m  echo "- **Assinatura:** $([ "$HAS_KEYSTORE" = "true" ] && echo "Keystore fixa configurada (SHA-1 permanente)" || echo "Assinatura Debug padrão (SHA-1 gerado neste build)")"[0m
+2026-11-20T10:43:34.7641573Z [36;1m  echo "- **Pacote Android:** \`com.vidaorganizada.app\`"[0m
+2026-11-20T10:43:34.7641983Z [36;1m  if [ -n "$APK_SHA1" ]; then[0m
+2026-11-20T10:43:34.7642441Z [36;1m    echo "- **SHA-1 do APK (copie para o Google Cloud Console):** \`${APK_SHA1}\`"[0m
+2026-11-20T10:43:34.7642885Z [36;1m  fi[0m
+2026-11-20T10:43:34.7643276Z [36;1m  echo "- **Login Google (APK):** Nativo direto no Android (sem servidor externo)"[0m
+2026-11-20T10:43:34.7644113Z [36;1m  echo "- **Servidor opcional (IA na nuvem):** $([ -n "" ] && echo "Configurado via Secret" || echo "Opcional · OCR local no dispositivo ativo")"[0m
+2026-11-20T10:43:34.7644797Z [36;1m} >> "$GITHUB_STEP_SUMMARY"[0m
+2026-11-20T10:43:34.7675099Z shell: /usr/bin/bash -e {0}
+2026-11-20T10:43:34.7675411Z env:
+2026-11-20T10:43:34.7675737Z   JAVA_HOME: /opt/hostedtoolcache/Java_Zulu_jdk/21.0.13-1.2/x64
+2026-11-20T10:43:34.7676247Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Zulu_jdk/21.0.13-1.2/x64
+2026-11-20T10:43:34.7676666Z   MAVEN_ARGS: -ntp
+2026-11-20T10:43:34.7676919Z   APP_VERSION_CODE: 11
+2026-11-20T10:43:34.7677284Z   APP_VERSION_NAME: 1.1.0-build.11
+2026-11-20T10:43:34.7677613Z   ANDROID_KEYSTORE_BASE64: 
+2026-11-20T10:43:34.7677911Z   ANDROID_KEYSTORE_PASSWORD: 
+2026-11-20T10:43:34.7678212Z   ANDROID_KEY_ALIAS: 
+2026-11-20T10:43:34.7678482Z   ANDROID_KEY_PASSWORD: 
+2026-11-20T10:43:34.7678880Z ##[endgroup]
+2026-11-20T10:43:35.3229190Z 
+2026-11-20T10:43:35.3230062Z Welcome to Gradle 8.14.3!
+2026-11-20T10:43:35.3230511Z 
+2026-11-20T10:43:35.3231176Z Here are the highlights of this release:
+2026-11-20T10:43:35.3231592Z  - Java 24 support
+2026-11-20T10:43:35.3231916Z  - GraalVM Native Image toolchain selection
+2026-11-20T10:43:35.3232296Z  - Enhancements to test reporting
+2026-11-20T10:43:35.3232634Z  - Build Authoring improvements
+2026-11-20T10:43:35.3232824Z 
+2026-11-20T10:43:35.3233161Z For more details see https://docs.gradle.org/8.14.3/release-notes.html
+2026-11-20T10:43:35.3233487Z 
+2026-11-20T10:43:35.4217341Z To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+2026-11-20T10:43:36.2250044Z Daemon will be stopped at the end of the build 
+2026-11-20T10:43:53.6201962Z 
+2026-11-20T10:43:53.6227055Z > Configure project :app
+2026-11-20T10:43:53.6228172Z WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+2026-11-20T10:43:55.2215993Z 
+2026-11-20T10:43:55.2240300Z > Configure project :capacitor-cordova-android-plugins
+2026-11-20T10:43:55.2270088Z WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+2026-11-20T10:44:15.0222245Z 
+2026-11-20T10:44:15.0223580Z > Task :app:preBuild UP-TO-DATE
+2026-11-20T10:44:15.0241624Z > Task :app:preDebugBuild UP-TO-DATE
+2026-11-20T10:44:15.1196957Z > Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+2026-11-20T10:44:15.1197470Z > Task :app:generateDebugBuildConfig
+2026-11-20T10:44:15.1197874Z > Task :capacitor-android:preBuild UP-TO-DATE
+2026-11-20T10:44:15.1200663Z > Task :capacitor-android:preDebugBuild UP-TO-DATE
+2026-11-20T10:44:15.1219776Z > Task :app:javaPreCompileDebug
+2026-11-20T10:44:15.1249574Z > Task :capacitor-app:preBuild UP-TO-DATE
+2026-11-20T10:44:15.1258071Z > Task :capacitor-app:preDebugBuild UP-TO-DATE
+2026-11-20T10:44:15.1258989Z > Task :capacitor-android:writeDebugAarMetadata
+2026-11-20T10:44:15.1259634Z > Task :capacitor-browser:preBuild UP-TO-DATE
+2026-11-20T10:44:15.1260145Z > Task :capacitor-browser:preDebugBuild UP-TO-DATE
+2026-11-20T10:44:15.2196336Z > Task :capacitor-app:writeDebugAarMetadata
+2026-11-20T10:44:15.2197012Z > Task :capacitor-browser:writeDebugAarMetadata
+2026-11-20T10:44:15.2197725Z > Task :capacitor-cordova-android-plugins:preBuild UP-TO-DATE
+2026-11-20T10:44:15.2198567Z > Task :capacitor-cordova-android-plugins:preDebugBuild UP-TO-DATE
+2026-11-20T10:44:15.2199406Z > Task :capacitor-haptics:preBuild UP-TO-DATE
+2026-11-20T10:44:15.2199970Z > Task :capacitor-haptics:preDebugBuild UP-TO-DATE
+2026-11-20T10:44:15.2200652Z > Task :capacitor-cordova-android-plugins:writeDebugAarMetadata
+2026-11-20T10:44:15.2201288Z > Task :capacitor-haptics:writeDebugAarMetadata
+2026-11-20T10:44:15.2201887Z > Task :capacitor-local-notifications:preBuild UP-TO-DATE
+2026-11-20T10:44:15.2202549Z > Task :capacitor-local-notifications:preDebugBuild UP-TO-DATE
+2026-11-20T10:44:15.2203200Z > Task :capacitor-status-bar:preBuild UP-TO-DATE
+2026-11-20T10:44:15.2203768Z > Task :capacitor-status-bar:preDebugBuild UP-TO-DATE
+2026-11-20T10:44:15.2204392Z > Task :capacitor-local-notifications:writeDebugAarMetadata
+2026-11-20T10:44:15.2205002Z > Task :capacitor-status-bar:writeDebugAarMetadata
+2026-11-20T10:44:15.2205634Z > Task :capacitor-android:processDebugNavigationResources
+2026-11-20T10:44:18.4200560Z > Task :capacitor-app:processDebugNavigationResources
+2026-11-20T10:44:18.4230127Z > Task :app:checkDebugAarMetadata
+2026-11-20T10:44:18.4230789Z > Task :capacitor-browser:processDebugNavigationResources
+2026-11-20T10:44:18.4260030Z > Task :capacitor-cordova-android-plugins:processDebugNavigationResources
+2026-11-20T10:44:18.4260871Z > Task :capacitor-haptics:processDebugNavigationResources
+2026-11-20T10:44:18.4261521Z > Task :capacitor-local-notifications:processDebugNavigationResources
+2026-11-20T10:44:18.4262216Z > Task :capacitor-status-bar:processDebugNavigationResources
+2026-11-20T10:44:18.5196584Z > Task :app:processDebugNavigationResources
+2026-11-20T10:44:18.8214042Z > Task :app:generateDebugResValues
+2026-11-20T10:44:18.8216515Z > Task :capacitor-android:generateDebugResValues
+2026-11-20T10:44:18.8238327Z > Task :app:compileDebugNavigationResources
+2026-11-20T10:44:18.8240068Z > Task :capacitor-android:generateDebugResources
+2026-11-20T10:44:18.8240735Z > Task :capacitor-android:packageDebugResources
+2026-11-20T10:44:18.8241295Z > Task :capacitor-app:generateDebugResValues
+2026-11-20T10:44:18.8241783Z > Task :capacitor-app:generateDebugResources
+2026-11-20T10:44:18.8242279Z > Task :capacitor-app:packageDebugResources
+2026-11-20T10:44:18.8242779Z > Task :capacitor-browser:generateDebugResValues
+2026-11-20T10:44:18.8243292Z > Task :capacitor-browser:generateDebugResources
+2026-11-20T10:44:18.9196652Z > Task :capacitor-browser:packageDebugResources
+2026-11-20T10:44:18.9206851Z > Task :capacitor-cordova-android-plugins:generateDebugResValues
+2026-11-20T10:44:18.9207749Z > Task :capacitor-cordova-android-plugins:generateDebugResources
+2026-11-20T10:44:18.9208541Z > Task :capacitor-cordova-android-plugins:packageDebugResources
+2026-11-20T10:44:18.9209458Z > Task :capacitor-haptics:generateDebugResValues
+2026-11-20T10:44:18.9210079Z > Task :capacitor-haptics:generateDebugResources
+2026-11-20T10:44:18.9210635Z > Task :capacitor-haptics:packageDebugResources
+2026-11-20T10:44:18.9211273Z > Task :capacitor-local-notifications:generateDebugResValues
+2026-11-20T10:44:18.9211950Z > Task :capacitor-local-notifications:generateDebugResources
+2026-11-20T10:44:18.9212630Z > Task :capacitor-local-notifications:packageDebugResources
+2026-11-20T10:44:18.9213389Z > Task :capacitor-status-bar:generateDebugResValues
+2026-11-20T10:44:18.9213976Z > Task :capacitor-status-bar:generateDebugResources
+2026-11-20T10:44:18.9214571Z > Task :capacitor-status-bar:packageDebugResources
+2026-11-20T10:44:19.0197269Z > Task :app:mapDebugSourceSetPaths
+2026-11-20T10:44:19.0207434Z > Task :app:generateDebugResources
+2026-11-20T10:44:20.1198053Z > Task :app:packageDebugResources
+2026-11-20T10:44:20.1198579Z > Task :app:mergeDebugResources
+2026-11-20T10:44:21.6240208Z > Task :app:createDebugCompatibleScreenManifests
+2026-11-20T10:44:21.6253145Z > Task :app:extractDeepLinksDebug
+2026-11-20T10:44:21.6270645Z > Task :capacitor-android:extractDeepLinksDebug
+2026-11-20T10:44:21.6271203Z > Task :capacitor-app:extractDeepLinksDebug
+2026-11-20T10:44:21.6271622Z > Task :capacitor-browser:extractDeepLinksDebug
+2026-11-20T10:44:21.7198012Z > Task :app:parseDebugLocalResources
+2026-11-20T10:44:21.7198907Z > Task :capacitor-cordova-android-plugins:extractDeepLinksDebug
+2026-11-20T10:44:21.7199478Z > Task :capacitor-android:processDebugManifest
+2026-11-20T10:44:21.7199949Z > Task :capacitor-cordova-android-plugins:processDebugManifest
+2026-11-20T10:44:21.7200421Z > Task :capacitor-browser:processDebugManifest
+2026-11-20T10:44:21.7200820Z > Task :capacitor-app:processDebugManifest
+2026-11-20T10:44:21.7201231Z > Task :capacitor-haptics:extractDeepLinksDebug
+2026-11-20T10:44:21.7201726Z > Task :capacitor-haptics:processDebugManifest
+2026-11-20T10:44:21.7202225Z > Task :capacitor-local-notifications:extractDeepLinksDebug
+2026-11-20T10:44:21.7202742Z > Task :capacitor-status-bar:extractDeepLinksDebug
+2026-11-20T10:44:21.7203228Z > Task :capacitor-local-notifications:processDebugManifest
+2026-11-20T10:44:21.7203688Z > Task :capacitor-status-bar:processDebugManifest
+2026-11-20T10:44:21.8200130Z > Task :capacitor-android:compileDebugLibraryResources
+2026-11-20T10:44:21.9220008Z > Task :app:processDebugMainManifest
+2026-11-20T10:44:22.0203787Z > Task :app:processDebugManifest
+2026-11-20T10:44:22.0205830Z > Task :capacitor-android:parseDebugLocalResources
+2026-11-20T10:44:22.0206509Z > Task :capacitor-app:compileDebugLibraryResources
+2026-11-20T10:44:22.0207046Z > Task :app:processDebugManifestForPackage
+2026-11-20T10:44:22.0207600Z > Task :capacitor-browser:compileDebugLibraryResources
+2026-11-20T10:44:22.0208166Z > Task :capacitor-app:parseDebugLocalResources
+2026-11-20T10:44:22.0209410Z > Task :capacitor-cordova-android-plugins:compileDebugLibraryResources
+2026-11-20T10:44:22.0210281Z > Task :capacitor-browser:parseDebugLocalResources
+2026-11-20T10:44:22.0210873Z > Task :capacitor-android:generateDebugRFile
+2026-11-20T10:44:22.0211378Z > Task :capacitor-app:generateDebugRFile
+2026-11-20T10:44:22.1215747Z > Task :capacitor-cordova-android-plugins:parseDebugLocalResources
+2026-11-20T10:44:22.1216741Z > Task :capacitor-haptics:compileDebugLibraryResources
+2026-11-20T10:44:22.1217382Z > Task :capacitor-browser:generateDebugRFile
+2026-11-20T10:44:22.1218057Z > Task :capacitor-local-notifications:compileDebugLibraryResources
+2026-11-20T10:44:22.1219017Z > Task :capacitor-cordova-android-plugins:generateDebugRFile
+2026-11-20T10:44:22.1219622Z > Task :capacitor-haptics:parseDebugLocalResources
+2026-11-20T10:44:22.1220206Z > Task :capacitor-status-bar:compileDebugLibraryResources
+2026-11-20T10:44:22.1220847Z > Task :capacitor-local-notifications:parseDebugLocalResources
+2026-11-20T10:44:22.1221457Z > Task :capacitor-haptics:generateDebugRFile
+2026-11-20T10:44:22.1222042Z > Task :capacitor-status-bar:parseDebugLocalResources
+2026-11-20T10:44:22.1222619Z > Task :capacitor-local-notifications:generateDebugRFile
+2026-11-20T10:44:22.1223167Z > Task :capacitor-android:javaPreCompileDebug
+2026-11-20T10:44:22.1223677Z > Task :capacitor-status-bar:generateDebugRFile
+2026-11-20T10:44:25.7209468Z 
+2026-11-20T10:44:25.7219087Z > Task :capacitor-android:compileDebugJavaWithJavac
+2026-11-20T10:44:25.7219654Z Note: Some input files use unchecked or unsafe operations.
+2026-11-20T10:44:25.7230045Z Note: Recompile with -Xlint:unchecked for details.
+2026-11-20T10:44:27.5207053Z 
+2026-11-20T10:44:27.5229830Z > Task :capacitor-app:javaPreCompileDebug
+2026-11-20T10:44:27.5260739Z > Task :capacitor-browser:javaPreCompileDebug
+2026-11-20T10:44:27.5261661Z > Task :capacitor-cordova-android-plugins:javaPreCompileDebug
+2026-11-20T10:44:27.5290130Z > Task :capacitor-cordova-android-plugins:compileDebugJavaWithJavac NO-SOURCE
+2026-11-20T10:44:27.5319887Z > Task :capacitor-haptics:javaPreCompileDebug
+2026-11-20T10:44:27.5349999Z > Task :capacitor-local-notifications:checkKotlinGradlePluginConfigurationErrors SKIPPED
+2026-11-20T10:44:27.5360482Z > Task :capacitor-cordova-android-plugins:bundleLibCompileToJarDebug
+2026-11-20T10:44:27.5380140Z > Task :capacitor-local-notifications:javaPreCompileDebug
+2026-11-20T10:44:27.5409810Z > Task :capacitor-status-bar:javaPreCompileDebug
+2026-11-20T10:44:27.6219492Z > Task :capacitor-android:bundleLibCompileToJarDebug
+2026-11-20T10:44:27.6279471Z > Task :app:mergeDebugShaders
+2026-11-20T10:44:27.9217773Z > Task :app:processDebugResources
+2026-11-20T10:44:27.9250112Z > Task :capacitor-app:compileDebugJavaWithJavac
+2026-11-20T10:44:27.9279845Z > Task :capacitor-app:bundleLibCompileToJarDebug
+2026-11-20T10:44:28.2210150Z > Task :capacitor-browser:compileDebugJavaWithJavac
+2026-11-20T10:44:28.2269980Z > Task :capacitor-browser:bundleLibCompileToJarDebug
+2026-11-20T10:44:28.4197470Z > Task :capacitor-haptics:compileDebugJavaWithJavac
+2026-11-20T10:44:28.4198359Z > Task :capacitor-haptics:bundleLibCompileToJarDebug
+2026-11-20T10:44:31.3220213Z > Task :capacitor-status-bar:compileDebugJavaWithJavac
+2026-11-20T10:44:31.3249971Z > Task :app:compileDebugShaders NO-SOURCE
+2026-11-20T10:44:31.3279875Z > Task :app:generateDebugAssets UP-TO-DATE
+2026-11-20T10:44:31.3309913Z > Task :capacitor-status-bar:bundleLibCompileToJarDebug
+2026-11-20T10:44:31.3349682Z > Task :capacitor-android:mergeDebugShaders
+2026-11-20T10:44:31.3385840Z > Task :capacitor-android:compileDebugShaders NO-SOURCE
+2026-11-20T10:44:31.3447859Z > Task :capacitor-android:generateDebugAssets UP-TO-DATE
+2026-11-20T10:44:31.3459703Z > Task :capacitor-android:mergeDebugAssets
+2026-11-20T10:44:31.3489416Z > Task :capacitor-app:mergeDebugShaders
+2026-11-20T10:44:31.3509618Z > Task :capacitor-app:compileDebugShaders NO-SOURCE
+2026-11-20T10:44:31.3549464Z > Task :capacitor-app:generateDebugAssets UP-TO-DATE
+2026-11-20T10:44:31.3579441Z > Task :capacitor-app:mergeDebugAssets
+2026-11-20T10:44:31.3660423Z > Task :capacitor-browser:mergeDebugShaders
+2026-11-20T10:44:31.3689565Z > Task :capacitor-browser:compileDebugShaders NO-SOURCE
+2026-11-20T10:44:31.3739630Z > Task :capacitor-browser:generateDebugAssets UP-TO-DATE
+2026-11-20T10:44:31.3779525Z > Task :capacitor-browser:mergeDebugAssets
+2026-11-20T10:44:31.3849548Z > Task :capacitor-cordova-android-plugins:mergeDebugShaders
+2026-11-20T10:44:31.3917815Z > Task :capacitor-cordova-android-plugins:compileDebugShaders NO-SOURCE
+2026-11-20T10:44:31.3944626Z > Task :capacitor-cordova-android-plugins:generateDebugAssets UP-TO-DATE
+2026-11-20T10:44:31.3964687Z > Task :capacitor-cordova-android-plugins:mergeDebugAssets
+2026-11-20T10:44:31.3970468Z > Task :capacitor-haptics:mergeDebugShaders
+2026-11-20T10:44:31.4039513Z > Task :capacitor-haptics:compileDebugShaders NO-SOURCE
+2026-11-20T10:44:31.4056229Z > Task :capacitor-haptics:generateDebugAssets UP-TO-DATE
+2026-11-20T10:44:31.4056812Z > Task :capacitor-haptics:mergeDebugAssets
+2026-11-20T10:44:31.4057300Z > Task :capacitor-local-notifications:mergeDebugShaders
+2026-11-20T10:44:31.4057889Z > Task :capacitor-local-notifications:compileDebugShaders NO-SOURCE
+2026-11-20T10:44:31.4058543Z > Task :capacitor-local-notifications:generateDebugAssets UP-TO-DATE
+2026-11-20T10:44:31.4059616Z > Task :capacitor-local-notifications:mergeDebugAssets
+2026-11-20T10:44:31.4219493Z > Task :capacitor-status-bar:mergeDebugShaders
+2026-11-20T10:44:31.4249566Z > Task :capacitor-status-bar:compileDebugShaders NO-SOURCE
+2026-11-20T10:44:31.4259636Z > Task :capacitor-status-bar:generateDebugAssets UP-TO-DATE
+2026-11-20T10:44:31.4289562Z > Task :capacitor-status-bar:mergeDebugAssets
+2026-11-20T10:44:31.5195699Z > Task :app:mergeDebugAssets
+2026-11-20T10:44:31.6197351Z > Task :capacitor-app:bundleLibRuntimeToJarDebug
+2026-11-20T10:44:31.6269597Z > Task :capacitor-browser:bundleLibRuntimeToJarDebug
+2026-11-20T10:44:31.6317776Z > Task :app:compressDebugAssets
+2026-11-20T10:44:31.6334558Z > Task :capacitor-haptics:bundleLibRuntimeToJarDebug
+2026-11-20T10:44:32.5200522Z > Task :capacitor-status-bar:bundleLibRuntimeToJarDebug
+2026-11-20T10:44:32.5210143Z > Task :capacitor-android:bundleLibRuntimeToJarDebug
+2026-11-20T10:44:32.5280183Z > Task :capacitor-cordova-android-plugins:bundleLibRuntimeToJarDebug
+2026-11-20T10:44:32.5299959Z > Task :app:desugarDebugFileDependencies
+2026-11-20T10:44:32.5325274Z > Task :app:processDebugJavaRes NO-SOURCE
+2026-11-20T10:44:32.5369604Z > Task :capacitor-android:processDebugJavaRes NO-SOURCE
+2026-11-20T10:44:32.5429584Z > Task :capacitor-app:processDebugJavaRes NO-SOURCE
+2026-11-20T10:44:32.5489576Z > Task :capacitor-browser:processDebugJavaRes NO-SOURCE
+2026-11-20T10:44:32.5509812Z > Task :capacitor-cordova-android-plugins:processDebugJavaRes NO-SOURCE
+2026-11-20T10:44:32.5549639Z > Task :capacitor-haptics:processDebugJavaRes NO-SOURCE
+2026-11-20T10:44:32.6249691Z > Task :capacitor-status-bar:processDebugJavaRes NO-SOURCE
+2026-11-20T10:44:33.6221024Z > Task :capacitor-app:bundleLibRuntimeToDirDebug
+2026-11-20T10:44:33.6250381Z > Task :app:checkDebugDuplicateClasses
+2026-11-20T10:44:51.9220502Z > Task :capacitor-local-notifications:compileDebugKotlin
+2026-11-20T10:44:56.7203688Z > Task :capacitor-local-notifications:compileDebugJavaWithJavac NO-SOURCE
+2026-11-20T10:44:56.7204518Z > Task :capacitor-local-notifications:bundleLibCompileToJarDebug
+2026-11-20T10:44:56.7205690Z > Task :capacitor-local-notifications:bundleLibRuntimeToJarDebug
+2026-11-20T10:44:56.7206097Z > Task :capacitor-local-notifications:processDebugJavaRes
+2026-11-20T10:44:58.0269788Z ##[error]/home/runner/work/lifeedy/lifeedy/android/app/src/main/java/com/vidaorganizada/app/NativeGoogleAuthPlugin.java:21: error: cannot find symbol
+2026-11-20T10:44:58.0277417Z 
+2026-11-20T10:44:58.0278328Z import com.google.android.gms.auth.api.identity.ClearTokenRequest;
+2026-11-20T10:44:58.0279228Z                                                ^
+2026-11-20T10:44:58.0279645Z   symbol:   class ClearTokenRequest
+2026-11-20T10:44:58.0280491Z   location: package com.google.android.gms.auth.api.identity
+2026-11-20T10:44:58.0281923Z ##[error]/home/runner/work/lifeedy/lifeedy/android/app/src/main/java/com/vidaorganizada/app/NativeGoogleAuthPlugin.java:171: error: cannot find symbol
+2026-11-20T10:44:58.0283538Z         ClearTokenRequest request = ClearTokenRequest.builder().setToken(token.trim()).build();
+2026-11-20T10:44:58.0284078Z         ^
+2026-11-20T10:44:58.0284382Z   symbol:   class ClearTokenRequest
+2026-11-20T10:44:58.0284780Z   location: class NativeGoogleAuthPlugin
+2026-11-20T10:44:58.0285803Z ##[error]/home/runner/work/lifeedy/lifeedy/android/app/src/main/java/com/vidaorganizada/app/NativeGoogleAuthPlugin.java:171: error: cannot find symbol
+2026-11-20T10:44:58.0287315Z         ClearTokenRequest request = ClearTokenRequest.builder().setToken(token.trim()).build();
+2026-11-20T10:44:58.0287880Z                                     ^
+2026-11-20T10:44:58.0288221Z   symbol:   variable ClearTokenRequest
+2026-11-20T10:44:58.0288614Z   location: class NativeGoogleAuthPlugin
+2026-11-20T10:44:58.0300242Z Note: /home/runner/work/lifeedy/lifeedy/android/app/src/main/java/com/vidaorganizada/app/BiometricLockPlugin.java uses or overrides a deprecated API.
+2026-11-20T10:44:58.0301119Z Note: Recompile with -Xlint:deprecation for details.
+2026-11-20T10:44:58.0301486Z 3 errors
+2026-11-20T10:44:58.0301857Z > Task :app:compileDebugJavaWithJavac FAILED
+2026-11-20T10:44:59.0306167Z 
+2026-11-20T10:44:59.0306301Z 
+2026-11-20T10:44:59.0312871Z FAILURE: Build failed with an exception.
+2026-11-20T10:44:59.0349709Z > Task :app:mergeExtDexDebug
+2026-11-20T10:44:59.0373898Z 
+2026-11-20T10:44:59.0373964Z 
+2026-11-20T10:44:59.0375510Z * What went wrong:
+2026-11-20T10:44:59.0376423Z [Incubating] Problems report is available at: file:///home/runner/work/lifeedy/lifeedy/android/build/reports/problems/problems-report.html
+2026-11-20T10:44:59.0399000Z Execution failed for task ':app:compileDebugJavaWithJavac'.
+2026-11-20T10:44:59.0399460Z 
+2026-11-20T10:44:59.0401237Z > Compilation failed; see the compiler output below.
+2026-11-20T10:44:59.0401979Z Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+2026-11-20T10:44:59.0403230Z   Note: /home/runner/work/lifeedy/lifeedy/android/app/src/main/java/com/vidaorganizada/app/BiometricLockPlugin.java uses or overrides a deprecated API.
+2026-11-20T10:44:59.0403917Z 
+2026-11-20T10:44:59.0404286Z   Note: Recompile with -Xlint:deprecation for details.
+2026-11-20T10:44:59.0405203Z You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+2026-11-20T10:44:59.0407304Z ##[error]  /home/runner/work/lifeedy/lifeedy/android/app/src/main/java/com/vidaorganizada/app/NativeGoogleAuthPlugin.java:21: error: cannot find symbol
+2026-11-20T10:44:59.0409253Z 
+2026-11-20T10:44:59.0449732Z   import com.google.android.gms.auth.api.identity.ClearTokenRequest;
+2026-11-20T10:44:59.0450926Z For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+2026-11-20T10:44:59.0452227Z                                                  ^
+2026-11-20T10:44:59.0469532Z     symbol:   class ClearTokenRequest
+2026-11-20T10:44:59.0470190Z     location: package com.google.android.gms.auth.api.identity
+2026-11-20T10:44:59.0471648Z ##[error]  /home/runner/work/lifeedy/lifeedy/android/app/src/main/java/com/vidaorganizada/app/NativeGoogleAuthPlugin.java:171: error: cannot find symbol
+2026-11-20T10:44:59.0473480Z           ClearTokenRequest request = ClearTokenRequest.builder().setToken(token.trim()).build();
+2026-11-20T10:44:59.0474070Z           ^
+2026-11-20T10:44:59.0474437Z     symbol:   class ClearTokenRequest
+2026-11-20T10:44:59.0475755Z     location: class NativeGoogleAuthPlugin
+2026-11-20T10:44:59.0476929Z ##[error]  /home/runner/work/lifeedy/lifeedy/android/app/src/main/java/com/vidaorganizada/app/NativeGoogleAuthPlugin.java:171: error: cannot find symbol
+2026-11-20T10:44:59.0479536Z           ClearTokenRequest request = ClearTokenRequest.builder().setToken(token.trim()).build();
+2026-11-20T10:44:59.0485799Z                                       ^
+2026-11-20T10:44:59.0486298Z     symbol:   variable ClearTokenRequest
+2026-11-20T10:44:59.0486772Z     location: class NativeGoogleAuthPlugin
+2026-11-20T10:44:59.0487196Z   3 errors
+2026-11-20T10:44:59.0487416Z 
+2026-11-20T10:44:59.0487605Z * Try:
+2026-11-20T10:44:59.0488083Z > Check your code and dependencies to fix the compilation error(s)
+2026-11-20T10:44:59.0489292Z > Run with --scan to get full insights.
+2026-11-20T10:44:59.0489604Z 
+2026-11-20T10:44:59.0489726Z * Exception is:
+2026-11-20T10:44:59.0490250Z org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':app:compileDebugJavaWithJavac'.
+2026-11-20T10:44:59.0491052Z 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.lambda$executeIfValid$1(ExecuteActionsTaskExecuter.java:130)
+2026-11-20T10:44:59.0491727Z 	at org.gradle.internal.Try$Failure.ifSuccessfulOrElse(Try.java:293)
+2026-11-20T10:44:59.0492385Z 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.executeIfValid(ExecuteActionsTaskExecuter.java:128)
+2026-11-20T10:44:59.0493179Z 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.execute(ExecuteActionsTaskExecuter.java:116)
+2026-11-20T10:44:59.0494047Z 	at org.gradle.api.internal.tasks.execution.ProblemsTaskPathTrackingTaskExecuter.execute(ProblemsTaskPathTrackingTaskExecuter.java:41)
+2026-11-20T10:44:59.0494928Z 	at org.gradle.api.internal.tasks.execution.FinalizePropertiesTaskExecuter.execute(FinalizePropertiesTaskExecuter.java:46)
+2026-11-20T10:44:59.0495769Z 	at org.gradle.api.internal.tasks.execution.ResolveTaskExecutionModeExecuter.execute(ResolveTaskExecutionModeExecuter.java:51)
+2026-11-20T10:44:59.0496599Z 	at org.gradle.api.internal.tasks.execution.SkipTaskWithNoActionsExecuter.execute(SkipTaskWithNoActionsExecuter.java:57)
+2026-11-20T10:44:59.0497381Z 	at org.gradle.api.internal.tasks.execution.SkipOnlyIfTaskExecuter.execute(SkipOnlyIfTaskExecuter.java:74)
+2026-11-20T10:44:59.0498297Z 	at org.gradle.api.internal.tasks.execution.CatchExceptionTaskExecuter.execute(CatchExceptionTaskExecuter.java:36)
+2026-11-20T10:44:59.0499490Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.executeTask(EventFiringTaskExecuter.java:77)
+2026-11-20T10:44:59.0500564Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:55)
+2026-11-20T10:44:59.0501794Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:52)
+2026-11-20T10:44:59.0503029Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:210)
+2026-11-20T10:44:59.0504496Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:205)
+2026-11-20T10:44:59.0505762Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+2026-11-20T10:44:59.0506948Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+2026-11-20T10:44:59.0508083Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+2026-11-20T10:44:59.0509481Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+2026-11-20T10:44:59.0510673Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:54)
+2026-11-20T10:44:59.0511913Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter.execute(EventFiringTaskExecuter.java:52)
+2026-11-20T10:44:59.0512997Z 	at org.gradle.execution.plan.LocalTaskNodeExecutor.execute(LocalTaskNodeExecutor.java:42)
+2026-11-20T10:44:59.0514204Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:331)
+2026-11-20T10:44:59.0515858Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:318)
+2026-11-20T10:44:59.0517331Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.lambda$execute$0(DefaultTaskExecutionGraph.java:314)
+2026-11-20T10:44:59.0518959Z 	at org.gradle.internal.operations.CurrentBuildOperationRef.with(CurrentBuildOperationRef.java:85)
+2026-11-20T10:44:59.0519970Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:314)
+2026-11-20T10:44:59.0521009Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
+2026-11-20T10:44:59.0521853Z 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(DefaultPlanExecutor.java:459)
+2026-11-20T10:44:59.0522663Z 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:376)
+2026-11-20T10:44:59.0523685Z 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
+2026-11-20T10:44:59.0524703Z 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:48)
+2026-11-20T10:44:59.0525891Z Caused by: org.gradle.api.internal.tasks.compile.CompilationFailedException: Compilation failed; see the compiler output below.
+2026-11-20T10:44:59.0527356Z Note: /home/runner/work/lifeedy/lifeedy/android/app/src/main/java/com/vidaorganizada/app/BiometricLockPlugin.java uses or overrides a deprecated API.
+2026-11-20T10:44:59.0528394Z Note: Recompile with -Xlint:deprecation for details.
+2026-11-20T10:44:59.0530051Z ##[error]/home/runner/work/lifeedy/lifeedy/android/app/src/main/java/com/vidaorganizada/app/NativeGoogleAuthPlugin.java:21: error: cannot find symbol
+2026-11-20T10:44:59.0532089Z import com.google.android.gms.auth.api.identity.ClearTokenRequest;
+2026-11-20T10:44:59.0532758Z                                                ^
+2026-11-20T10:44:59.0533270Z   symbol:   class ClearTokenRequest
+2026-11-20T10:44:59.0533812Z   location: package com.google.android.gms.auth.api.identity
+2026-11-20T10:44:59.0535115Z ##[error]/home/runner/work/lifeedy/lifeedy/android/app/src/main/java/com/vidaorganizada/app/NativeGoogleAuthPlugin.java:171: error: cannot find symbol
+2026-11-20T10:44:59.0536844Z         ClearTokenRequest request = ClearTokenRequest.builder().setToken(token.trim()).build();
+2026-11-20T10:44:59.0537447Z         ^
+2026-11-20T10:44:59.0537837Z   symbol:   class ClearTokenRequest
+2026-11-20T10:44:59.0538334Z   location: class NativeGoogleAuthPlugin
+2026-11-20T10:44:59.0539629Z ##[error]/home/runner/work/lifeedy/lifeedy/android/app/src/main/java/com/vidaorganizada/app/NativeGoogleAuthPlugin.java:171: error: cannot find symbol
+2026-11-20T10:44:59.0541773Z         ClearTokenRequest request = ClearTokenRequest.builder().setToken(token.trim()).build();
+2026-11-20T10:44:59.0542370Z                                     ^
+2026-11-20T10:44:59.0542836Z   symbol:   variable ClearTokenRequest
+2026-11-20T10:44:59.0543288Z   location: class NativeGoogleAuthPlugin
+2026-11-20T10:44:59.0543735Z 3 errors
+2026-11-20T10:44:59.0544358Z 	at org.gradle.api.internal.tasks.compile.JdkJavaCompiler.execute(JdkJavaCompiler.java:89)
+2026-11-20T10:44:59.0545244Z 	at org.gradle.api.internal.tasks.compile.JdkJavaCompiler.execute(JdkJavaCompiler.java:50)
+2026-11-20T10:44:59.0546373Z 	at org.gradle.api.internal.tasks.compile.NormalizingJavaCompiler.delegateAndHandleErrors(NormalizingJavaCompiler.java:98)
+2026-11-20T10:44:59.0547683Z 	at org.gradle.api.internal.tasks.compile.NormalizingJavaCompiler.execute(NormalizingJavaCompiler.java:52)
+2026-11-20T10:44:59.0558139Z 	at org.gradle.api.internal.tasks.compile.NormalizingJavaCompiler.execute(NormalizingJavaCompiler.java:38)
+2026-11-20T10:44:59.0560000Z 	at org.gradle.api.internal.tasks.compile.AnnotationProcessorDiscoveringCompiler.execute(AnnotationProcessorDiscoveringCompiler.java:52)
+2026-11-20T10:44:59.0561811Z 	at org.gradle.api.internal.tasks.compile.AnnotationProcessorDiscoveringCompiler.execute(AnnotationProcessorDiscoveringCompiler.java:38)
+2026-11-20T10:44:59.0563357Z 	at org.gradle.api.internal.tasks.compile.ModuleApplicationNameWritingCompiler.execute(ModuleApplicationNameWritingCompiler.java:46)
+2026-11-20T10:44:59.0564749Z 	at org.gradle.api.internal.tasks.compile.ModuleApplicationNameWritingCompiler.execute(ModuleApplicationNameWritingCompiler.java:36)
+2026-11-20T10:44:59.0565971Z 	at org.gradle.jvm.toolchain.internal.DefaultToolchainJavaCompiler.execute(DefaultToolchainJavaCompiler.java:57)
+2026-11-20T10:44:59.0566974Z 	at org.gradle.api.tasks.compile.JavaCompile.lambda$createToolchainCompiler$3(JavaCompile.java:206)
+2026-11-20T10:44:59.0567961Z 	at org.gradle.api.internal.tasks.compile.CleaningJavaCompiler.execute(CleaningJavaCompiler.java:53)
+2026-11-20T10:44:59.0569410Z 	at org.gradle.api.internal.tasks.compile.incremental.IncrementalCompilerFactory.lambda$createRebuildAllCompiler$0(IncrementalCompilerFactory.java:55)
+2026-11-20T10:44:59.0570708Z 	at org.gradle.api.internal.tasks.compile.incremental.SelectiveCompiler.execute(SelectiveCompiler.java:70)
+2026-11-20T10:44:59.0571678Z 	at org.gradle.api.internal.tasks.compile.incremental.SelectiveCompiler.execute(SelectiveCompiler.java:44)
+2026-11-20T10:44:59.0572937Z 	at org.gradle.api.internal.tasks.compile.incremental.IncrementalResultStoringCompiler.execute(IncrementalResultStoringCompiler.java:66)
+2026-11-20T10:44:59.0574059Z 	at org.gradle.api.internal.tasks.compile.incremental.IncrementalResultStoringCompiler.execute(IncrementalResultStoringCompiler.java:52)
+2026-11-20T10:44:59.0575400Z 	at org.gradle.api.internal.tasks.compile.CompileJavaBuildOperationReportingCompiler$1.call(CompileJavaBuildOperationReportingCompiler.java:64)
+2026-11-20T10:44:59.0576883Z 	at org.gradle.api.internal.tasks.compile.CompileJavaBuildOperationReportingCompiler$1.call(CompileJavaBuildOperationReportingCompiler.java:48)
+2026-11-20T10:44:59.0578322Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:210)
+2026-11-20T10:44:59.0580036Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:205)
+2026-11-20T10:44:59.0581223Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+2026-11-20T10:44:59.0582353Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+2026-11-20T10:44:59.0583457Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+2026-11-20T10:44:59.0584615Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+2026-11-20T10:44:59.0585663Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:54)
+2026-11-20T10:44:59.0587008Z 	at org.gradle.api.internal.tasks.compile.CompileJavaBuildOperationReportingCompiler.execute(CompileJavaBuildOperationReportingCompiler.java:48)
+2026-11-20T10:44:59.0588266Z 	at org.gradle.api.tasks.compile.JavaCompile.performCompilation(JavaCompile.java:224)
+2026-11-20T10:44:59.0589517Z 	at org.gradle.api.tasks.compile.JavaCompile.performIncrementalCompilation(JavaCompile.java:165)
+2026-11-20T10:44:59.0590416Z 	at org.gradle.api.tasks.compile.JavaCompile.compile(JavaCompile.java:150)
+2026-11-20T10:44:59.0591379Z 	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+2026-11-20T10:44:59.0592302Z 	at org.gradle.internal.reflect.JavaMethod.invoke(JavaMethod.java:125)
+2026-11-20T10:44:59.0593221Z 	at org.gradle.api.internal.project.taskfactory.IncrementalTaskAction.doExecute(IncrementalTaskAction.java:45)
+2026-11-20T10:44:59.0594330Z 	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(StandardTaskAction.java:51)
+2026-11-20T10:44:59.0595775Z 	at org.gradle.api.internal.project.taskfactory.IncrementalTaskAction.execute(IncrementalTaskAction.java:26)
+2026-11-20T10:44:59.0596812Z 	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(StandardTaskAction.java:29)
+2026-11-20T10:44:59.0597742Z 	at org.gradle.api.internal.tasks.execution.TaskExecution$3.run(TaskExecution.java:244)
+2026-11-20T10:44:59.0599143Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:30)
+2026-11-20T10:44:59.0600355Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:27)
+2026-11-20T10:44:59.0601456Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+2026-11-20T10:44:59.0602534Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+2026-11-20T10:44:59.0603586Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+2026-11-20T10:44:59.0604693Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+2026-11-20T10:44:59.0605783Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.run(DefaultBuildOperationRunner.java:48)
+2026-11-20T10:44:59.0606835Z 	at org.gradle.api.internal.tasks.execution.TaskExecution.executeAction(TaskExecution.java:229)
+2026-11-20T10:44:59.0607812Z 	at org.gradle.api.internal.tasks.execution.TaskExecution.executeActions(TaskExecution.java:212)
+2026-11-20T10:44:59.0609159Z 	at org.gradle.api.internal.tasks.execution.TaskExecution.executeWithPreviousOutputFiles(TaskExecution.java:195)
+2026-11-20T10:44:59.0610363Z 	at org.gradle.api.internal.tasks.execution.TaskExecution.execute(TaskExecution.java:162)
+2026-11-20T10:44:59.0611328Z 	at org.gradle.internal.execution.steps.ExecuteStep.executeInternal(ExecuteStep.java:105)
+2026-11-20T10:44:59.0612311Z 	at org.gradle.internal.execution.steps.ExecuteStep.access$000(ExecuteStep.java:44)
+2026-11-20T10:44:59.0613168Z 	at org.gradle.internal.execution.steps.ExecuteStep$1.call(ExecuteStep.java:59)
+2026-11-20T10:44:59.0614004Z 	at org.gradle.internal.execution.steps.ExecuteStep$1.call(ExecuteStep.java:56)
+2026-11-20T10:44:59.0615095Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:210)
+2026-11-20T10:44:59.0616502Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:205)
+2026-11-20T10:44:59.0617774Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+2026-11-20T10:44:59.0619122Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+2026-11-20T10:44:59.0620253Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+2026-11-20T10:44:59.0621418Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+2026-11-20T10:44:59.0622537Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:54)
+2026-11-20T10:44:59.0623506Z 	at org.gradle.internal.execution.steps.ExecuteStep.execute(ExecuteStep.java:56)
+2026-11-20T10:44:59.0624321Z 	at org.gradle.internal.execution.steps.ExecuteStep.execute(ExecuteStep.java:44)
+2026-11-20T10:44:59.0625274Z 	at org.gradle.internal.execution.steps.CancelExecutionStep.execute(CancelExecutionStep.java:42)
+2026-11-20T10:44:59.0626321Z 	at org.gradle.internal.execution.steps.TimeoutStep.executeWithoutTimeout(TimeoutStep.java:75)
+2026-11-20T10:44:59.0627253Z 	at org.gradle.internal.execution.steps.TimeoutStep.execute(TimeoutStep.java:55)
+2026-11-20T10:44:59.0628266Z 	at org.gradle.internal.execution.steps.PreCreateOutputParentsStep.execute(PreCreateOutputParentsStep.java:50)
+2026-11-20T10:44:59.0629887Z 	at org.gradle.internal.execution.steps.PreCreateOutputParentsStep.execute(PreCreateOutputParentsStep.java:28)
+2026-11-20T10:44:59.0631151Z 	at org.gradle.internal.execution.steps.RemovePreviousOutputsStep.execute(RemovePreviousOutputsStep.java:67)
+2026-11-20T10:44:59.0632282Z 	at org.gradle.internal.execution.steps.RemovePreviousOutputsStep.execute(RemovePreviousOutputsStep.java:37)
+2026-11-20T10:44:59.0633501Z 	at org.gradle.internal.execution.steps.BroadcastChangingOutputsStep.execute(BroadcastChangingOutputsStep.java:61)
+2026-11-20T10:44:59.0634744Z 	at org.gradle.internal.execution.steps.BroadcastChangingOutputsStep.execute(BroadcastChangingOutputsStep.java:26)
+2026-11-20T10:44:59.0636089Z 	at org.gradle.internal.execution.steps.CaptureOutputsAfterExecutionStep.execute(CaptureOutputsAfterExecutionStep.java:69)
+2026-11-20T10:44:59.0637477Z 	at org.gradle.internal.execution.steps.CaptureOutputsAfterExecutionStep.execute(CaptureOutputsAfterExecutionStep.java:46)
+2026-11-20T10:44:59.0639079Z 	at org.gradle.internal.execution.steps.ResolveInputChangesStep.execute(ResolveInputChangesStep.java:40)
+2026-11-20T10:44:59.0640332Z 	at org.gradle.internal.execution.steps.ResolveInputChangesStep.execute(ResolveInputChangesStep.java:29)
+2026-11-20T10:44:59.0641903Z 	at org.gradle.internal.execution.steps.BuildCacheStep.executeWithoutCache(BuildCacheStep.java:189)
+2026-11-20T10:44:59.0642942Z 	at org.gradle.internal.execution.steps.BuildCacheStep.lambda$execute$1(BuildCacheStep.java:75)
+2026-11-20T10:44:59.0643833Z 	at org.gradle.internal.Either$Right.fold(Either.java:175)
+2026-11-20T10:44:59.0644593Z 	at org.gradle.internal.execution.caching.CachingState.fold(CachingState.java:62)
+2026-11-20T10:44:59.0645556Z 	at org.gradle.internal.execution.steps.BuildCacheStep.execute(BuildCacheStep.java:73)
+2026-11-20T10:44:59.0646439Z 	at org.gradle.internal.execution.steps.BuildCacheStep.execute(BuildCacheStep.java:48)
+2026-11-20T10:44:59.0647487Z 	at org.gradle.internal.execution.steps.StoreExecutionStateStep.execute(StoreExecutionStateStep.java:46)
+2026-11-20T10:44:59.0648587Z 	at org.gradle.internal.execution.steps.StoreExecutionStateStep.execute(StoreExecutionStateStep.java:35)
+2026-11-20T10:44:59.0649951Z 	at org.gradle.internal.execution.steps.SkipUpToDateStep.executeBecause(SkipUpToDateStep.java:75)
+2026-11-20T10:44:59.0651032Z 	at org.gradle.internal.execution.steps.SkipUpToDateStep.lambda$execute$2(SkipUpToDateStep.java:53)
+2026-11-20T10:44:59.0652079Z 	at org.gradle.internal.execution.steps.SkipUpToDateStep.execute(SkipUpToDateStep.java:53)
+2026-11-20T10:44:59.0653067Z 	at org.gradle.internal.execution.steps.SkipUpToDateStep.execute(SkipUpToDateStep.java:35)
+2026-11-20T10:44:59.0654390Z 	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsFinishedStep.execute(MarkSnapshottingInputsFinishedStep.java:37)
+2026-11-20T10:44:59.0655849Z 	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsFinishedStep.execute(MarkSnapshottingInputsFinishedStep.java:27)
+2026-11-20T10:44:59.0657365Z 	at org.gradle.internal.execution.steps.ResolveIncrementalCachingStateStep.executeDelegate(ResolveIncrementalCachingStateStep.java:49)
+2026-11-20T10:44:59.0659006Z 	at org.gradle.internal.execution.steps.ResolveIncrementalCachingStateStep.executeDelegate(ResolveIncrementalCachingStateStep.java:27)
+2026-11-20T10:44:59.0660444Z 	at org.gradle.internal.execution.steps.AbstractResolveCachingStateStep.execute(AbstractResolveCachingStateStep.java:71)
+2026-11-20T10:44:59.0661711Z 	at org.gradle.internal.execution.steps.AbstractResolveCachingStateStep.execute(AbstractResolveCachingStateStep.java:39)
+2026-11-20T10:44:59.0662869Z 	at org.gradle.internal.execution.steps.ResolveChangesStep.execute(ResolveChangesStep.java:65)
+2026-11-20T10:44:59.0663879Z 	at org.gradle.internal.execution.steps.ResolveChangesStep.execute(ResolveChangesStep.java:36)
+2026-11-20T10:44:59.0664861Z 	at org.gradle.internal.execution.steps.ValidateStep.execute(ValidateStep.java:107)
+2026-11-20T10:44:59.0665731Z 	at org.gradle.internal.execution.steps.ValidateStep.execute(ValidateStep.java:56)
+2026-11-20T10:44:59.0667155Z 	at org.gradle.internal.execution.steps.AbstractCaptureStateBeforeExecutionStep.execute(AbstractCaptureStateBeforeExecutionStep.java:64)
+2026-11-20T10:44:59.0668930Z 	at org.gradle.internal.execution.steps.AbstractCaptureStateBeforeExecutionStep.execute(AbstractCaptureStateBeforeExecutionStep.java:43)
+2026-11-20T10:44:59.0670536Z 	at org.gradle.internal.execution.steps.AbstractSkipEmptyWorkStep.executeWithNonEmptySources(AbstractSkipEmptyWorkStep.java:125)
+2026-11-20T10:44:59.0671905Z 	at org.gradle.internal.execution.steps.AbstractSkipEmptyWorkStep.execute(AbstractSkipEmptyWorkStep.java:61)
+2026-11-20T10:44:59.0673106Z 	at org.gradle.internal.execution.steps.AbstractSkipEmptyWorkStep.execute(AbstractSkipEmptyWorkStep.java:36)
+2026-11-20T10:44:59.0674373Z 	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsStartedStep.execute(MarkSnapshottingInputsStartedStep.java:38)
+2026-11-20T10:44:59.0675705Z 	at org.gradle.internal.execution.steps.LoadPreviousExecutionStateStep.execute(LoadPreviousExecutionStateStep.java:36)
+2026-11-20T10:44:59.0677018Z 	at org.gradle.internal.execution.steps.LoadPreviousExecutionStateStep.execute(LoadPreviousExecutionStateStep.java:23)
+2026-11-20T10:44:59.0678359Z 	at org.gradle.internal.execution.steps.HandleStaleOutputsStep.execute(HandleStaleOutputsStep.java:75)
+2026-11-20T10:44:59.0679814Z 	at org.gradle.internal.execution.steps.HandleStaleOutputsStep.execute(HandleStaleOutputsStep.java:41)
+2026-11-20T10:44:59.0681088Z 	at org.gradle.internal.execution.steps.AssignMutableWorkspaceStep.lambda$execute$0(AssignMutableWorkspaceStep.java:35)
+2026-11-20T10:44:59.0682288Z 	at org.gradle.api.internal.tasks.execution.TaskExecution$4.withWorkspace(TaskExecution.java:289)
+2026-11-20T10:44:59.0683317Z 	at org.gradle.internal.execution.steps.AssignMutableWorkspaceStep.execute(AssignMutableWorkspaceStep.java:31)
+2026-11-20T10:44:59.0684516Z 	at org.gradle.internal.execution.steps.AssignMutableWorkspaceStep.execute(AssignMutableWorkspaceStep.java:22)
+2026-11-20T10:44:59.0685616Z 	at org.gradle.internal.execution.steps.ChoosePipelineStep.execute(ChoosePipelineStep.java:40)
+2026-11-20T10:44:59.0686632Z 	at org.gradle.internal.execution.steps.ChoosePipelineStep.execute(ChoosePipelineStep.java:23)
+2026-11-20T10:44:59.0687835Z 	at org.gradle.internal.execution.steps.ExecuteWorkBuildOperationFiringStep.lambda$execute$2(ExecuteWorkBuildOperationFiringStep.java:67)
+2026-11-20T10:44:59.0689606Z 	at org.gradle.internal.execution.steps.ExecuteWorkBuildOperationFiringStep.execute(ExecuteWorkBuildOperationFiringStep.java:67)
+2026-11-20T10:44:59.0691012Z 	at org.gradle.internal.execution.steps.ExecuteWorkBuildOperationFiringStep.execute(ExecuteWorkBuildOperationFiringStep.java:39)
+2026-11-20T10:44:59.0692229Z 	at org.gradle.internal.execution.steps.IdentityCacheStep.execute(IdentityCacheStep.java:46)
+2026-11-20T10:44:59.0693176Z 	at org.gradle.internal.execution.steps.IdentityCacheStep.execute(IdentityCacheStep.java:34)
+2026-11-20T10:44:59.0694156Z 	at org.gradle.internal.execution.steps.IdentifyStep.execute(IdentifyStep.java:48)
+2026-11-20T10:44:59.0695055Z 	at org.gradle.internal.execution.steps.IdentifyStep.execute(IdentifyStep.java:35)
+2026-11-20T10:44:59.0696059Z 	at org.gradle.internal.execution.impl.DefaultExecutionEngine$1.execute(DefaultExecutionEngine.java:64)
+2026-11-20T10:44:59.0697213Z 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.executeIfValid(ExecuteActionsTaskExecuter.java:127)
+2026-11-20T10:44:59.0698527Z 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.execute(ExecuteActionsTaskExecuter.java:116)
+2026-11-20T10:44:59.0700182Z 	at org.gradle.api.internal.tasks.execution.ProblemsTaskPathTrackingTaskExecuter.execute(ProblemsTaskPathTrackingTaskExecuter.java:41)
+2026-11-20T10:44:59.0701634Z 	at org.gradle.api.internal.tasks.execution.FinalizePropertiesTaskExecuter.execute(FinalizePropertiesTaskExecuter.java:46)
+2026-11-20T10:44:59.0703047Z 	at org.gradle.api.internal.tasks.execution.ResolveTaskExecutionModeExecuter.execute(ResolveTaskExecutionModeExecuter.java:51)
+2026-11-20T10:44:59.0704843Z 	at org.gradle.api.internal.tasks.execution.SkipTaskWithNoActionsExecuter.execute(SkipTaskWithNoActionsExecuter.java:57)
+2026-11-20T10:44:59.0706038Z 	at org.gradle.api.internal.tasks.execution.SkipOnlyIfTaskExecuter.execute(SkipOnlyIfTaskExecuter.java:74)
+2026-11-20T10:44:59.0707243Z 	at org.gradle.api.internal.tasks.execution.CatchExceptionTaskExecuter.execute(CatchExceptionTaskExecuter.java:36)
+2026-11-20T10:44:59.0708411Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.executeTask(EventFiringTaskExecuter.java:77)
+2026-11-20T10:44:59.0709898Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:55)
+2026-11-20T10:44:59.0710952Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:52)
+2026-11-20T10:44:59.0712254Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:210)
+2026-11-20T10:44:59.0713699Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:205)
+2026-11-20T10:44:59.0715051Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+2026-11-20T10:44:59.0716239Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+2026-11-20T10:44:59.0717465Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+2026-11-20T10:44:59.0719062Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+2026-11-20T10:44:59.0720312Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:54)
+2026-11-20T10:44:59.0721421Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter.execute(EventFiringTaskExecuter.java:52)
+2026-11-20T10:44:59.0722474Z 	at org.gradle.execution.plan.LocalTaskNodeExecutor.execute(LocalTaskNodeExecutor.java:42)
+2026-11-20T10:44:59.0723646Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:331)
+2026-11-20T10:44:59.0724921Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:318)
+2026-11-20T10:44:59.0726382Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.lambda$execute$0(DefaultTaskExecutionGraph.java:314)
+2026-11-20T10:44:59.0727622Z 	at org.gradle.internal.operations.CurrentBuildOperationRef.with(CurrentBuildOperationRef.java:85)
+2026-11-20T10:44:59.0732929Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:314)
+2026-11-20T10:44:59.0734536Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
+2026-11-20T10:44:59.0735944Z 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(DefaultPlanExecutor.java:459)
+2026-11-20T10:44:59.0736922Z 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:376)
+2026-11-20T10:44:59.0737976Z 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
+2026-11-20T10:44:59.0739290Z 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:48)
+2026-11-20T10:44:59.0739867Z 
+2026-11-20T10:44:59.0739879Z 
+2026-11-20T10:44:59.0740090Z BUILD FAILED in 1m 24s
+2026-11-20T10:44:59.1209722Z 137 actionable tasks: 137 executed
+2026-11-20T10:44:59.4799493Z ##[error]Process completed with exit code 1.
