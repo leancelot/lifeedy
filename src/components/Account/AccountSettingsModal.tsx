@@ -121,7 +121,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     updateDownloadState,
     checkForUpdatesNow,
     startInAppUpdate,
-    openPlayStoreUpdate,
     openUnknownSourcesAndAwaitReturn,
     retryInstallPendingApk,
   } = useApp();
@@ -982,11 +981,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     {installedAppVersion}
                     {installedBuildNumber > 0 ? ` · #${installedBuildNumber}` : ''}
                     {' · '}
-                    {distributionChannel === 'playStore'
-                      ? 'Play Store'
-                      : distributionChannel === 'githubApk'
-                      ? 'APK Direto'
-                      : 'Web'}
+                    {distributionChannel === 'githubApk' ? 'APK Direto' : 'Web'}
                   </span>
                 </div>
 
@@ -1163,16 +1158,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
                       {!isDownloadingNow && updateDownloadState.status !== 'permission_required' && (
                         <div className="flex flex-wrap gap-2">
-                          {distributionChannel === 'playStore' ? (
-                            <button
-                              type="button"
-                              onClick={() => void openPlayStoreUpdate()}
-                              className="pressable min-h-[38px] px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                              <span>Atualizar na Play Store</span>
-                            </button>
-                          ) : nativeSelfUpdate &&
+                          {nativeSelfUpdate &&
                             installTarget &&
                             (installTarget.kind === 'release_apk' ||
                               installTarget.kind === 'actions_artifact_zip') ? (

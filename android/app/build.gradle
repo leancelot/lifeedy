@@ -41,25 +41,13 @@ android {
         buildConfig true
     }
 
-    flavorDimensions "distribution"
-    productFlavors {
-        githubApk {
-            dimension "distribution"
-            isDefault true
-            buildConfigField "String", "DISTRIBUTION_CHANNEL", '"githubApk"'
-        }
-        playStore {
-            dimension "distribution"
-            buildConfigField "String", "DISTRIBUTION_CHANNEL", '"playStore"'
-        }
-    }
-
     defaultConfig {
         applicationId "com.vidaorganizada.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode resolvedVersionCode
         versionName resolvedVersionName
+        buildConfigField "String", "DISTRIBUTION_CHANNEL", '"githubApk"'
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

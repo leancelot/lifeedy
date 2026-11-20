@@ -15,7 +15,7 @@ export interface AndroidPermissionsStatus {
   bankListener: boolean;
   installPackages: boolean;
   supportsSelfUpdate: boolean;
-  distributionChannel: 'githubApk' | 'playStore' | 'web';
+  distributionChannel: 'githubApk' | 'web';
   sdkInt: number;
   versionName: string;
   versionCode: number;

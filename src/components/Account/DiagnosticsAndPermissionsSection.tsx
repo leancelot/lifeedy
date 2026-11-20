@@ -433,7 +433,7 @@ export const DiagnosticsAndPermissionsSection: React.FC<DiagnosticsAndPermission
         {nativeAndroid && (
           <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-2">
             <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
-              Canal: {distributionChannel === 'playStore' ? 'Google Play Store' : 'APK Direto (GitHub)'}
+              Canal: APK Direto (GitHub)
             </span>
             <button
               type="button"

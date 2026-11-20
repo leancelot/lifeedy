@@ -211,22 +211,18 @@ public class AppHealthPlugin extends Plugin {
         boolean bankListenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(context)
                 .contains(context.getPackageName());
 
-        String channel = BuildConfig.DISTRIBUTION_CHANNEL != null
-                ? BuildConfig.DISTRIBUTION_CHANNEL
-                : "githubApk";
-        boolean supportsSelfUpdate = "githubApk".equals(channel);
+        String channel = "githubApk";
+        boolean supportsSelfUpdate = true;
 
         boolean installPackagesAllowed = false;
-        if (supportsSelfUpdate) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                try {
-                    installPackagesAllowed = context.getPackageManager().canRequestPackageInstalls();
-                } catch (Exception ignored) {
-                    installPackagesAllowed = false;
-                }
-            } else {
-                installPackagesAllowed = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                installPackagesAllowed = context.getPackageManager().canRequestPackageInstalls();
+            } catch (Exception ignored) {
+                installPackagesAllowed = false;
             }
+        } else {
+            installPackagesAllowed = true;
         }
 
         String versionName = "1.1.0";

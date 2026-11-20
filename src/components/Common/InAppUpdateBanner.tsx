@@ -3,7 +3,6 @@ import {
   AlertCircle,
   CheckCircle2,
   Download,
-  ExternalLink,
   RefreshCw,
   ShieldCheck,
   Sparkles,
@@ -28,11 +27,9 @@ export const InAppUpdateBanner: React.FC = () => {
     appUpdateResult,
     installedAppVersion,
     installedBuildNumber,
-    distributionChannel,
     updateDownloadState,
     isUpdateBannerDismissed,
     startInAppUpdate,
-    openPlayStoreUpdate,
     openUnknownSourcesAndAwaitReturn,
     retryInstallPendingApk,
     dismissUpdateBanner,
@@ -40,7 +37,6 @@ export const InAppUpdateBanner: React.FC = () => {
   } = useApp();
 
   const nativeAndroid = isNativeSelfUpdateSupported();
-  const isPlayStoreBuild = distributionChannel === 'playStore';
   const isFlowActive = updateDownloadState.status !== 'idle';
   const hasVisibleUpdate = Boolean(appUpdateResult?.hasUpdate && !isUpdateBannerDismissed);
 
@@ -52,7 +48,6 @@ export const InAppUpdateBanner: React.FC = () => {
   const target = resolveInstallableUpdateTarget(appUpdateResult, cfg.token);
   const canDirectSelfInstall =
     nativeAndroid &&
-    !isPlayStoreBuild &&
     Boolean(target && (target.kind === 'release_apk' || target.kind === 'actions_artifact_zip'));
 
   const isBusy =
@@ -139,7 +134,7 @@ export const InAppUpdateBanner: React.FC = () => {
       )}
 
       {/* Unknown sources permission prompt */}
-      {updateDownloadState.status === 'permission_required' && !isPlayStoreBuild && (
+      {updateDownloadState.status === 'permission_required' && (
         <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 space-y-2.5">
           <div className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200">
             <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
@@ -196,16 +191,7 @@ export const InAppUpdateBanner: React.FC = () => {
         updateDownloadState.status !== 'permission_required' &&
         updateDownloadState.status !== 'installer_launched' && (
           <div className="flex flex-wrap items-center gap-2">
-            {isPlayStoreBuild ? (
-              <button
-                type="button"
-                onClick={() => void openPlayStoreUpdate()}
-                className="pressable min-h-[40px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Atualizar na Play Store</span>
-              </button>
-            ) : canDirectSelfInstall ? (
+            {canDirectSelfInstall ? (
               <button
                 type="button"
                 onClick={() => void startInAppUpdate()}

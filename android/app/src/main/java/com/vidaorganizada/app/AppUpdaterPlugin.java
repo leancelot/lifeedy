@@ -65,15 +65,12 @@ public class AppUpdaterPlugin extends Plugin {
         }
         try {
             PackageInfo info = getPackageInfoCompat(context, context.getPackageName());
-            String channel = BuildConfig.DISTRIBUTION_CHANNEL != null
-                ? BuildConfig.DISTRIBUTION_CHANNEL
-                : "githubApk";
             JSObject res = new JSObject();
             res.put("packageName", context.getPackageName());
             res.put("versionName", info.versionName != null ? info.versionName : "1.0.0");
             res.put("versionCode", PackageInfoCompat.getLongVersionCode(info));
-            res.put("distributionChannel", channel);
-            res.put("supportsSelfUpdate", "githubApk".equals(channel));
+            res.put("distributionChannel", "githubApk");
+            res.put("supportsSelfUpdate", true);
             call.resolve(res);
         } catch (Exception e) {
             call.reject("Não foi possível ler a versão instalada: " + e.getMessage());
@@ -81,45 +78,12 @@ public class AppUpdaterPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void openPlayStoreListing(PluginCall call) {
-        Context context = getContext();
-        if (context == null) {
-            call.reject("Contexto Android indisponível.");
-            return;
-        }
-        String pkg = context.getPackageName();
-        try {
-            Intent marketIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + pkg));
-            marketIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            context.startActivity(marketIntent);
-            JSObject res = new JSObject();
-            res.put("opened", true);
-            call.resolve(res);
-        } catch (Exception ignored) {
-            try {
-                Intent webIntent = new Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse("https://play.google.com/store/apps/details?id=" + pkg)
-                );
-                webIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                context.startActivity(webIntent);
-                JSObject res = new JSObject();
-                res.put("opened", true);
-                call.resolve(res);
-            } catch (Exception e) {
-                call.reject("Não foi possível abrir a página na Play Store.");
-            }
-        }
-    }
-
-    @PluginMethod
     public void canRequestPackageInstalls(PluginCall call) {
         Context context = getContext();
-        boolean supportsSelf = "githubApk".equals(BuildConfig.DISTRIBUTION_CHANNEL);
-        boolean canInstall = supportsSelf && canInstallPackages(context);
+        boolean canInstall = canInstallPackages(context);
         JSObject res = new JSObject();
         res.put("canInstall", canInstall);
-        res.put("supportsSelfUpdate", supportsSelf);
+        res.put("supportsSelfUpdate", true);
         res.put("sdkInt", Build.VERSION.SDK_INT);
         call.resolve(res);
     }
@@ -228,11 +192,6 @@ public class AppUpdaterPlugin extends Plugin {
 
     @PluginMethod
     public void downloadAndInstallApk(PluginCall call) {
-        if (!"githubApk".equals(BuildConfig.DISTRIBUTION_CHANNEL)) {
-            call.reject("Esta versão foi distribuída pela Google Play Store e deve ser atualizada pela loja.");
-            return;
-        }
-
         String downloadUrl = call.getString("url", "").trim();
         String token = call.getString("token", "").trim();
         String requestedName = call.getString("fileName", "Lifeedy-update.apk").trim();

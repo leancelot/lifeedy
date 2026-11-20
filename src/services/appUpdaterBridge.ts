@@ -5,7 +5,7 @@ export interface InstalledAppInfo {
   packageName: string;
   versionName: string;
   versionCode: number;
-  distributionChannel?: 'githubApk' | 'playStore';
+  distributionChannel?: 'githubApk';
   supportsSelfUpdate?: boolean;
 }
 
@@ -34,7 +34,6 @@ export interface DownloadAndInstallResult {
 
 interface AppUpdaterPluginInterface {
   getInstalledAppInfo(): Promise<InstalledAppInfo>;
-  openPlayStoreListing(): Promise<{ opened: boolean }>;
   canRequestPackageInstalls(): Promise<{ canInstall: boolean; supportsSelfUpdate?: boolean; sdkInt: number }>;
   openInstallUnknownAppsSettings(): Promise<{ opened: boolean }>;
   hasPendingApk(): Promise<PendingApkInfo>;
@@ -64,16 +63,6 @@ export async function getInstalledAppInfo(): Promise<InstalledAppInfo | null> {
     return await AppUpdater.getInstalledAppInfo();
   } catch {
     return null;
-  }
-}
-
-export async function openPlayStoreListing(): Promise<boolean> {
-  if (!isNativeSelfUpdateSupported()) return false;
-  try {
-    const res = await AppUpdater.openPlayStoreListing();
-    return Boolean(res?.opened);
-  } catch {
-    return false;
   }
 }
 
