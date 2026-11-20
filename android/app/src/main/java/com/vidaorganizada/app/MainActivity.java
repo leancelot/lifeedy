@@ -86,6 +86,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BiometricLockPlugin.class);
         registerPlugin(AppUpdaterPlugin.class);
         registerPlugin(AppHealthPlugin.class);
+        registerPlugin(NativeGoogleAuthPlugin.class);
         super.onCreate(savedInstanceState);
 
         WebView mainWebView = null;

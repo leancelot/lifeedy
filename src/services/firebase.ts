@@ -14,6 +14,11 @@ import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { firebaseConfig } from '../config/firebaseConfig';
 import { getConfiguredAppServerUrl } from '../utils/appServerUrl';
+import {
+  authorizeNativeGoogle,
+  clearNativeGoogleToken,
+  isNativeGoogleAuthSupported,
+} from './nativeGoogleAuthBridge';
 
 export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.authDomain
@@ -28,6 +33,8 @@ export const SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/tasks',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
 ];
 
 // Non-sensitive display profile persisted for continuity across reloads / WebView restarts.
@@ -47,6 +54,7 @@ export interface PersistedUserProfile {
 let isSigningIn = false;
 let cachedAccessToken: string | null = null;
 let cachedTokenExpiresAt = 0;
+let inFlightSilentRefresh: Promise<string | null> | null = null;
 
 export interface GoogleSignInResult {
   user?: User;
@@ -111,15 +119,24 @@ export function persistedProfileToUser(profile: PersistedUserProfile): User {
 }
 
 export const mapGoogleAuthError = (error: unknown): string => {
-  const err = error as { code?: string; message?: string } | null;
-  const code = err?.code || '';
+  const err = error as { code?: string | number; message?: string } | null;
+  const code = err?.code !== undefined && err?.code !== null ? String(err.code) : '';
   const msg = err?.message || '';
 
-  if (msg.includes('VITE_APP_URL')) {
-    return 'URL do servidor não configurada neste APK. Informe o link do app em Configurações → Conta → Servidor ou defina APP_URL nos Secrets do GitHub.';
+  if (code === '10' || msg.includes('10:') || msg.includes('DEVELOPER_ERROR')) {
+    return 'Falta cadastrar a impressão SHA-1 deste APK no Google Cloud Console (ID do cliente Android para com.vidaorganizada.app).';
   }
-  if (!isFirebaseConfigured || msg.includes('não configurada')) {
-    return 'Configuração de login Google não carregada no servidor. Atualize a página e tente novamente.';
+  if (code === 'PLAY_SERVICES_UNAVAILABLE' || msg.includes('Play Services')) {
+    return 'Google Play Services não disponível ou desatualizado neste aparelho.';
+  }
+  if (code === '12500' || msg.includes('12500')) {
+    return 'O Google recusou o login neste APK. Verifique a Tela de consentimento OAuth (adicione seu e-mail em Usuários de teste) e o SHA-1 no Google Cloud.';
+  }
+  if (code === '7' || code === 'auth/network-request-failed' || msg.includes('NETWORK_ERROR')) {
+    return 'Falha de conexão com a internet. Verifique sua rede e tente novamente.';
+  }
+  if (msg.includes('VITE_APP_URL')) {
+    return 'Login nativo indisponível neste aparelho sem Google Play Services.';
   }
   if (code === 'auth/popup-blocked') {
     return 'O navegador bloqueou a janela de login. Permita pop-ups para este site e tente novamente.';
@@ -127,14 +144,14 @@ export const mapGoogleAuthError = (error: unknown): string => {
   if (code === 'auth/unauthorized-domain') {
     return 'Este endereço ainda não está autorizado para autenticação com o Google.';
   }
-  if (code === 'auth/network-request-failed') {
-    return 'Falha de conexão com a internet. Verifique sua rede e tente novamente.';
-  }
   if (code === 'auth/operation-not-allowed') {
     return 'O login com Conta Google não está ativado neste projeto.';
   }
   if (code === 'auth/internal-error') {
     return 'Erro temporário ao comunicar com o Google. Tente novamente em alguns instantes.';
+  }
+  if (!Capacitor.isNativePlatform() && (!isFirebaseConfigured || msg.includes('não configurada'))) {
+    return 'Configuração de login Google não carregada no servidor. Atualize a página e tente novamente.';
   }
   return 'Não foi possível autenticar com o Google. Tente novamente.';
 };
@@ -245,8 +262,48 @@ export const googleSignIn = async (options?: {
   try {
     isSigningIn = true;
 
-    // Se estiver rodando nativamente no Android (Capacitor APK)
+    // Fluxo nativo no Android APK via Google Play Services AuthorizationClient (sem servidor externo)
     if (Capacitor.isNativePlatform()) {
+      if (isNativeGoogleAuthSupported()) {
+        try {
+          const nativeRes = await authorizeNativeGoogle({
+            scopes: SCOPES,
+            silentOnly: false,
+            accountEmail: options?.loginHint || undefined,
+          });
+
+          if (nativeRes.cancelled) {
+            return null;
+          }
+
+          if (nativeRes.authorized && nativeRes.accessToken) {
+            const nativeUser = await completeNativeGoogleAuth(nativeRes.accessToken);
+            if (!nativeUser) {
+              throw new Error('Não foi possível obter os dados da sua conta Google.');
+            }
+            return {
+              user: nativeUser,
+              accessToken: nativeRes.accessToken,
+              expiresAt: cachedTokenExpiresAt,
+            };
+          }
+
+          throw new Error('Não foi possível concluir a autorização nativa do Google.');
+        } catch (nativeError: any) {
+          const code = String(nativeError?.code || '');
+          const baseUrl = getConfiguredAppServerUrl();
+          // Somente usa bridge Web opcional se Play Services não existir no aparelho E o usuário tiver configurado APP_URL
+          if (code === 'PLAY_SERVICES_UNAVAILABLE' && baseUrl) {
+            const hintParam = options?.loginHint
+              ? `&login_hint=${encodeURIComponent(options.loginHint)}`
+              : '';
+            await Browser.open({ url: `${baseUrl}?connect_native=1${hintParam}`, windowName: '_system' });
+            return { isNativeRedirect: true };
+          }
+          throw nativeError;
+        }
+      }
+
       const baseUrl = getConfiguredAppServerUrl();
       if (!baseUrl) {
         throw new Error('Autenticação no APK requer VITE_APP_URL configurado.');
@@ -358,15 +415,48 @@ export const completeNativeGoogleAuth = async (
 };
 
 export const getAccessToken = async (): Promise<string | null> => {
-  if (cachedAccessToken && isAccessTokenExpiredOrNearExpiry(10_000)) {
-    return null;
+  if (cachedAccessToken && !isAccessTokenExpiredOrNearExpiry(10_000)) {
+    return cachedAccessToken;
   }
-  return cachedAccessToken;
+
+  // Renovação silenciosa automática no APK Android via Google Play Services
+  if (isNativeGoogleAuthSupported()) {
+    const profile = loadPersistedUserProfile();
+    if (profile?.source === 'native_oauth') {
+      if (!inFlightSilentRefresh) {
+        inFlightSilentRefresh = (async () => {
+          try {
+            const res = await authorizeNativeGoogle({
+              scopes: SCOPES,
+              silentOnly: true,
+              accountEmail: profile.email || undefined,
+            });
+            if (res.authorized && res.accessToken) {
+              setSessionToken(res.accessToken, DEFAULT_TOKEN_TTL_SEC);
+              return res.accessToken;
+            }
+          } catch {
+            // Silent refresh may fail if user needs to consent interactively
+          } finally {
+            inFlightSilentRefresh = null;
+          }
+          return null;
+        })();
+      }
+      return await inFlightSilentRefresh;
+    }
+  }
+
+  return null;
 };
 
 export const logout = async () => {
+  const tokenToClear = cachedAccessToken;
   clearPersistedUserProfile();
   setSessionToken(null);
+  if (tokenToClear && isNativeGoogleAuthSupported()) {
+    await clearNativeGoogleToken(tokenToClear);
+  }
   if (auth) {
     await auth.signOut();
   }

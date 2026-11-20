@@ -153,6 +153,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [hasCustomServerUrl, setHasCustomServerUrl] = useState<boolean>(() =>
     Boolean(getCustomAppServerUrl())
   );
+  const [isTestingServerUrl, setIsTestingServerUrl] = useState<boolean>(false);
 
   useBackHandler(isOpen, () => {
     if (isSyncingAction) return false;
@@ -342,7 +343,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     await handleCheckUpdates(updated.repo, updated.token);
   };
 
-  const handleSaveServerUrl = (e: React.FormEvent) => {
+  const handleSaveServerUrl = async (e: React.FormEvent) => {
     e.preventDefault();
     hapticImpactLight();
     const res = saveCustomAppServerUrl(serverUrlDraft);
@@ -352,8 +353,35 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     }
     setServerUrlDraft(res.url);
     setHasCustomServerUrl(true);
-    hapticSuccess();
-    showTempFeedback('success', 'URL do servidor salva! Login Google e leitura por IA liberados.');
+
+    setIsTestingServerUrl(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    try {
+      const probe = await fetch(`${res.url}/api/health`, { signal: controller.signal });
+      if (probe.ok) {
+        hapticSuccess();
+        showTempFeedback('success', 'Servidor conectado e ativo! Leitura de cupons por IA na nuvem pronta.');
+      } else if (probe.status === 404) {
+        showTempFeedback(
+          'error',
+          'URL salva, mas respondeu HTTP 404 (página não publicada). Implante o app Web primeiro e cole a URL pública gerada.'
+        );
+      } else {
+        showTempFeedback(
+          'error',
+          `URL salva, mas o servidor respondeu HTTP ${probe.status}. Verifique se o app Web está acessível.`
+        );
+      }
+    } catch {
+      showTempFeedback(
+        'error',
+        'URL salva, mas não foi possível testar agora. Confirme se esse endereço abre no navegador do celular.'
+      );
+    } finally {
+      clearTimeout(timeoutId);
+      setIsTestingServerUrl(false);
+    }
   };
 
   const handleClearCustomServerUrl = () => {
@@ -384,8 +412,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
   const nativeSelfUpdate = isNativeSelfUpdateSupported();
   const isNativeApk = Capacitor.isNativePlatform();
-  const activeServerUrl = getConfiguredAppServerUrl();
-  const canConnectGoogle = isNativeApk ? Boolean(activeServerUrl) : isFirebaseConfigured;
+  const canConnectGoogle = isNativeApk ? true : isFirebaseConfigured;
   const installTarget = resolveInstallableUpdateTarget(appUpdateResult, githubToken);
   const isDownloadingNow =
     updateDownloadState.status === 'downloading' ||
@@ -756,7 +783,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
                         <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                        <span>Servidor de Login e IA (APK)</span>
+                        <span>Servidor opcional de IA na nuvem (APK)</span>
                       </span>
                       {hasCustomServerUrl && (
                         <button
@@ -769,7 +796,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       )}
                     </div>
                     <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                      Endereço Web do Lifeedy usado pelo APK para autenticar com o Google e ler cupons por IA.
+                      Opcional. O Login Google e o leitor de cupons local já funcionam direto neste APK sem servidor.
                     </p>
                     <div className="flex gap-2">
                       <input
@@ -781,10 +808,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       />
                       <button
                         type="submit"
-                        disabled={!serverUrlDraft.trim()}
+                        disabled={!serverUrlDraft.trim() || isTestingServerUrl}
                         className="pressable h-10 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-semibold cursor-pointer shrink-0 whitespace-nowrap"
                       >
-                        Salvar URL
+                        {isTestingServerUrl ? 'Testando...' : 'Salvar URL'}
                       </button>
                     </div>
                   </form>

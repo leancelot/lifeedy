@@ -121,12 +121,23 @@ jobs:
             echo "aab_dir=android/app/build/outputs/bundle/playStoreRelease" >> "$GITHUB_OUTPUT"
           fi
 
+          APK_SHA1=""
+          if [ "$HAS_KEYSTORE" = "true" ] && [ -f "$ANDROID_KEYSTORE_PATH" ]; then
+            APK_SHA1=$(keytool -list -v -keystore "$ANDROID_KEYSTORE_PATH" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" 2>/dev/null | sed -n 's/^[[:space:]]*SHA1:[[:space:]]*//p' | head -n 1 || true)
+          elif [ -f "$HOME/.android/debug.keystore" ]; then
+            APK_SHA1=$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | sed -n 's/^[[:space:]]*SHA1:[[:space:]]*//p' | head -n 1 || true)
+          fi
+
           {
             echo "### Resumo da Compilação Android"
             echo "- **Destino:** \`${BUILD_TARGET}\`"
-            echo "- **Assinatura:** $([ "$HAS_KEYSTORE" = "true" ] && echo "Keystore de Release configurada" || echo "Assinatura Debug padrão (APK direto)")"
-            echo "- **Firebase Auth:** $([ -n "${{ secrets.VITE_FIREBASE_API_KEY }}" ] && echo "Ativo via Secrets" || echo "Desativado (modo 100% offline)")"
-            echo "- **Servidor APP_URL:** $([ -n "${{ secrets.APP_URL || secrets.VITE_APP_URL }}" ] && echo "Configurado via Secret" || echo "Não configurado (OCR local no dispositivo)")"
+            echo "- **Assinatura:** $([ "$HAS_KEYSTORE" = "true" ] && echo "Keystore de Release configurada (SHA-1 fixo)" || echo "Assinatura Debug padrão (SHA-1 gerado neste build)")"
+            echo "- **Pacote Android:** \`com.vidaorganizada.app\`"
+            if [ -n "$APK_SHA1" ]; then
+              echo "- **SHA-1 do APK (copie para o Google Cloud Console):** \`${APK_SHA1}\`"
+            fi
+            echo "- **Login Google (APK):** Nativo direto no Android (sem servidor externo)"
+            echo "- **Servidor opcional (IA na nuvem):** $([ -n "${{ secrets.APP_URL || secrets.VITE_APP_URL }}" ] && echo "Configurado via Secret" || echo "Opcional · OCR local no dispositivo ativo")"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Preparar APK versionado e SHA-256
