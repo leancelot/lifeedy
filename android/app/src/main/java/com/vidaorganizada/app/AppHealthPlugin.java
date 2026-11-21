@@ -245,6 +245,8 @@ public class AppHealthPlugin extends Plugin {
                 Manifest.permission.CAMERA
         ) == PackageManager.PERMISSION_GRANTED;
 
+        String apkSha1 = NativeGoogleAuthPlugin.getAppSha1(context);
+
         JSObject res = new JSObject();
         res.put("notifications", notificationsEnabled);
         res.put("exactAlarms", exactAlarmsAllowed);
@@ -257,6 +259,9 @@ public class AppHealthPlugin extends Plugin {
         res.put("sdkInt", Build.VERSION.SDK_INT);
         res.put("versionName", versionName);
         res.put("versionCode", versionCode);
+        if (apkSha1 != null) {
+            res.put("apkSha1", apkSha1);
+        }
         call.resolve(res);
     }
 

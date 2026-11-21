@@ -114,6 +114,8 @@ interface AppContextType {
   accessToken: string | null;
   workspaceAuthStatus: 'disconnected' | 'connected' | 'refreshing' | 'needs_reauth';
   isAuthenticating: boolean;
+  authError: string | null;
+  clearAuthError: () => void;
   signInWithGoogle: () => Promise<string | null>;
   refreshWorkspaceSession: (options?: { interactiveIfNeeded?: boolean }) => Promise<string | null>;
   signOut: () => Promise<void>;
@@ -319,6 +321,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   >(() => (loadPersistedUserProfile() ? 'needs_reauth' : 'disconnected'));
   const [tokenExpiresAt, setTokenExpiresAt] = useState<number>(0);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const clearAuthError = useCallback(() => setAuthError(null), []);
 
   const userRef = useRef<User | null>(user);
   userRef.current = user;
@@ -637,6 +641,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         if (token) {
           setIsAuthenticating(true);
+          setAuthError(null);
           sessionExpiredNotifiedRef.current = false;
           const loggedUser = await completeNativeGoogleAuth(token, idToken, expiresInSec);
           setAccessToken(token);
@@ -670,6 +675,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       } catch (err) {
         console.error('Falha ao processar login nativo do Google:', err);
+        setAuthError(mapGoogleAuthError(err));
       } finally {
         if (isMounted) setIsAuthenticating(false);
       }
@@ -704,6 +710,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .then((res) => {
         if (!active || !res?.accessToken || !res.user) return;
         sessionExpiredNotifiedRef.current = false;
+        setAuthError(null);
         setUser(res.user);
         setAccessToken(res.accessToken);
         setTokenExpiresAt(res.expiresAt);
@@ -711,6 +718,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
       .catch((err) => {
         console.warn('Erro ao finalizar login Google via redirecionamento:', err);
+        if (active) setAuthError(mapGoogleAuthError(err));
       });
     return () => {
       active = false;
@@ -1034,11 +1042,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const signInWithGoogle = useCallback(async (): Promise<string | null> => {
     setIsAuthenticating(true);
+    setAuthError(null);
     try {
       const result = await googleSignIn({
+        allowRedirectFallback: !Capacitor.isNativePlatform(),
         loginHint: userRef.current?.email || undefined,
       });
-      if (!result) return null;
+
+      if (!result) {
+        setAuthError('Não foi possível concluir o login com o Google. Tente novamente.');
+        return null;
+      }
+
+      if (result.cancelled) {
+        const cancelMsg = result.sha1
+          ? `Login não concluído após selecionar a conta. Se você não cancelou manualmente, cadastre a impressão SHA-1 deste APK (${result.sha1}) no cliente Android (com.vidaorganizada.app) no Google Cloud Console.`
+          : 'Login com Google cancelado antes de concluir. Se a janela fechou sozinha, permita pop-ups ou tente novamente.';
+        setAuthError(cancelMsg);
+        return null;
+      }
 
       if (result.isNativeRedirect || result.isWebRedirect) {
         return null;
@@ -1047,6 +1069,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (result.user && result.accessToken) {
         sessionExpiredNotifiedRef.current = false;
         cloudOverwriteGuardRef.current = false;
+        setAuthError(null);
         setUser(result.user);
         setAccessToken(result.accessToken);
         setTokenExpiresAt(result.expiresAt || Date.now() + 3500 * 1000);
@@ -1061,10 +1084,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         return result.accessToken;
       }
+      setAuthError('O Google não retornou a autorização necessária. Tente novamente.');
       return null;
     } catch (err) {
       console.warn('Aviso de login:', err);
       const userMessage = mapGoogleAuthError(err);
+      setAuthError(userMessage);
+      recordAppError('auth.googleSignIn', err);
       notificationsEngine.pushAppNotification({
         id: 'notif-auth-' + Date.now(),
         title: 'Aviso de Login',
@@ -1094,6 +1120,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const signOut = useCallback(async () => {
     inspectedTokensRef.current.clear();
     cloudOverwriteGuardRef.current = false;
+    setAuthError(null);
     setPendingDriveRestore(null);
     setAutoRestoredNotice(null);
     await fbLogout();
@@ -1383,6 +1410,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         accessToken,
         workspaceAuthStatus,
         isAuthenticating,
+        authError,
+        clearAuthError,
         signInWithGoogle,
         refreshWorkspaceSession,
         signOut,

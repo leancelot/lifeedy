@@ -4,6 +4,11 @@ import android.accounts.Account;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.Context;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.os.Build;
+import android.os.Bundle;
 import androidx.activity.result.ActivityResult;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.IntentSenderRequest;
@@ -25,6 +30,7 @@ import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.common.api.CommonStatusCodes;
 import com.google.android.gms.common.api.Scope;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -32,6 +38,8 @@ import org.json.JSONException;
 
 @CapacitorPlugin(name = "NativeGoogleAuth")
 public class NativeGoogleAuthPlugin extends Plugin {
+
+    private static final String STATE_PENDING_CALL_ID = "native_google_auth_pending_call_id";
 
     private static final List<String> DEFAULT_SCOPES = Arrays.asList(
         "https://www.googleapis.com/auth/drive.file",
@@ -53,6 +61,26 @@ public class NativeGoogleAuthPlugin extends Plugin {
         );
     }
 
+    @Override
+    protected Bundle saveInstanceState() {
+        Bundle state = super.saveInstanceState();
+        if (state == null) {
+            state = new Bundle();
+        }
+        if (pendingCallId != null) {
+            state.putString(STATE_PENDING_CALL_ID, pendingCallId);
+        }
+        return state;
+    }
+
+    @Override
+    protected void restoreState(Bundle state) {
+        super.restoreState(state);
+        if (state != null && pendingCallId == null) {
+            pendingCallId = state.getString(STATE_PENDING_CALL_ID, null);
+        }
+    }
+
     @PluginMethod
     public void isAvailable(PluginCall call) {
         Context context = getContext();
@@ -68,6 +96,10 @@ public class NativeGoogleAuthPlugin extends Plugin {
         JSObject res = new JSObject();
         res.put("available", statusCode == ConnectionResult.SUCCESS);
         res.put("statusCode", statusCode);
+        String sha1 = getAppSha1(context);
+        if (sha1 != null) {
+            res.put("sha1", sha1);
+        }
         call.resolve(res);
     }
 
@@ -195,28 +227,37 @@ public class NativeGoogleAuthPlugin extends Plugin {
         }
 
         try {
-            if (activityResult.getResultCode() == Activity.RESULT_CANCELED) {
-                JSObject res = new JSObject();
-                res.put("authorized", false);
-                res.put("cancelled", true);
-                savedCall.resolve(res);
-                return;
-            }
-
-            if (activityResult.getData() == null) {
-                savedCall.reject("Autorização Google retornou sem dados.", "EMPTY_RESULT");
-                return;
-            }
-
             AppCompatActivity activity = getActivity();
             if (activity == null) {
                 savedCall.reject("Atividade Android indisponível.", "ACTIVITY_UNAVAILABLE");
                 return;
             }
 
-            AuthorizationResult result = Identity.getAuthorizationClient(activity)
-                .getAuthorizationResultFromIntent(activityResult.getData());
-            resolveAuthorizationResult(savedCall, result);
+            // Sempre inspeciona o Intent retornado antes de presumir cancelamento:
+            // o Google Play Services pode devolver RESULT_CANCELED junto com ApiException(10/12500).
+            if (activityResult.getData() != null) {
+                AuthorizationResult result = Identity.getAuthorizationClient(activity)
+                    .getAuthorizationResultFromIntent(activityResult.getData());
+                if (result != null && result.getAccessToken() != null && !result.getAccessToken().trim().isEmpty()) {
+                    resolveAuthorizationResult(savedCall, result);
+                    return;
+                }
+            }
+
+            if (activityResult.getResultCode() == Activity.RESULT_CANCELED) {
+                JSObject res = new JSObject();
+                res.put("authorized", false);
+                res.put("cancelled", true);
+                res.put("noData", activityResult.getData() == null);
+                String sha1 = getAppSha1(activity);
+                if (sha1 != null) {
+                    res.put("sha1", sha1);
+                }
+                savedCall.resolve(res);
+                return;
+            }
+
+            savedCall.reject("Autorização Google retornou sem dados.", "EMPTY_RESULT");
         } catch (ApiException e) {
             rejectWithGoogleException(savedCall, e);
         } catch (Exception e) {
@@ -259,14 +300,24 @@ public class NativeGoogleAuthPlugin extends Plugin {
                 JSObject res = new JSObject();
                 res.put("authorized", false);
                 res.put("cancelled", true);
+                String sha1 = getContext() != null ? getAppSha1(getContext()) : null;
+                if (sha1 != null) {
+                    res.put("sha1", sha1);
+                }
                 call.resolve(res);
                 return;
             }
-            call.reject(
-                apiEx.getMessage() != null ? apiEx.getMessage() : "Erro na API Google Play Services.",
-                String.valueOf(statusCode),
-                apiEx
-            );
+
+            String baseMsg = apiEx.getMessage() != null
+                ? apiEx.getMessage()
+                : "Erro na API Google Play Services.";
+            if (statusCode == 10 || statusCode == 12500) {
+                String sha1 = getContext() != null ? getAppSha1(getContext()) : null;
+                if (sha1 != null) {
+                    baseMsg = baseMsg + " [SHA-1: " + sha1 + "]";
+                }
+            }
+            call.reject(baseMsg, String.valueOf(statusCode), apiEx);
             return;
         }
 
@@ -287,7 +338,7 @@ public class NativeGoogleAuthPlugin extends Plugin {
                         scopes.add(new Scope(scope.trim()));
                     }
                 } catch (JSONException ignored) {
-                    // Skip malformed entries
+                    // Ignora entradas inválidas
                 }
             }
         }
@@ -298,5 +349,38 @@ public class NativeGoogleAuthPlugin extends Plugin {
             }
         }
         return scopes;
+    }
+
+    @SuppressWarnings("deprecation")
+    static String getAppSha1(Context context) {
+        if (context == null) return null;
+        try {
+            PackageManager pm = context.getPackageManager();
+            String pkg = context.getPackageName();
+            Signature[] signatures = null;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageInfo info = pm.getPackageInfo(pkg, PackageManager.GET_SIGNING_CERTIFICATES);
+                if (info.signingInfo != null) {
+                    signatures = info.signingInfo.hasMultipleSigners()
+                        ? info.signingInfo.getApkContentsSigners()
+                        : info.signingInfo.getSigningCertificateHistory();
+                }
+            } else {
+                PackageInfo info = pm.getPackageInfo(pkg, PackageManager.GET_SIGNATURES);
+                signatures = info.signatures;
+            }
+            if (signatures == null || signatures.length == 0) return null;
+            byte[] certBytes = signatures[0].toByteArray();
+            MessageDigest md = MessageDigest.getInstance("SHA-1");
+            byte[] digest = md.digest(certBytes);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < digest.length; i++) {
+                if (i > 0) sb.append(':');
+                sb.append(String.format("%02X", digest[i] & 0xFF));
+            }
+            return sb.toString();
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 }

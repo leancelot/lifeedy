@@ -3,6 +3,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 export interface NativeGoogleAuthAvailability {
   available: boolean;
   statusCode: number;
+  sha1?: string;
 }
 
 export interface NativeGoogleAuthorizeOptions {
@@ -16,6 +17,8 @@ export interface NativeGoogleAuthorizeResult {
   accessToken?: string;
   grantedScopes?: string[];
   cancelled?: boolean;
+  noData?: boolean;
+  sha1?: string;
   needsResolution?: boolean;
 }
 

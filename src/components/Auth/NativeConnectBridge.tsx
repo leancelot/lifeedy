@@ -91,7 +91,7 @@ export const NativeConnectBridge: React.FC = () => {
 
     try {
       const res = await googleSignIn({ allowRedirectFallback: true, loginHint });
-      if (!res) {
+      if (!res || res.cancelled) {
         setInfoMsg('Login não concluído. Toque no botão abaixo quando estiver pronto para conectar.');
         return;
       }

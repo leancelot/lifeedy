@@ -19,6 +19,7 @@ export interface AndroidPermissionsStatus {
   sdkInt: number;
   versionName: string;
   versionCode: number;
+  apkSha1?: string;
 }
 
 export type MediaPermissionTarget = 'microphone' | 'camera';

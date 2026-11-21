@@ -63,6 +63,9 @@ export interface GoogleSignInResult {
   expiresAt?: number;
   isNativeRedirect?: boolean;
   isWebRedirect?: boolean;
+  cancelled?: boolean;
+  noData?: boolean;
+  sha1?: string;
 }
 
 export function persistUserProfile(
@@ -122,15 +125,17 @@ export const mapGoogleAuthError = (error: unknown): string => {
   const err = error as { code?: string | number; message?: string } | null;
   const code = err?.code !== undefined && err?.code !== null ? String(err.code) : '';
   const msg = err?.message || '';
+  const sha1Match = msg.match(/\[SHA-1:\s*([A-F0-9:]+)\]/i);
+  const sha1Suffix = sha1Match ? ` (SHA-1 deste APK: ${sha1Match[1]})` : '';
 
   if (code === '10' || msg.includes('10:') || msg.includes('DEVELOPER_ERROR')) {
-    return 'Falta cadastrar a impressão SHA-1 deste APK no Google Cloud Console (ID do cliente Android para com.vidaorganizada.app).';
+    return `Falta cadastrar a impressão SHA-1 deste APK no Google Cloud Console para com.vidaorganizada.app${sha1Suffix}.`;
   }
   if (code === 'PLAY_SERVICES_UNAVAILABLE' || msg.includes('Play Services')) {
     return 'Google Play Services não disponível ou desatualizado neste aparelho.';
   }
   if (code === '12500' || msg.includes('12500')) {
-    return 'O Google recusou o login neste APK. Verifique a Tela de consentimento OAuth (adicione seu e-mail em Usuários de teste) e o SHA-1 no Google Cloud.';
+    return `O Google recusou o login neste APK. Verifique Usuários de teste na Tela de consentimento OAuth e o SHA-1 no Google Cloud${sha1Suffix}.`;
   }
   if (code === '7' || code === 'auth/network-request-failed' || msg.includes('NETWORK_ERROR')) {
     return 'Falha de conexão com a internet. Verifique sua rede e tente novamente.';
@@ -149,6 +154,9 @@ export const mapGoogleAuthError = (error: unknown): string => {
   }
   if (code === 'auth/internal-error') {
     return 'Erro temporário ao comunicar com o Google. Tente novamente em alguns instantes.';
+  }
+  if (msg.startsWith('Não foi possível carregar seu perfil Google')) {
+    return msg;
   }
   if (!Capacitor.isNativePlatform() && (!isFirebaseConfigured || msg.includes('não configurada'))) {
     return 'Configuração de login Google não carregada no servidor. Atualize a página e tente novamente.';
@@ -273,7 +281,11 @@ export const googleSignIn = async (options?: {
           });
 
           if (nativeRes.cancelled) {
-            return null;
+            return {
+              cancelled: true,
+              noData: nativeRes.noData,
+              sha1: nativeRes.sha1,
+            };
           }
 
           if (nativeRes.authorized && nativeRes.accessToken) {
@@ -364,7 +376,7 @@ export const googleSignIn = async (options?: {
       error?.code === 'auth/popup-closed-by-user' ||
       error?.code === 'auth/cancelled-popup-request'
     ) {
-      return null;
+      return { cancelled: true };
     }
     console.warn('Falha na autenticação do Google:', error);
     throw error;
@@ -391,24 +403,46 @@ export const completeNativeGoogleAuth = async (
     }
   }
 
-  try {
-    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const syntheticUser = {
-        uid: data.sub || 'google-user-' + Date.now(),
-        displayName: data.name || data.given_name || 'Usuário Google',
-        email: data.email || '',
-        photoURL: data.picture || null,
-        emailVerified: Boolean(data.email_verified),
-      } as unknown as User;
-      persistUserProfile(syntheticUser, 'native_oauth');
-      return syntheticUser;
+  const userInfoEndpoints = [
+    'https://www.googleapis.com/oauth2/v3/userinfo',
+    'https://www.googleapis.com/oauth2/v2/userinfo',
+  ];
+  let lastStatus: number | null = null;
+  let lastNetworkError: unknown = null;
+
+  for (const endpoint of userInfoEndpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const syntheticUser = {
+          uid: data.sub || data.id || 'google-user-' + Date.now(),
+          displayName: data.name || data.given_name || 'Usuário Google',
+          email: data.email || '',
+          photoURL: data.picture || null,
+          emailVerified: Boolean(data.email_verified ?? data.verified_email),
+        } as unknown as User;
+        persistUserProfile(syntheticUser, 'native_oauth');
+        return syntheticUser;
+      }
+      lastStatus = res.status;
+    } catch (err) {
+      lastNetworkError = err;
+      console.warn('Falha ao buscar perfil Google via access token:', err);
     }
-  } catch (err) {
-    console.warn('Falha ao buscar perfil Google via access token:', err);
+  }
+
+  if (lastStatus !== null) {
+    throw new Error(
+      `Não foi possível carregar seu perfil Google (HTTP ${lastStatus}). Verifique as permissões e tente novamente.`
+    );
+  }
+  if (lastNetworkError) {
+    throw new Error(
+      'Não foi possível carregar seu perfil Google por falha de rede. Verifique sua conexão e tente novamente.'
+    );
   }
 
   return null;

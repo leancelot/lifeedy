@@ -94,6 +94,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     user,
     workspaceAuthStatus,
     isAuthenticating,
+    authError,
+    clearAuthError,
     signInWithGoogle,
     signOut,
     driveSyncInfo,
@@ -770,6 +772,26 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       className="pressable min-h-[44px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shrink-0 cursor-pointer disabled:opacity-60 whitespace-nowrap"
                     >
                       {isAuthenticating ? 'Conectando...' : 'Conectar Google'}
+                    </button>
+                  </div>
+                )}
+
+                {authError && (
+                  <div
+                    role="alert"
+                    className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/80 flex items-start justify-between gap-2.5 text-xs text-rose-800 dark:text-rose-200"
+                  >
+                    <div className="flex items-start gap-2 min-w-0">
+                      <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                      <span className="leading-relaxed break-words">{authError}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={clearAuthError}
+                      aria-label="Fechar aviso de login"
+                      className="p-1 rounded-lg text-rose-500 hover:text-rose-700 dark:hover:text-rose-200 cursor-pointer shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
