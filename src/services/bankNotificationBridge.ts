@@ -1,12 +1,34 @@
-import { Capacitor, PluginListenerHandle, registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+import { BankCaptureSourceKind, ManualCaptureAppRule } from '../types';
 
 export interface NativePendingBankEvent {
   id: string;
-  packageName?: string;
+  packageName: string;
   bankName: string;
-  title?: string;
+  sourceKind?: BankCaptureSourceKind;
+  title: string;
   text: string;
   timestamp: number;
+}
+
+export interface InstalledAppInfo {
+  packageName: string;
+  label: string;
+  isBuiltInBank: boolean;
+  isWallet: boolean;
+  isSms: boolean;
+}
+
+export interface NativeCaptureConfig {
+  captureBanksEnabled: boolean;
+  captureWalletEnabled: boolean;
+  captureSmsEnabled: boolean;
+  captureScheduledMessagesEnabled: boolean;
+  manualApps: Array<{
+    packageName: string;
+    label: string;
+    enabled: boolean;
+  }>;
 }
 
 interface BankNotificationListenerPlugin {
@@ -14,10 +36,13 @@ interface BankNotificationListenerPlugin {
   openNotificationAccessSettings(): Promise<void>;
   getPendingNotifications(): Promise<{ notifications: NativePendingBankEvent[] }>;
   clearPendingNotifications(options?: { ids?: string[] }): Promise<void>;
+  getCaptureConfig(): Promise<NativeCaptureConfig>;
+  setCaptureConfig(config: NativeCaptureConfig): Promise<{ saved: boolean }>;
+  getInstalledApps(): Promise<{ apps: InstalledAppInfo[] }>;
   addListener(
     eventName: 'bankNotificationReceived',
     listenerFunc: (event: NativePendingBankEvent) => void
-  ): Promise<PluginListenerHandle>;
+  ): Promise<{ remove: () => Promise<void> }>;
 }
 
 const BankNotificationListener = registerPlugin<BankNotificationListenerPlugin>(
@@ -33,20 +58,17 @@ export async function checkBankNotificationPermission(): Promise<boolean> {
   try {
     const res = await BankNotificationListener.isPermissionGranted();
     return Boolean(res?.granted);
-  } catch (err) {
-    console.warn('Erro ao verificar permissão de leitura bancária:', err);
+  } catch {
     return false;
   }
 }
 
-export async function openBankNotificationSettings(): Promise<boolean> {
-  if (!isAndroidNotificationCaptureSupported()) return false;
+export async function openBankNotificationSettings(): Promise<void> {
+  if (!isAndroidNotificationCaptureSupported()) return;
   try {
     await BankNotificationListener.openNotificationAccessSettings();
-    return true;
-  } catch (err) {
-    console.warn('Erro ao abrir configurações de acesso às notificações:', err);
-    return false;
+  } catch {
+    // ignore
   }
 }
 
@@ -55,8 +77,7 @@ export async function fetchNativePendingBankNotifications(): Promise<NativePendi
   try {
     const res = await BankNotificationListener.getPendingNotifications();
     return Array.isArray(res?.notifications) ? res.notifications : [];
-  } catch (err) {
-    console.warn('Erro ao buscar notificações bancárias pendentes:', err);
+  } catch {
     return [];
   }
 }
@@ -65,25 +86,57 @@ export async function acknowledgeNativeBankNotifications(ids?: string[]): Promis
   if (!isAndroidNotificationCaptureSupported()) return;
   try {
     await BankNotificationListener.clearPendingNotifications(ids ? { ids } : undefined);
-  } catch (err) {
-    console.warn('Erro ao limpar fila nativa de notificações bancárias:', err);
+  } catch {
+    // ignore
   }
 }
 
 export async function subscribeNativeBankNotifications(
-  callback: (event: NativePendingBankEvent) => void
+  onEvent: (event: NativePendingBankEvent) => void
 ): Promise<(() => void) | null> {
   if (!isAndroidNotificationCaptureSupported()) return null;
   try {
-    const handle = await BankNotificationListener.addListener(
-      'bankNotificationReceived',
-      callback
-    );
+    const handle = await BankNotificationListener.addListener('bankNotificationReceived', onEvent);
     return () => {
-      handle.remove().catch(() => {});
+      void handle.remove();
     };
-  } catch (err) {
-    console.warn('Erro ao inscrever listener de notificações bancárias:', err);
+  } catch {
     return null;
+  }
+}
+
+export async function syncNativeBankCaptureConfig(config: {
+  captureBanksEnabled: boolean;
+  captureWalletEnabled: boolean;
+  captureSmsEnabled: boolean;
+  captureScheduledMessagesEnabled: boolean;
+  manualApps: ManualCaptureAppRule[];
+}): Promise<boolean> {
+  if (!isAndroidNotificationCaptureSupported()) return false;
+  try {
+    const res = await BankNotificationListener.setCaptureConfig({
+      captureBanksEnabled: config.captureBanksEnabled,
+      captureWalletEnabled: config.captureWalletEnabled,
+      captureSmsEnabled: config.captureSmsEnabled,
+      captureScheduledMessagesEnabled: config.captureScheduledMessagesEnabled,
+      manualApps: config.manualApps.map((app) => ({
+        packageName: app.packageName,
+        label: app.label,
+        enabled: app.enabled,
+      })),
+    });
+    return Boolean(res?.saved);
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchInstalledAndroidApps(): Promise<InstalledAppInfo[]> {
+  if (!isAndroidNotificationCaptureSupported()) return [];
+  try {
+    const res = await BankNotificationListener.getInstalledApps();
+    return Array.isArray(res?.apps) ? res.apps : [];
+  } catch {
+    return [];
   }
 }

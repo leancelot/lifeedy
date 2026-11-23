@@ -1,14 +1,19 @@
 import {
   AppDataPayload,
+  BankCaptureSettings,
+  BankCaptureSourceKind,
   BudgetLimit,
   DraftAudioAttachment,
   DraftChecklistItem,
   DraftImageAttachment,
   DraftNote,
+  FinanceCategory,
   FinancialGoal,
   LocalCalendarEvent,
   LocalSpecialDate,
+  ManualCaptureAppRule,
   PendingBankNotification,
+  ScheduledValueMessage,
   TaskItem,
   Transaction,
 } from '../types';
@@ -23,6 +28,14 @@ export const DEFAULT_WIDGETS = [
   'scratchpad',
   'reminders',
 ];
+
+export const DEFAULT_BANK_CAPTURE_SETTINGS: BankCaptureSettings = {
+  captureBanksEnabled: true,
+  captureWalletEnabled: true,
+  captureSmsEnabled: true,
+  captureScheduledMessagesEnabled: true,
+  manualApps: [],
+};
 
 // Assinaturas exatas dos antigos registros de exemplo para remoção segura apenas se não editados
 const LEGACY_SEED_TASK_TITLES: Record<string, string> = {
@@ -329,6 +342,180 @@ function normalizeLocalEvent(raw: unknown): LocalCalendarEvent | null {
   };
 }
 
+const VALID_SOURCE_KINDS = new Set<BankCaptureSourceKind>([
+  'bank',
+  'wallet',
+  'sms',
+  'manual_app',
+  'scheduled_rule',
+  'manual_paste',
+]);
+
+const VALID_CAPTURE_CATEGORIES = new Set<FinanceCategory>([
+  'alimentacao',
+  'transporte',
+  'moradia',
+  'saude',
+  'lazer',
+  'educacao',
+  'salario',
+  'freelance',
+  'investimentos',
+  'outros',
+]);
+
+function normalizeManualCaptureApps(raw: unknown): ManualCaptureAppRule[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const result: ManualCaptureAppRule[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const obj = item as Record<string, unknown>;
+    const pkg = String(obj.packageName || '').trim().slice(0, 160);
+    if (!pkg || !/^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$/.test(pkg) || seen.has(pkg)) continue;
+    seen.add(pkg);
+    const label = String(obj.label || pkg).trim().slice(0, 80) || pkg;
+    result.push({
+      packageName: pkg,
+      label,
+      enabled: obj.enabled !== false,
+      addedAt: typeof obj.addedAt === 'string' && obj.addedAt.trim() ? obj.addedAt : new Date().toISOString(),
+    });
+  }
+  return result.slice(0, 80);
+}
+
+export function normalizeBankCaptureSettings(raw: unknown): BankCaptureSettings {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ...DEFAULT_BANK_CAPTURE_SETTINGS, manualApps: [] };
+  }
+  const obj = raw as Record<string, unknown>;
+  return {
+    captureBanksEnabled: obj.captureBanksEnabled !== false,
+    captureWalletEnabled: obj.captureWalletEnabled !== false,
+    captureSmsEnabled: obj.captureSmsEnabled !== false,
+    captureScheduledMessagesEnabled: obj.captureScheduledMessagesEnabled !== false,
+    manualApps: normalizeManualCaptureApps(obj.manualApps),
+  };
+}
+
+export function normalizeScheduledValueMessages(raw: unknown): ScheduledValueMessage[] {
+  if (!Array.isArray(raw)) return [];
+  const result: ScheduledValueMessage[] = [];
+  const seenIds = new Set<string>();
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const obj = item as Record<string, unknown>;
+    const id = typeof obj.id === 'string' && obj.id.trim() ? obj.id.trim() : '';
+    const title = String(obj.title || '').trim().slice(0, 120);
+    const amount = Number(obj.amount);
+    if (!id || seenIds.has(id) || !title || !Number.isFinite(amount) || amount <= 0) continue;
+    seenIds.add(id);
+
+    const frequency = obj.frequency === 'once' ? 'once' : 'monthly';
+    const rawDay = Number(obj.dayOfMonth);
+    const dayOfMonth =
+      frequency === 'monthly'
+        ? Math.max(1, Math.min(31, Number.isFinite(rawDay) ? Math.round(rawDay) : 5))
+        : undefined;
+    const specificDate =
+      frequency === 'once' && typeof obj.specificDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(obj.specificDate)
+        ? obj.specificDate
+        : frequency === 'once'
+        ? formatLocalDateIso()
+        : undefined;
+    const timeRaw = typeof obj.timeOfDay === 'string' ? obj.timeOfDay.trim() : '09:00';
+    const timeOfDay = /^([01]\d|2[0-3]):[0-5]\d$/.test(timeRaw) ? timeRaw : '09:00';
+    const category =
+      typeof obj.category === 'string' && VALID_CAPTURE_CATEGORIES.has(obj.category as FinanceCategory)
+        ? (obj.category as FinanceCategory)
+        : 'outros';
+
+    result.push({
+      id,
+      title,
+      messageText: String(obj.messageText || `${title} R$ ${amount.toFixed(2).replace('.', ',')}`)
+        .trim()
+        .slice(0, 280),
+      amount: Math.round(amount * 100) / 100,
+      type: obj.type === 'receita' ? 'receita' : 'despesa',
+      category,
+      paymentMethod:
+        obj.paymentMethod === 'pix' ||
+        obj.paymentMethod === 'cartao_credito' ||
+        obj.paymentMethod === 'cartao_debito' ||
+        obj.paymentMethod === 'dinheiro' ||
+        obj.paymentMethod === 'transferencia'
+          ? obj.paymentMethod
+          : 'pix',
+      frequency,
+      dayOfMonth,
+      specificDate,
+      timeOfDay,
+      enabled: obj.enabled !== false,
+      lastTriggeredKey:
+        typeof obj.lastTriggeredKey === 'string' && obj.lastTriggeredKey.trim()
+          ? obj.lastTriggeredKey.trim().slice(0, 20)
+          : undefined,
+      createdAt:
+        typeof obj.createdAt === 'string' && obj.createdAt.trim()
+          ? obj.createdAt
+          : new Date().toISOString(),
+    });
+  }
+  return result.slice(0, 120);
+}
+
+function normalizePendingBankNotification(raw: unknown): PendingBankNotification | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const n = raw as Record<string, unknown>;
+  if (typeof n.id !== 'string' || !n.id.trim()) return null;
+  const amount = Number(n.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const category =
+    typeof n.category === 'string' && VALID_CAPTURE_CATEGORIES.has(n.category as FinanceCategory)
+      ? (n.category as FinanceCategory)
+      : 'outros';
+
+  return {
+    id: n.id.trim(),
+    signature: typeof n.signature === 'string' && n.signature.trim() ? n.signature : n.id.trim(),
+    bankName: typeof n.bankName === 'string' && n.bankName.trim() ? n.bankName.trim() : 'Banco',
+    rawText: typeof n.rawText === 'string' ? n.rawText : '',
+    title: typeof n.title === 'string' && n.title.trim() ? n.title.trim() : 'Transação Bancária',
+    amount: Math.round(amount * 100) / 100,
+    type: n.type === 'receita' ? 'receita' : 'despesa',
+    category,
+    paymentMethod:
+      n.paymentMethod === 'pix' ||
+      n.paymentMethod === 'cartao_credito' ||
+      n.paymentMethod === 'cartao_debito' ||
+      n.paymentMethod === 'dinheiro' ||
+      n.paymentMethod === 'transferencia'
+        ? n.paymentMethod
+        : 'transferencia',
+    date:
+      typeof n.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(n.date)
+        ? n.date.slice(0, 10)
+        : formatLocalDateIso(),
+    receivedAt: typeof n.receivedAt === 'string' ? n.receivedAt : new Date().toISOString(),
+    source: n.source === 'manual' ? 'manual' : 'android',
+    sourceKind:
+      typeof n.sourceKind === 'string' && VALID_SOURCE_KINDS.has(n.sourceKind as BankCaptureSourceKind)
+        ? (n.sourceKind as BankCaptureSourceKind)
+        : undefined,
+    packageName:
+      typeof n.packageName === 'string' && n.packageName.trim()
+        ? n.packageName.trim().slice(0, 160)
+        : undefined,
+    isScheduled: typeof n.isScheduled === 'boolean' ? n.isScheduled : undefined,
+    scheduledLabel:
+      typeof n.scheduledLabel === 'string' && n.scheduledLabel.trim()
+        ? n.scheduledLabel.trim().slice(0, 60)
+        : undefined,
+  };
+}
+
 /**
  * Deterministic 32-bit FNV-1a checksum hex string for quick payload integrity detection
  */
@@ -405,8 +592,19 @@ export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> 
   const pendingBankNotifications: PendingBankNotification[] = Array.isArray(
     record.pendingBankNotifications
   )
-    ? deduplicateById(record.pendingBankNotifications as PendingBankNotification[])
+    ? deduplicateById(
+        record.pendingBankNotifications
+          .map(normalizePendingBankNotification)
+          .filter((item): item is PendingBankNotification => item !== null)
+      )
     : [];
+  const bankCaptureSettings =
+    record.bankCaptureSettings !== undefined
+      ? normalizeBankCaptureSettings(record.bankCaptureSettings)
+      : undefined;
+  const scheduledValueMessages = Array.isArray(record.scheduledValueMessages)
+    ? deduplicateById(normalizeScheduledValueMessages(record.scheduledValueMessages))
+    : undefined;
 
   if (!isPreSanitizedSeedVersion) {
     return {
@@ -423,6 +621,8 @@ export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> 
       specialDates,
       dashboardWidgets,
       pendingBankNotifications,
+      bankCaptureSettings,
+      scheduledValueMessages,
     };
   }
 
@@ -459,5 +659,7 @@ export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> 
     specialDates,
     dashboardWidgets,
     pendingBankNotifications,
+    bankCaptureSettings,
+    scheduledValueMessages,
   };
 }

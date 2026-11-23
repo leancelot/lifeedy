@@ -14,4 +14,7 @@
     <string name="shortcut_scan_receipt_long">Escanear nota ou cupom com IA</string>
     <string name="shortcut_agenda_short">Abrir Agenda</string>
     <string name="shortcut_agenda_long">Ver compromissos e tarefas de hoje</string>
+
+    <!-- Home Screen Widget -->
+    <string name="widget_lifeedy_description">Resumo rápido de tarefas, compromissos de hoje e saldo com atalhos.</string>
 </resources>

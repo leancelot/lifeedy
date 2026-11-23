@@ -51,6 +51,7 @@ export interface NativeAutoBackupFolderStatus {
 }
 
 export interface IncomingFilePayload {
+  kind?: 'file' | 'image' | 'text';
   name: string;
   mimeType: string;
   size: number;
@@ -87,6 +88,12 @@ interface AppHealthPluginInterface {
   getAndroidPermissionsStatus(): Promise<AndroidPermissionsStatus>;
   requestAndroidPermission(options: { target: MediaPermissionTarget }): Promise<MediaPermissionRequestResult>;
   openPermissionSettings(options: { target: AndroidPermissionTarget }): Promise<{ opened: boolean; target: string }>;
+  updateWidgetSummary(options: {
+    pendingTasksCount: number;
+    todayEventsCount: number;
+    balanceFormatted: string;
+    hideValues: boolean;
+  }): Promise<{ updated: boolean }>;
   addListener(
     eventName: 'incomingFileOpened',
     listenerFunc: (file: IncomingFilePayload) => void
@@ -148,6 +155,7 @@ export async function consumePendingIncomingFile(): Promise<IncomingFilePayload 
     const res = await AppHealth.consumePendingIncomingFile();
     if (!res?.found || !res.content) return null;
     return {
+      kind: res.kind,
       name: res.name || 'arquivo_recebido',
       mimeType: res.mimeType || '',
       size: Number(res.size) || res.content.length,
@@ -156,6 +164,20 @@ export async function consumePendingIncomingFile(): Promise<IncomingFilePayload 
     };
   } catch {
     return null;
+  }
+}
+
+export async function updateNativeWidgetSummary(options: {
+  pendingTasksCount: number;
+  todayEventsCount: number;
+  balanceFormatted: string;
+  hideValues: boolean;
+}): Promise<void> {
+  if (!isAndroidNativeHealthSupported()) return;
+  try {
+    await AppHealth.updateWidgetSummary(options);
+  } catch {
+    // ignore widget bridge errors on older builds
   }
 }
 

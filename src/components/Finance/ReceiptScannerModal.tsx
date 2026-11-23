@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Camera,
@@ -38,11 +38,15 @@ import { triggerConfetti } from '../../utils/confettiEffect';
 interface ReceiptScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialFile?: File | null;
+  onConsumeInitialFile?: () => void;
 }
 
 export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
   isOpen,
   onClose,
+  initialFile,
+  onConsumeInitialFile,
 }) => {
   const { addTransaction } = useApp();
 
@@ -71,6 +75,15 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     handleClose();
     return true;
   });
+
+  useEffect(() => {
+    if (isOpen && initialFile) {
+      const fileToScan = initialFile;
+      onConsumeInitialFile?.();
+      void handleFileSelected(fileToScan);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialFile]);
 
   if (!isOpen) return null;
 

@@ -65,6 +65,10 @@ const IncomingFileCoordinator = lazyWithRetry(
   () => import('./components/Backup/BackupModals').then((m) => ({ default: m.IncomingFileCoordinator })),
   'incoming-file-coordinator'
 );
+const GlobalSearchModal = lazyWithRetry(
+  () => import('./components/Common/GlobalSearchModal').then((m) => ({ default: m.GlobalSearchModal })),
+  'global-search-modal'
+);
 
 const TabLoadingFallback: React.FC = () => (
   <div className="max-w-6xl mx-auto space-y-4 pb-16 animate-pulse" aria-busy="true">
@@ -94,6 +98,8 @@ const MainApp: React.FC = () => {
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [accountInitialTab, setAccountInitialTab] = useState<SettingsCategoryTab>('general');
   const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
+  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
+  const [sharedReceiptFile, setSharedReceiptFile] = useState<File | null>(null);
   const [isQuickMenuOpen, setIsQuickMenuOpen] = useState(false);
   const [quickTourDone, setQuickTourDone] = useState<boolean>(() => hasCompletedQuickTour());
   const [isQuickTourOpen, setIsQuickTourOpen] = useState(false);
@@ -170,9 +176,22 @@ const MainApp: React.FC = () => {
     }
   }, [currentTab, financeLockEnabled, biometricNative, isFinanceUnlocked, requestFinanceUnlock]);
 
-  // Re-arm Finance lock when Android app moves to background
+  // Re-arm Finance lock when Android app or WebView tab moves to background
   useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && financeLockEnabled && biometricNative) {
+        setIsFinanceUnlocked(false);
+        autoPromptedTabRef.current = false;
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    if (!Capacitor.isNativePlatform()) {
+      return () => {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
+    }
+
     let sub: any = null;
     CapApp.addListener('appStateChange', ({ isActive }) => {
       if (!isActive && financeLockEnabled && biometricNative) {
@@ -185,11 +204,25 @@ const MainApp: React.FC = () => {
       })
       .catch(() => {});
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (sub && sub.remove) sub.remove();
     };
   }, [financeLockEnabled, biometricNative]);
 
-  // Handle Android App Shortcuts (com.vidaorganizada.app://shortcut?action=...)
+  // Global Search keyboard shortcut (Ctrl/Cmd+K)
+  useEffect(() => {
+    if (!onboardingCompleted) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsGlobalSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onboardingCompleted]);
+
+  // Handle Android App Shortcuts & Home Widget deep links (com.vidaorganizada.app://shortcut?action=...)
   const applyShortcutUrl = useCallback((url?: string | null) => {
     if (!url || !url.includes('shortcut')) return;
     try {
@@ -200,6 +233,7 @@ const MainApp: React.FC = () => {
       setIsQuickMenuOpen(false);
       setIsAccountModalOpen(false);
       setIsNotificationCenterOpen(false);
+      setIsGlobalSearchOpen(false);
 
       if (action === 'new-task') {
         setCurrentTab('agenda');
@@ -212,6 +246,8 @@ const MainApp: React.FC = () => {
       } else if (action === 'scan-receipt') {
         setCurrentTab('financas');
         setFinanceQuickOpen('scan-receipt');
+      } else if (action === 'dashboard' || action === 'quick-draft') {
+        setCurrentTab('dashboard');
       }
     } catch {
       // ignore malformed URL
@@ -329,6 +365,7 @@ const MainApp: React.FC = () => {
           setIsAccountModalOpen(true);
         }}
         openNotificationCenter={() => setIsNotificationCenterOpen(true)}
+        openGlobalSearch={() => setIsGlobalSearchOpen(true)}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 pt-3 sm:pt-6 keyboard-safe-main">
@@ -411,6 +448,12 @@ const MainApp: React.FC = () => {
                 <FinanceView
                   quickOpenAction={financeQuickOpen}
                   onConsumeQuickOpen={() => setFinanceQuickOpen(null)}
+                  initialReceiptFile={sharedReceiptFile}
+                  onConsumeInitialReceiptFile={() => setSharedReceiptFile(null)}
+                  onRelockFinance={() => {
+                    autoPromptedTabRef.current = false;
+                    setIsFinanceUnlocked(false);
+                  }}
                 />
               </Suspense>
             ))}
@@ -472,6 +515,24 @@ const MainApp: React.FC = () => {
           />
         </Suspense>
       )}
+
+      {isGlobalSearchOpen && (
+        <Suspense fallback={null}>
+          <GlobalSearchModal
+            isOpen={isGlobalSearchOpen}
+            onClose={() => setIsGlobalSearchOpen(false)}
+            onNavigateTab={(tab) => setCurrentTab(tab)}
+          />
+        </Suspense>
+      )}
+
+      <NativeIncomingFileGate
+        onOpenReceiptImage={(file) => {
+          setSharedReceiptFile(file);
+          setCurrentTab('financas');
+        }}
+        onNavigateTab={(tab) => setCurrentTab(tab)}
+      />
     </div>
   );
 };
@@ -486,7 +547,10 @@ const StartFromScratchGate: React.FC = () => {
   );
 };
 
-const NativeIncomingFileGate: React.FC = () => {
+const NativeIncomingFileGate: React.FC<{
+  onOpenReceiptImage?: (file: File) => void;
+  onNavigateTab?: (tab: 'dashboard' | 'agenda' | 'financas') => void;
+}> = ({ onOpenReceiptImage, onNavigateTab }) => {
   const [queuedIncoming, setQueuedIncoming] = useState<{
     file: IncomingFilePayload;
     id: number;
@@ -533,7 +597,11 @@ const NativeIncomingFileGate: React.FC = () => {
 
   return (
     <Suspense fallback={null}>
-      <IncomingFileCoordinator initialIncoming={queuedIncoming} />
+      <IncomingFileCoordinator
+        initialIncoming={queuedIncoming}
+        onOpenReceiptImage={onOpenReceiptImage}
+        onNavigateTab={onNavigateTab}
+      />
     </Suspense>
   );
 };
@@ -548,7 +616,6 @@ export default function App() {
       <AppProvider>
         <MainApp />
         <StartFromScratchGate />
-        <NativeIncomingFileGate />
       </AppProvider>
     </BackNavigationProvider>
   );

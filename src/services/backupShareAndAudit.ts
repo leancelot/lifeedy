@@ -18,7 +18,7 @@ export interface PortableBackupHealth {
   autoFolderReady: boolean;
 }
 
-export type IncomingFileClassification = 'ics' | 'backup' | 'invalid';
+export type IncomingFileClassification = 'ics' | 'backup' | 'image' | 'text' | 'invalid';
 
 export function getLastPortableBackupAt(): string | null {
   if (typeof localStorage === 'undefined') return null;
@@ -176,11 +176,25 @@ export function evaluatePortableBackupHealth(params: {
   };
 }
 
-export function classifyIncomingFile(file: { name: string; content: string }): IncomingFileClassification {
+export function classifyIncomingFile(file: {
+  name: string;
+  content: string;
+  mimeType?: string;
+  kind?: 'file' | 'image' | 'text';
+}): IncomingFileClassification {
   const cleanName = (file.name || '').trim().toLowerCase();
+  const cleanMime = (file.mimeType || '').trim().toLowerCase();
   const content = typeof file.content === 'string' ? file.content : '';
   const trimmed = content.trim();
   if (!trimmed) return 'invalid';
+
+  if (
+    file.kind === 'image' ||
+    cleanMime.startsWith('image/') ||
+    trimmed.startsWith('data:image/')
+  ) {
+    return 'image';
+  }
 
   if (
     cleanName.endsWith('.ics') ||
@@ -197,6 +211,10 @@ export function classifyIncomingFile(file: { name: string; content: string }): I
 
   if (cleanName.endsWith('.lifeedy') || cleanName.endsWith('.json')) {
     return 'backup';
+  }
+
+  if (file.kind === 'text' || cleanMime.startsWith('text/plain')) {
+    return 'text';
   }
 
   return 'invalid';

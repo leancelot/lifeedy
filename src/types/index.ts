@@ -136,6 +136,46 @@ export interface LocalSpecialDate {
   createdAt: string;
 }
 
+export type BankCaptureSourceKind =
+  | 'bank'
+  | 'wallet'
+  | 'sms'
+  | 'manual_app'
+  | 'scheduled_rule'
+  | 'manual_paste';
+
+export interface ManualCaptureAppRule {
+  packageName: string;
+  label: string;
+  enabled: boolean;
+  addedAt: string;
+}
+
+export interface ScheduledValueMessage {
+  id: string;
+  title: string;
+  messageText: string;
+  amount: number;
+  type: TransactionType;
+  category: FinanceCategory;
+  paymentMethod?: Transaction['paymentMethod'];
+  frequency: 'monthly' | 'once';
+  dayOfMonth?: number; // 1..31 when frequency === 'monthly'
+  specificDate?: string; // YYYY-MM-DD when frequency === 'once'
+  timeOfDay: string; // HH:mm
+  enabled: boolean;
+  lastTriggeredKey?: string; // YYYY-MM or YYYY-MM-DD
+  createdAt: string;
+}
+
+export interface BankCaptureSettings {
+  captureBanksEnabled: boolean;
+  captureWalletEnabled: boolean;
+  captureSmsEnabled: boolean;
+  captureScheduledMessagesEnabled: boolean;
+  manualApps: ManualCaptureAppRule[];
+}
+
 export interface PendingBankNotification {
   id: string;
   signature: string;
@@ -149,6 +189,10 @@ export interface PendingBankNotification {
   date: string; // YYYY-MM-DD
   receivedAt: string; // ISO string
   source: 'android' | 'manual';
+  sourceKind?: BankCaptureSourceKind;
+  packageName?: string;
+  isScheduled?: boolean;
+  scheduledLabel?: string;
 }
 
 export interface AppDataPayload {
@@ -165,5 +209,7 @@ export interface AppDataPayload {
   specialDates?: LocalSpecialDate[];
   dashboardWidgets?: string[];
   pendingBankNotifications?: PendingBankNotification[];
+  bankCaptureSettings?: BankCaptureSettings;
+  scheduledValueMessages?: ScheduledValueMessage[];
   habits?: any[]; // Kept for backwards compatibility with existing backups
 }

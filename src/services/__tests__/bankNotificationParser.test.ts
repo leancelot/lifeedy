@@ -88,4 +88,82 @@ describe('bankNotificationParser', () => {
     expect(first?.signature).toBeTruthy();
     expect(first?.signature).toBe(duplicate?.signature);
   });
+
+  it('reconhece pagamentos por aproximação do Google Wallet e Samsung Wallet sem verbos explícitos', () => {
+    const wallet = parseBankNotificationText({
+      title: 'Padaria Central',
+      rawText: 'R$ 24,50 com Visa •••• 1234',
+      bankName: 'Google Wallet',
+      sourceKind: 'wallet',
+      timestamp: new Date('2026-11-23T10:30:00Z').getTime(),
+    });
+
+    expect(wallet).not.toBeNull();
+    expect(wallet?.bankName).toBe('Google Wallet');
+    expect(wallet?.sourceKind).toBe('wallet');
+    expect(wallet?.type).toBe('despesa');
+    expect(wallet?.amount).toBe(24.5);
+    expect(wallet?.title).toBe('Padaria Central');
+    expect(wallet?.category).toBe('alimentacao');
+    expect(wallet?.paymentMethod).toBe('cartao_credito');
+  });
+
+  it('reconhece formatos compactos de SMS bancário brasileiro e ignora números de telefone/NSU', () => {
+    const caixaSms = parseBankNotificationText({
+      title: '+55 11 98765-4321',
+      rawText: 'CAIXA: Compra aprovada R$62,40 MERCADO BOM DIA 23/11 NSU 482910',
+      bankName: 'Mensagens (SMS)',
+      sourceKind: 'sms',
+      timestamp: new Date('2026-11-23T11:00:00Z').getTime(),
+    });
+
+    expect(caixaSms).not.toBeNull();
+    expect(caixaSms?.bankName).toBe('Caixa');
+    expect(caixaSms?.sourceKind).toBe('sms');
+    expect(caixaSms?.amount).toBe(62.4);
+    expect(caixaSms?.title).toContain('MERCADO BOM DIA');
+    expect(caixaSms?.category).toBe('alimentacao');
+
+    const bbSms = parseBankNotificationText({
+      rawText: 'BB: Compra a vista no cartao Visa xxxx 9876 de BRL 145,00 em POSTO SHELL',
+      bankName: 'Mensagens (SMS)',
+      sourceKind: 'sms',
+    });
+
+    expect(bbSms).not.toBeNull();
+    expect(bbSms?.bankName).toBe('Banco do Brasil');
+    expect(bbSms?.amount).toBe(145);
+    expect(bbSms?.category).toBe('transporte');
+  });
+
+  it('reconhece mensagens programadas e faturas apenas quando includeScheduledMessages está ativo', () => {
+    const refTs = new Date('2026-12-28T10:00:00Z').getTime();
+
+    const blocked = parseBankNotificationText({
+      rawText: 'Nubank: Pix agendado de R$ 450,00 para Condominio para 05/01',
+      timestamp: refTs,
+      includeScheduledMessages: false,
+    });
+    expect(blocked).toBeNull();
+
+    const scheduledPix = parseBankNotificationText({
+      rawText: 'Nubank: Pix agendado de R$ 450,00 para Condominio para 05/01',
+      timestamp: refTs,
+      includeScheduledMessages: true,
+    });
+    expect(scheduledPix).not.toBeNull();
+    expect(scheduledPix?.isScheduled).toBe(true);
+    expect(scheduledPix?.amount).toBe(450);
+    expect(scheduledPix?.date).toBe('2027-01-05');
+    expect(scheduledPix?.scheduledLabel).toBe('Agendado para 05/01');
+
+    const executedScheduled = parseBankNotificationText({
+      rawText: 'Itaú: Pagamento agendado realizado de R$ 310,00 para Energia Enel',
+      timestamp: refTs,
+      includeScheduledMessages: true,
+    });
+    expect(executedScheduled).not.toBeNull();
+    expect(executedScheduled?.isScheduled).toBeUndefined();
+    expect(executedScheduled?.amount).toBe(310);
+  });
 });

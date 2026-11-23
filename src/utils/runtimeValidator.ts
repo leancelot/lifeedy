@@ -174,6 +174,7 @@ export function validateAndParseBackupJson(rawText: string): ValidationResult<{
     'draftNotes',
     'dashboardWidgets',
     'pendingBankNotifications',
+    'scheduledValueMessages',
   ];
 
   for (const key of collectionKeys) {

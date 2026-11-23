@@ -10,26 +10,69 @@ import {
   sendWebNotification,
   syncScheduledNativeNotifications,
 } from '../../services/notificationService';
-import { AppNotification, LocalCalendarEvent, TaskItem, Transaction } from '../../types';
+import {
+  AppNotification,
+  BudgetLimit,
+  FinanceCategory,
+  LocalCalendarEvent,
+  TaskItem,
+  Transaction,
+} from '../../types';
+import { evaluateMonthlyBudgetAlerts } from '../../utils/budgetAlertsUtils';
 import { formatLocalDateIso } from '../../utils/dateUtils';
 
 const STORAGE_KEY_NOTIFS = 'vidaorganizada_notifications_v2';
+const STORAGE_KEY_BUDGET_ALERTS_SENT = 'vidaorganizada_budget_alerts_sent_v1';
+
+const BUDGET_CATEGORY_NAMES: Record<FinanceCategory, string> = {
+  salario: 'Salário',
+  investimentos: 'Investimentos',
+  freelance: 'Freelance',
+  moradia: 'Moradia & Contas',
+  alimentacao: 'Alimentação',
+  transporte: 'Transporte',
+  saude: 'Saúde',
+  educacao: 'Educação',
+  lazer: 'Lazer & Cultura',
+  outros: 'Outros',
+};
+
+function loadSentBudgetKeys(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_BUDGET_ALERTS_SENT);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? new Set(parsed.filter((x) => typeof x === 'string')) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveSentBudgetKeys(keys: Set<string>): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_BUDGET_ALERTS_SENT, JSON.stringify([...keys].slice(-60)));
+  } catch {
+    // ignore storage errors
+  }
+}
 
 interface UseNotificationsEngineOptions {
   tasks: TaskItem[];
   calendarEvents: LocalCalendarEvent[];
   transactions: Transaction[];
+  budgetLimits: BudgetLimit[];
   refreshAndroidPermissions: () => Promise<unknown>;
 }
 
 /**
  * Gerencia permissões de notificação, lembretes em segundo plano no Android,
- * alertas de tarefas/compromissos próximos e a central interna de avisos.
+ * alertas de tarefas/compromissos próximos, alertas de orçamento e a central interna de avisos.
  */
 export function useNotificationsEngine({
   tasks,
   calendarEvents,
   transactions,
+  budgetLimits,
   refreshAndroidPermissions,
 }: UseNotificationsEngineOptions) {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() =>
@@ -52,6 +95,7 @@ export function useNotificationsEngine({
   } | null>(null);
 
   const notifiedKeysRef = useRef<Set<string>>(new Set());
+  const sentBudgetAlertKeysRef = useRef<Set<string>>(loadSentBudgetKeys());
 
   const consumeNotificationTarget = useCallback(() => {
     setPendingNotificationTarget(null);
@@ -116,6 +160,48 @@ export function useNotificationsEngine({
     }, 400);
     return () => clearTimeout(timer);
   }, [tasks, calendarEvents, transactions, notificationPermission]);
+
+  // Monitora limites mensais de orçamento (80% atenção e 100% excedido) sem repetir no mesmo mês
+  useEffect(() => {
+    const alerts = evaluateMonthlyBudgetAlerts(transactions, budgetLimits, new Date());
+    if (alerts.length === 0) return;
+
+    let addedAny = false;
+    for (const alert of alerts) {
+      const key = `budget-${alert.monthKey}-${alert.category}-${alert.level}`;
+      if (sentBudgetAlertKeysRef.current.has(key)) continue;
+
+      sentBudgetAlertKeysRef.current.add(key);
+      addedAny = true;
+
+      const catLabel = BUDGET_CATEGORY_NAMES[alert.category] || alert.category;
+      const title =
+        alert.level === 'exceeded'
+          ? `Orçamento excedido: ${catLabel}`
+          : `Atenção ao orçamento: ${catLabel}`;
+      const body =
+        alert.level === 'exceeded'
+          ? `Você atingiu ${alert.percent}% do limite mensal definido para ${catLabel}.`
+          : `Você já utilizou ${alert.percent}% do limite mensal de ${catLabel}.`;
+
+      sendWebNotification(title, {
+        body,
+        tag: key,
+        channelId: NOTIFICATION_CHANNELS.FINANCE,
+        targetTab: 'financas',
+      });
+
+      pushAppNotification({
+        title,
+        body,
+        type: 'reminder',
+      });
+    }
+
+    if (addedAny) {
+      saveSentBudgetKeys(sentBudgetAlertKeysRef.current);
+    }
+  }, [transactions, budgetLimits, pushAppNotification]);
 
   // Verifica lembretes próximos enquanto o app está aberto
   useEffect(() => {
@@ -247,6 +333,12 @@ export function useNotificationsEngine({
   const resetNotificationMemory = useCallback(() => {
     setNotificationsList([]);
     notifiedKeysRef.current.clear();
+    sentBudgetAlertKeysRef.current.clear();
+    try {
+      localStorage.removeItem(STORAGE_KEY_BUDGET_ALERTS_SENT);
+    } catch {
+      // ignore
+    }
   }, []);
 
   return {

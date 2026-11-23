@@ -11,13 +11,30 @@ export interface ParsedReceiptFields {
   notes?: string;
 }
 
+export interface ParsedQrReceiptData {
+  kind: 'nfce' | 'pix';
+  accessKey?: string;
+  cnpj?: string;
+  title?: string;
+  amount?: number;
+  date?: string;
+  paymentMethod?: Transaction['paymentMethod'];
+  notes?: string;
+}
+
 export interface OfflineOcrResult {
   text: string;
   engine: 'android-mlkit' | 'web-tesseract';
+  qrCodes?: string[];
+  qrParsed?: ParsedQrReceiptData | null;
 }
 
 interface OfflineReceiptOcrNativePlugin {
-  recognizeText(options: { imageBase64: string }): Promise<{ text: string; blockCount?: number }>;
+  recognizeText(options: { imageBase64: string }): Promise<{
+    text: string;
+    blockCount?: number;
+    qrCodes?: string[];
+  }>;
 }
 
 const OfflineReceiptOcrNative = registerPlugin<OfflineReceiptOcrNativePlugin>('OfflineReceiptOcr');
@@ -26,17 +43,187 @@ export function isNativeAndroidOcrAvailable(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
 }
 
+function formatCnpj(digits: string): string {
+  if (digits.length !== 14) return digits;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(
+    8,
+    12
+  )}-${digits.slice(12)}`;
+}
+
+function parsePixEmvQr(raw: string): ParsedQrReceiptData | null {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('000201')) return null;
+
+  const tags = new Map<string, string>();
+  let idx = 0;
+  while (idx + 4 <= trimmed.length) {
+    const id = trimmed.slice(idx, idx + 2);
+    const len = Number.parseInt(trimmed.slice(idx + 2, idx + 4), 10);
+    if (!Number.isFinite(len) || len < 0 || idx + 4 + len > trimmed.length) break;
+    const val = trimmed.slice(idx + 4, idx + 4 + len);
+    tags.set(id, val);
+    idx += 4 + len;
+  }
+
+  const merchantInfo = tags.get('26') || '';
+  const isPixPayload =
+    merchantInfo.toLowerCase().includes('br.gov.bcb.pix') || tags.get('53') === '986';
+  if (!isPixPayload) return null;
+
+  const rawAmount = tags.get('54');
+  const amount = rawAmount ? Number.parseFloat(rawAmount) : undefined;
+  const merchantName = tags.get('59')?.trim();
+  const merchantCity = tags.get('60')?.trim();
+
+  return {
+    kind: 'pix',
+    title: merchantName || 'Pagamento via Pix QR',
+    amount: amount && Number.isFinite(amount) && amount > 0 ? amount : undefined,
+    paymentMethod: 'pix',
+    notes: [merchantName, merchantCity].filter(Boolean).join(' • ') || 'QR Code Pix lido offline',
+  };
+}
+
+export function parseNfceQrCode(rawQr: string): ParsedQrReceiptData | null {
+  const trimmed = (rawQr || '').trim();
+  if (!trimmed) return null;
+
+  const pixParsed = parsePixEmvQr(trimmed);
+  if (pixParsed) return pixParsed;
+
+  const looksLikeNfce =
+    /nfce|nfe|sefaz|fazenda|p=\d{44}|chNFe=\d{44}/i.test(trimmed) || /^\d{44}$/.test(trimmed);
+  if (!looksLikeNfce) return null;
+
+  const keyMatch = trimmed.match(/(\d{44})/);
+  const accessKey = keyMatch ? keyMatch[1] : undefined;
+
+  let cnpj: string | undefined;
+  let inferredMonthPrefix: string | undefined;
+  if (accessKey) {
+    const yy = Number.parseInt(accessKey.slice(2, 4), 10);
+    const mm = Number.parseInt(accessKey.slice(4, 6), 10);
+    const rawCnpj = accessKey.slice(6, 20);
+    cnpj = formatCnpj(rawCnpj);
+    if (yy >= 20 && yy <= 35 && mm >= 1 && mm <= 12) {
+      inferredMonthPrefix = `20${String(yy).padStart(2, '0')}-${String(mm).padStart(2, '0')}`;
+    }
+  }
+
+  let amount: number | undefined;
+  let date: string | undefined;
+
+  try {
+    const urlObj = new URL(trimmed);
+    const vNf = urlObj.searchParams.get('vNF') || urlObj.searchParams.get('vNf');
+    if (vNf) {
+      const parsedVal = Number.parseFloat(vNf.replace(',', '.'));
+      if (Number.isFinite(parsedVal) && parsedVal > 0 && parsedVal <= 500000) {
+        amount = Math.round(parsedVal * 100) / 100;
+      }
+    }
+
+    const dhEmi = urlObj.searchParams.get('dhEmi');
+    if (dhEmi) {
+      let decoded = dhEmi;
+      if (/^[0-9a-fA-F]+$/.test(dhEmi) && dhEmi.length >= 20) {
+        try {
+          const pairs = dhEmi.match(/.{1,2}/g) || [];
+          decoded = pairs.map((hex) => String.fromCharCode(parseInt(hex, 16))).join('');
+        } catch {
+          decoded = dhEmi;
+        }
+      }
+      const isoDateMatch = decoded.match(/(202\d|203[0-5])-(\d{2})-(\d{2})/);
+      if (isoDateMatch) {
+        date = `${isoDateMatch[1]}-${isoDateMatch[2]}-${isoDateMatch[3]}`;
+      }
+    }
+
+    const pParam = urlObj.searchParams.get('p');
+    if (!amount && pParam) {
+      const parts = pParam.split('|');
+      // Some v1 states include value or date in query tokens; check numeric vNF pattern
+      for (const token of parts.slice(3)) {
+        if (/^\d+\.\d{2}$/.test(token)) {
+          const val = Number.parseFloat(token);
+          if (Number.isFinite(val) && val > 0 && val <= 500000) {
+            amount = val;
+            break;
+          }
+        }
+      }
+    }
+  } catch {
+    // Non-URL raw key or malformed query string
+  }
+
+  const noteParts = ['NFC-e QR Code'];
+  if (cnpj) noteParts.push(`CNPJ ${cnpj}`);
+  if (inferredMonthPrefix && !date) noteParts.push(`Emissão ${inferredMonthPrefix}`);
+  if (accessKey) noteParts.push(`Chave ${accessKey.slice(0, 8)}…${accessKey.slice(-6)}`);
+
+  return {
+    kind: 'nfce',
+    accessKey,
+    cnpj,
+    amount,
+    date,
+    notes: noteParts.join(' • '),
+  };
+}
+
+export function extractBestQrFromList(qrCodes?: string[]): ParsedQrReceiptData | null {
+  if (!Array.isArray(qrCodes) || qrCodes.length === 0) return null;
+  for (const raw of qrCodes) {
+    const parsed = parseNfceQrCode(raw);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+async function detectWebQrCodes(imageBase64: string): Promise<string[]> {
+  try {
+    const DetectorCtor = (globalThis as unknown as {
+      BarcodeDetector?: new (opts?: { formats?: string[] }) => {
+        detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue?: string }>>;
+      };
+    }).BarcodeDetector;
+    if (!DetectorCtor || typeof Image === 'undefined') return [];
+
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('QR image load failed'));
+      el.src = imageBase64;
+    });
+
+    const detector = new DetectorCtor({ formats: ['qr_code'] });
+    const hits = await detector.detect(img);
+    return hits.map((h) => h.rawValue || '').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 export async function extractReceiptTextOffline(imageBase64: string): Promise<OfflineOcrResult> {
   if (isNativeAndroidOcrAvailable()) {
     const res = await OfflineReceiptOcrNative.recognizeText({ imageBase64 });
+    const qrCodes = Array.isArray(res?.qrCodes) ? res.qrCodes.filter(Boolean) : [];
     return {
       text: (res?.text || '').trim(),
       engine: 'android-mlkit',
+      qrCodes,
+      qrParsed: extractBestQrFromList(qrCodes),
     };
   }
 
-  // Web contingency: lazy-load tesseract.js only when server AI fails
-  const { createWorker } = await import('tesseract.js');
+  // Web contingency: lazy-load tesseract.js + optional native browser BarcodeDetector
+  const [{ createWorker }, webQrCodes] = await Promise.all([
+    import('tesseract.js'),
+    detectWebQrCodes(imageBase64),
+  ]);
   let worker: Awaited<ReturnType<typeof createWorker>> | null = null;
   try {
     try {
@@ -48,6 +235,8 @@ export async function extractReceiptTextOffline(imageBase64: string): Promise<Of
     return {
       text: (result?.data?.text || '').trim(),
       engine: 'web-tesseract',
+      qrCodes: webQrCodes,
+      qrParsed: extractBestQrFromList(webQrCodes),
     };
   } finally {
     if (worker) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import {
   AlertCircle,
@@ -58,8 +58,14 @@ import {
   getCustomAppServerUrl,
   saveCustomAppServerUrl,
 } from '../../utils/appServerUrl';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 import { BackupImportModal, EncryptedBackupExportModal } from '../Backup/BackupModals';
 import { DiagnosticsAndPermissionsSection } from './DiagnosticsAndPermissionsSection';
+
+const BankCaptureConfigModal = lazyWithRetry(
+  () => import('../Finance/BankCaptureConfigModal').then((m) => ({ default: m.BankCaptureConfigModal })),
+  'bank-capture-config-modal'
+);
 
 export type SettingsCategoryTab = 'general' | 'account' | 'security' | 'system';
 
@@ -110,6 +116,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     bankListenerPermission,
     refreshBankListenerPermission,
     openBankListenerSettings,
+    bankCaptureSettings,
+    scheduledValueMessages,
     financeLockEnabled,
     setFinanceLockEnabled,
     openStartFromScratchModal,
@@ -160,6 +168,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     Boolean(getCustomAppServerUrl())
   );
   const [isTestingServerUrl, setIsTestingServerUrl] = useState<boolean>(false);
+  const [isBankSourcesModalOpen, setIsBankSourcesModalOpen] = useState<boolean>(false);
 
   useBackHandler(isOpen, () => {
     onClose();
@@ -1005,34 +1014,53 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     </div>
                     <div className="min-w-0">
                       <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">
-                        Leitura de Bancos {bankListenerSupported ? (bankListenerPermission ? '· Ativa' : '· Inativa') : ''}
+                        Leitura Financeira {bankListenerSupported ? (bankListenerPermission ? '· Ativa' : '· Inativa') : ''}
                       </span>
                       <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block">
-                        {bankListenerSupported
-                          ? 'Captura avisos de bancos para revisão em Finanças'
-                          : 'Automática no APK Android; na Web cole em Finanças'}
+                        {[
+                          bankCaptureSettings.captureBanksEnabled ? 'Bancos' : null,
+                          bankCaptureSettings.captureWalletEnabled ? 'Google Wallet' : null,
+                          bankCaptureSettings.captureSmsEnabled ? 'SMS' : null,
+                          bankCaptureSettings.manualApps.filter((a) => a.enabled).length > 0
+                            ? `${bankCaptureSettings.manualApps.filter((a) => a.enabled).length} manual(is)`
+                            : null,
+                          scheduledValueMessages.filter((m) => m.enabled).length > 0
+                            ? `${scheduledValueMessages.filter((m) => m.enabled).length} programada(s)`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ') || 'Fontes desativadas'}
                       </span>
                     </div>
                   </div>
-                  {bankListenerSupported && (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => void openBankListenerSettings()}
-                        className="pressable min-h-[40px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
-                      >
-                        Configurar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void refreshBankListenerPermission()}
-                        aria-label="Verificar permissão bancária"
-                        className="pressable w-10 h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 flex items-center justify-center text-zinc-600 dark:text-zinc-300 cursor-pointer"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setIsBankSourcesModalOpen(true)}
+                      className="pressable min-h-[40px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold cursor-pointer whitespace-nowrap"
+                    >
+                      Fontes & Apps
+                    </button>
+                    {bankListenerSupported && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void openBankListenerSettings()}
+                          className="pressable min-h-[40px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
+                        >
+                          Permissão
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void refreshBankListenerPermission()}
+                          aria-label="Verificar permissão bancária"
+                          className="pressable w-10 h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 flex items-center justify-center text-zinc-600 dark:text-zinc-300 cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </section>
 
@@ -1333,6 +1361,15 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
         onClose={() => setPendingImportFile(null)}
         onImported={() => showTempFeedback('success', 'Backup restaurado com sucesso!')}
       />
+
+      {isBankSourcesModalOpen && (
+        <Suspense fallback={null}>
+          <BankCaptureConfigModal
+            isOpen={isBankSourcesModalOpen}
+            onClose={() => setIsBankSourcesModalOpen(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

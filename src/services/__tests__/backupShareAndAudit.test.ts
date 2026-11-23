@@ -67,6 +67,24 @@ describe('backupShareAndAudit', () => {
         content: 'not-a-valid-backup',
       })
     ).toBe('invalid');
+
+    expect(
+      classifyIncomingFile({
+        kind: 'image',
+        name: 'nota.jpg',
+        mimeType: 'image/jpeg',
+        content: 'data:image/jpeg;base64,/9j/4AAQ',
+      })
+    ).toBe('image');
+
+    expect(
+      classifyIncomingFile({
+        kind: 'text',
+        name: 'Texto compartilhado',
+        mimeType: 'text/plain',
+        content: 'Pix enviado de R$ 42,00 para Padaria Central',
+      })
+    ).toBe('text');
   });
 
   it('avalia saúde de backup portátil, lembrete após 14 dias e soneca de 7 dias', () => {

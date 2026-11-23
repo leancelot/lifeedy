@@ -89,6 +89,16 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/json" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
 
             <meta-data
                 android:name="android.app.shortcuts"
@@ -115,6 +125,18 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".LifeedyWidgetProvider"
+            android:exported="true"
+            android:label="Lifeedy Resumo">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/lifeedy_widget_info" />
+        </receiver>
     </application>
 
     <!-- Permissions -->
@@ -132,8 +154,12 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
-    <!-- Android 11+ (API 30+) package visibility for camera capture, email, and web links -->
+    <!-- Android 11+ (API 30+) package visibility for camera capture, email, web links, and launcher apps -->
     <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>

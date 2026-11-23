@@ -10,13 +10,12 @@ import {
   getNativeAutoBackupFolderStatus,
   getNativeAutoBackupPassphrase,
   isAndroidNativeHealthSupported,
-  loadNativeVaultBackup,
   openAndroidPermissionSettings,
   pickNativeAutoBackupFolder,
   saveNativeAutoBackupPassphrase,
-  saveNativeVaultBackup,
   writeNativeAutoBackupFile,
 } from '../services/appHealthBridge';
+import { loadSyncLocalStoragePayload } from '../services/localDatabaseService';
 import {
   AUTO_BACKUP_FILENAME,
   clearAutoFolderChecksumStorage,
@@ -57,7 +56,6 @@ import { validateAndParseBackupJson } from '../utils/runtimeValidator';
 import {
   CURRENT_DATA_VERSION,
   DEFAULT_WIDGETS,
-  sanitizeLegacyPayload,
   serializeAppPayloadSafely,
 } from '../utils/storageSanitizer';
 import { FinanceContext, FinanceContextType, useFinance } from './FinanceContext';
@@ -69,6 +67,7 @@ import {
   WorkspaceContext,
   WorkspaceContextType,
 } from './WorkspaceContext';
+import { useAppPersistence } from './hooks/useAppPersistence';
 import { useAppUpdater } from './hooks/useAppUpdater';
 import { useBankNotificationQueue } from './hooks/useBankNotificationQueue';
 import { useConfirmDialog } from './hooks/useConfirmDialog';
@@ -87,23 +86,6 @@ export type { BackupInspectionResult, WorkspaceContextType } from './WorkspaceCo
 export type { FinanceContextType } from './FinanceContext';
 export type { PlannerContextType } from './PlannerContext';
 export { useWorkspace, useFinance, usePlanner };
-
-const STORAGE_KEY_DATA = 'vidaorganizada_local_data_v2';
-const STORAGE_KEY_NOTIFS = 'vidaorganizada_notifications_v2';
-const STORAGE_KEY_PENDING_BANK = 'vidaorganizada_pending_bank_v1';
-const STORAGE_KEY_BANK_SIGS = 'vidaorganizada_ingested_bank_sigs_v1';
-
-function loadInitialLocalPayload(): Partial<AppDataPayload> {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY_DATA);
-    if (saved) {
-      return sanitizeLegacyPayload(JSON.parse(saved));
-    }
-  } catch (e) {
-    console.warn('Erro ao ler dados locais:', e);
-  }
-  return {};
-}
 
 export type AppContextType = WorkspaceContextType & FinanceContextType & PlannerContextType;
 
@@ -124,7 +106,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const initialPayloadRef = useRef<Partial<AppDataPayload> | null>(null);
   if (initialPayloadRef.current === null) {
-    initialPayloadRef.current = loadInitialLocalPayload();
+    initialPayloadRef.current = loadSyncLocalStoragePayload();
   }
   const initialPayload = initialPayloadRef.current;
 
@@ -156,12 +138,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const [androidPermissions, setAndroidPermissions] = useState<AndroidPermissionsStatus | null>(null);
-  const [vaultStatus, setVaultStatus] = useState({
-    lastSavedAt: null as string | null,
-    checksum: null as string | null,
-    byteSize: 0,
-    recoveredFromNative: false,
-  });
   const [isStartFromScratchOpen, setIsStartFromScratchOpen] = useState(false);
 
   const [lastPortableBackupAt, setLastPortableBackupAt] = useState<string | null>(() =>
@@ -183,15 +159,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     lastError: null,
   }));
 
-  const [contentChecksum, setContentChecksum] = useState<string | null>(null);
-
   const checkUpdatesRef = useRef<
     (options?: { force?: boolean }) => Promise<UpdateCheckResult | null>
   >(async () => null);
-  const nativeVaultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoFolderSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastAutoSyncedChecksumRef = useRef<string | null>(getLastAutoFolderChecksum());
-  const vaultBootRecoveredRef = useRef<boolean>(false);
 
   const refreshAndroidPermissions = useCallback(async () => {
     if (!isAndroidNativeHealthSupported()) return null;
@@ -213,6 +185,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const bankQueue = useBankNotificationQueue({
     initialItems: initialPayload.pendingBankNotifications,
+    initialSettings: initialPayload.bankCaptureSettings,
+    initialScheduledMessages: initialPayload.scheduledValueMessages,
     onApproveTransactions: handleApproveBankTransactions,
   });
 
@@ -256,6 +230,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     tasks,
     calendarEvents: calendarActions.calendarEvents,
     transactions,
+    budgetLimits,
     refreshAndroidPermissions,
   });
 
@@ -284,9 +259,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       specialDates,
       dashboardWidgets,
       pendingBankNotifications: bankQueue.pendingBankNotifications,
+      bankCaptureSettings: bankQueue.bankCaptureSettings,
+      scheduledValueMessages: bankQueue.scheduledValueMessages,
     }),
     [
+      bankQueue.bankCaptureSettings,
       bankQueue.pendingBankNotifications,
+      bankQueue.scheduledValueMessages,
       budgetLimits,
       dashboardWidgets,
       draftNotes,
@@ -300,44 +279,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ]
   );
 
-  // Persistência local automática + espelhamento cifrado no cofre nativo do Android
-  useEffect(() => {
-    const payload = buildCurrentPayload();
-    const {
-      json,
-      checksum,
-      contentChecksum: nextContentChecksum,
-      byteSize,
-    } = serializeAppPayloadSafely(payload);
-    setContentChecksum(nextContentChecksum);
-
-    try {
-      localStorage.setItem(STORAGE_KEY_DATA, json);
-      setVaultStatus((prev) => ({
-        ...prev,
-        lastSavedAt: payload.lastUpdated,
-        checksum,
-        byteSize,
-      }));
-    } catch (e) {
-      recordAppError('localStorage.persist', e, `bytes=${byteSize}`);
-      console.error('Falha ao salvar dados no LocalStorage:', e);
-    }
-
-    if (isAndroidNativeHealthSupported()) {
-      if (nativeVaultTimerRef.current) clearTimeout(nativeVaultTimerRef.current);
-      nativeVaultTimerRef.current = setTimeout(() => {
-        void saveNativeVaultBackup(json);
-      }, 450);
-    }
-
-    return () => {
-      if (nativeVaultTimerRef.current) {
-        clearTimeout(nativeVaultTimerRef.current);
-      }
-    };
-  }, [buildCurrentPayload]);
-
   const applySanitizedPayload = useCallback(
     (sanitized: Partial<AppDataPayload>) => {
       if (sanitized.tasks) setTasks(sanitized.tasks);
@@ -350,6 +291,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (sanitized.dashboardWidgets) setDashboardWidgets(sanitized.dashboardWidgets);
       if (sanitized.pendingBankNotifications) {
         bankQueue.setPendingBankNotifications(sanitized.pendingBankNotifications);
+      }
+      if (sanitized.bankCaptureSettings) {
+        bankQueue.setBankCaptureSettings(sanitized.bankCaptureSettings);
+      }
+      if (sanitized.scheduledValueMessages) {
+        bankQueue.setScheduledValueMessages(sanitized.scheduledValueMessages);
       }
       if (typeof sanitized.userName === 'string' && sanitized.userName.trim()) {
         setUserNameState(sanitized.userName.trim());
@@ -376,51 +323,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [bankQueue]
   );
 
-  // Recuperação automática do cofre nativo Android se o armazenamento do WebView iniciar vazio
-  useEffect(() => {
-    if (vaultBootRecoveredRef.current || !isAndroidNativeHealthSupported()) return;
-    vaultBootRecoveredRef.current = true;
-
-    const webHasData = hasMeaningfulLocalData({
-      tasks,
-      events: localEvents,
-      transactions,
-      financialGoals,
-      draftNotes,
-      specialDates,
-      pendingBankNotifications: bankQueue.pendingBankNotifications,
-    });
-    if (webHasData) return;
-
-    loadNativeVaultBackup()
-      .then((res) => {
-        if (!res.found || !res.payloadJson) return;
-        try {
-          const parsed = JSON.parse(res.payloadJson);
-          const sanitized = sanitizeLegacyPayload(parsed);
-          const vaultHasData = hasMeaningfulLocalData({
-            tasks: sanitized.tasks || [],
-            events: sanitized.events || [],
-            transactions: sanitized.transactions || [],
-            financialGoals: sanitized.financialGoals || [],
-            draftNotes: sanitized.draftNotes || [],
-            specialDates: sanitized.specialDates || [],
-            pendingBankNotifications: sanitized.pendingBankNotifications || [],
-          });
-          if (vaultHasData || sanitized.onboardingCompleted) {
-            applySanitizedPayload(sanitized);
-            setVaultStatus((prev) => ({
-              ...prev,
-              recoveredFromNative: true,
-            }));
-          }
-        } catch (err) {
-          recordAppError('nativeVault.recover', err);
-        }
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const { vaultStatus, contentChecksum, clearAllLocalPersistence } = useAppPersistence({
+    buildCurrentPayload,
+    applySanitizedPayload,
+    tasks,
+    calendarEvents: calendarActions.calendarEvents,
+    transactions,
+    hideValues: financeActions.hideValues,
+    onboardingCompleted,
+  });
 
   const setUserName = useCallback((name: string) => {
     setUserNameState(name.trim());
@@ -457,19 +368,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSpecialDates([]);
     setDashboardWidgets(DEFAULT_WIDGETS);
     bankQueue.setPendingBankNotifications([]);
+    bankQueue.setScheduledValueMessages([]);
     notificationsEngine.resetNotificationMemory();
     setUserNameState('');
     setOnboardingCompleted(false);
     clearUndoToast();
 
-    try {
-      localStorage.removeItem(STORAGE_KEY_DATA);
-      localStorage.removeItem(STORAGE_KEY_PENDING_BANK);
-      localStorage.removeItem(STORAGE_KEY_BANK_SIGS);
-      localStorage.removeItem(STORAGE_KEY_NOTIFS);
-    } catch {
-      // ignora falha de limpeza do navegador
-    }
+    await clearAllLocalPersistence();
     clearBackupAuditStorage();
     setLastPortableBackupAt(null);
     setBackupReminderSnoozedUntil(null);
@@ -486,7 +391,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lastError: null,
     }));
     hapticWarning();
-  }, [bankQueue, clearUndoToast, notificationsEngine]);
+  }, [bankQueue, clearAllLocalPersistence, clearUndoToast, notificationsEngine]);
 
   const refreshAutoBackupStatus = useCallback(async () => {
     if (!isAndroidNativeHealthSupported()) return;
@@ -964,18 +869,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       approveAllPendingBankNotifications: bankQueue.approveAllPendingBankNotifications,
       dismissPendingBankNotification: bankQueue.dismissPendingBankNotification,
       clearPendingBankNotifications: bankQueue.clearPendingBankNotifications,
+      bankCaptureSettings: bankQueue.bankCaptureSettings,
+      updateBankCaptureSettings: bankQueue.updateBankCaptureSettings,
+      addManualCaptureApp: bankQueue.addManualCaptureApp,
+      toggleManualCaptureApp: bankQueue.toggleManualCaptureApp,
+      removeManualCaptureApp: bankQueue.removeManualCaptureApp,
+      installedAndroidApps: bankQueue.installedAndroidApps,
+      loadInstalledAndroidApps: bankQueue.loadInstalledAndroidApps,
+      scheduledValueMessages: bankQueue.scheduledValueMessages,
+      addScheduledValueMessage: bankQueue.addScheduledValueMessage,
+      toggleScheduledValueMessage: bankQueue.toggleScheduledValueMessage,
+      deleteScheduledValueMessage: bankQueue.deleteScheduledValueMessage,
+      triggerScheduledValueMessageNow: bankQueue.triggerScheduledValueMessageNow,
     }),
     [
+      bankQueue.addManualCaptureApp,
+      bankQueue.addScheduledValueMessage,
       bankQueue.approveAllPendingBankNotifications,
       bankQueue.approvePendingBankNotification,
+      bankQueue.bankCaptureSettings,
       bankQueue.bankListenerPermission,
       bankQueue.bankListenerSupported,
       bankQueue.clearPendingBankNotifications,
+      bankQueue.deleteScheduledValueMessage,
       bankQueue.dismissPendingBankNotification,
       bankQueue.enqueueParsedBankText,
+      bankQueue.installedAndroidApps,
+      bankQueue.loadInstalledAndroidApps,
       bankQueue.openBankListenerSettings,
       bankQueue.pendingBankNotifications,
       bankQueue.refreshBankListenerPermission,
+      bankQueue.removeManualCaptureApp,
+      bankQueue.scheduledValueMessages,
+      bankQueue.toggleManualCaptureApp,
+      bankQueue.toggleScheduledValueMessage,
+      bankQueue.triggerScheduledValueMessageNow,
+      bankQueue.updateBankCaptureSettings,
       financeActions,
       financialGoals,
       budgetLimits,

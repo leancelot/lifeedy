@@ -1,7 +1,9 @@
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  BellRing,
   CalendarClock,
   Check,
   CheckCheck,
@@ -16,12 +18,14 @@ import {
   Download,
   Eye,
   EyeOff,
+  Lock,
   Pencil,
   PieChart as PieChartIcon,
   PiggyBank,
   Plus,
   Repeat,
   Search,
+  Settings2,
   SlidersHorizontal,
   Smartphone,
   Sparkles,
@@ -42,12 +46,21 @@ import {
   Transaction,
   TransactionType,
 } from '../../types';
+import { evaluateMonthlyBudgetAlerts } from '../../utils/budgetAlertsUtils';
+import { formatLocalDateIso } from '../../utils/dateUtils';
+import { exportMonthlyFinanceCsv } from '../../utils/financeCsvExport';
 import {
   computeMonthlyRecurringSummary,
   computeProjectedBalance,
   getRecurringMonthDismissStorageKey,
   PendingRecurringExpense,
 } from '../../utils/financeForecastUtils';
+import {
+  FinanceAddToGoalModal,
+  FinanceBudgetModal,
+  FinanceGoalModal,
+  FinanceTransactionModal,
+} from './FinanceModals';
 
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
@@ -56,14 +69,14 @@ const ReceiptScannerModal = lazyWithRetry(
   'receipt-scanner-modal'
 );
 
+const BankCaptureConfigModal = lazyWithRetry(
+  () => import('./BankCaptureConfigModal').then((m) => ({ default: m.BankCaptureConfigModal })),
+  'bank-capture-config-modal'
+);
+
 const DISMISSED_RECURRING_STORAGE_KEY = 'vidaorganizada_dismissed_recurring_v1';
 
-const getLocalTodayStr = (): string => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate()
-  ).padStart(2, '0')}`;
-};
+const getLocalTodayStr = (): string => formatLocalDateIso();
 
 type FinanceSubTab = 'resumo' | 'lancamentos' | 'metas';
 
@@ -101,11 +114,17 @@ const PAYMENT_METHOD_LABELS: Record<NonNullable<Transaction['paymentMethod']>, s
 interface FinanceViewProps {
   quickOpenAction?: 'new-transaction' | 'scan-receipt' | null;
   onConsumeQuickOpen?: () => void;
+  initialReceiptFile?: File | null;
+  onConsumeInitialReceiptFile?: () => void;
+  onRelockFinance?: () => void;
 }
 
 export const FinanceView: React.FC<FinanceViewProps> = ({
   quickOpenAction,
   onConsumeQuickOpen,
+  initialReceiptFile,
+  onConsumeInitialReceiptFile,
+  onRelockFinance,
 }) => {
   const {
     transactions,
@@ -121,6 +140,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     hideValues,
     toggleHideValues,
     formatMoney,
+    financeLockEnabled,
     pendingBankNotifications,
     bankListenerSupported,
     bankListenerPermission,
@@ -131,6 +151,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     approveAllPendingBankNotifications,
     dismissPendingBankNotification,
     clearPendingBankNotifications,
+    bankCaptureSettings,
+    scheduledValueMessages,
   } = useApp();
 
   const [activeSubTab, setActiveSubTab] = useState<FinanceSubTab>('resumo');
@@ -147,10 +169,15 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isPasteBankModalOpen, setIsPasteBankModalOpen] = useState(false);
+  const [isCaptureConfigOpen, setIsCaptureConfigOpen] = useState(false);
+  const [captureConfigInitialTab, setCaptureConfigInitialTab] = useState<
+    'sources' | 'manual_apps' | 'scheduled'
+  >('sources');
 
   // Paste Bank Alert / SMS state
   const [pasteBankText, setPasteBankText] = useState('');
   const [pasteBankName, setPasteBankName] = useState('');
+  const [includeScheduledInPaste, setIncludeScheduledInPaste] = useState(true);
   const [pasteError, setPasteError] = useState<string | null>(null);
 
   // New / Edit Transaction form
@@ -232,6 +259,12 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     }
     onConsumeQuickOpen?.();
   }, [quickOpenAction, onConsumeQuickOpen]);
+
+  useEffect(() => {
+    if (initialReceiptFile) {
+      setIsScannerOpen(true);
+    }
+  }, [initialReceiptFile]);
 
   const prevMonth = () => {
     hapticSelection();
@@ -379,50 +412,38 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       bankName: pasteBankName.trim() || undefined,
       source: 'manual',
       allowAmbiguous: true,
+      includeScheduledMessages: includeScheduledInPaste,
     });
-  }, [pasteBankText, pasteBankName]);
+  }, [pasteBankText, pasteBankName, includeScheduledInPaste]);
 
-  const exportToCSV = () => {
+  const monthlyBudgetAlerts = useMemo(
+    () => evaluateMonthlyBudgetAlerts(transactions, budgetLimits, currentDate),
+    [transactions, budgetLimits, currentDate]
+  );
+
+  const exportToCSV = async () => {
     if (monthlyTransactions.length === 0) {
       setCsvFeedback('Nenhuma transação registrada neste mês para exportar.');
       setTimeout(() => setCsvFeedback(null), 3500);
       return;
     }
 
-    const headers = [
-      'Data',
-      'Tipo',
-      'Título',
-      'Categoria',
-      'Valor (R$)',
-      'Forma de Pagamento',
-      'Recorrente',
-      'Observações',
-    ];
-    const rows = monthlyTransactions.map((tx) => [
-      tx.date,
-      tx.type === 'receita' ? 'Receita' : 'Despesa',
-      `"${tx.title.replace(/"/g, '""')}"`,
-      getCategoryLabel(tx.category),
-      tx.amount.toFixed(2).replace('.', ','),
-      tx.paymentMethod ? tx.paymentMethod.replace('_', ' ') : '',
-      tx.recurring ? 'Sim' : 'Não',
-      `"${(tx.notes || '').replace(/"/g, '""')}"`,
-    ]);
-
-    const csvContent =
-      '\uFEFF' + [headers.join(';'), ...rows.map((e) => e.join(';'))].join('\r\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Extrato_Financeiro_${currentYear}_${String(currentMonthIndex + 1).padStart(
-      2,
-      '0'
-    )}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const delivery = await exportMonthlyFinanceCsv({
+        transactions: monthlyTransactions,
+        year: currentYear,
+        monthIndex: currentMonthIndex,
+      });
+      setCsvFeedback(
+        delivery === 'download'
+          ? 'Extrato CSV baixado com sucesso.'
+          : 'Extrato CSV pronto para compartilhamento.'
+      );
+      setTimeout(() => setCsvFeedback(null), 3500);
+    } catch {
+      setCsvFeedback('Não foi possível exportar o extrato CSV agora.');
+      setTimeout(() => setCsvFeedback(null), 3500);
+    }
   };
 
   const resetTransactionModal = () => {
@@ -521,7 +542,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const handleEnqueuePastedText = (e: React.FormEvent) => {
     e.preventDefault();
     setPasteError(null);
-    const created = enqueueParsedBankText(pasteBankText, pasteBankName.trim() || undefined);
+    const created = enqueueParsedBankText(pasteBankText, pasteBankName.trim() || undefined, {
+      includeScheduledMessages: includeScheduledInPaste,
+    });
     if (!created) {
       setPasteError('Não foi possível identificar um valor monetário neste texto.');
       return;
@@ -702,9 +725,24 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 flex-wrap">
+            {financeLockEnabled && onRelockFinance && (
+              <button
+                type="button"
+                onClick={() => {
+                  hapticImpactLight();
+                  onRelockFinance();
+                }}
+                title="Bloquear aba Finanças"
+                aria-label="Bloquear Finanças"
+                className="pressable w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center cursor-pointer shrink-0"
+              >
+                <Lock className="w-4 h-4" />
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={exportToCSV}
+              onClick={() => void exportToCSV()}
               title="Exportar CSV do mês"
               aria-label="Exportar CSV"
               className="pressable w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center cursor-pointer shrink-0"
@@ -819,6 +857,34 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       {/* SUB-TAB 1: RESUMO */}
       {activeSubTab === 'resumo' && (
         <div className="space-y-4 animate-tab-enter">
+          {monthlyBudgetAlerts.length > 0 && (
+            <div className="rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/90 dark:bg-amber-950/30 px-3.5 py-3 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-900 dark:text-amber-200 space-y-0.5">
+                  <p className="font-bold">
+                    {monthlyBudgetAlerts.some((a) => a.level === 'exceeded')
+                      ? 'Limite mensal ultrapassado'
+                      : 'Atenção aos limites de orçamento'}
+                  </p>
+                  <p className="text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
+                    {monthlyBudgetAlerts
+                      .slice(0, 3)
+                      .map((a) => `${getCategoryLabel(a.category)} (${a.percent}%)`)
+                      .join(' · ')}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={openBudgetModal}
+                className="pressable px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-200/70 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 cursor-pointer shrink-0"
+              >
+                Ajustar
+              </button>
+            </div>
+          )}
+
           {/* Actionable KPI Cards - 2 cols on mobile, 4 cols on desktop */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
             {/* Saldo -> Abre extrato completo */}
@@ -1363,15 +1429,15 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                    Captura Automática de Bancos Desativada
+                    Captura Automática de Bancos, Google Wallet e SMS Desativada
                   </h3>
                   <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-0.5">
-                    Permita o acesso às notificações para capturar entradas e saídas dos seus bancos e enviá-las para esta fila de revisão.
+                    Permita o acesso às notificações para capturar entradas e saídas de bancos, Google Wallet, SMS e apps manuais.
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
                 <button
                   onClick={() => openBankListenerSettings()}
                   className="px-3.5 py-2 min-h-[40px] rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold cursor-pointer transition-colors"
@@ -1383,6 +1449,16 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   className="px-3 py-2 min-h-[40px] rounded-xl border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-xs font-semibold hover:bg-amber-100 dark:hover:bg-amber-900/40 cursor-pointer transition-colors"
                 >
                   Verificar
+                </button>
+                <button
+                  onClick={() => {
+                    setCaptureConfigInitialTab('sources');
+                    setIsCaptureConfigOpen(true);
+                  }}
+                  className="px-3 py-2 min-h-[40px] rounded-xl border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 text-xs font-semibold hover:bg-amber-100 dark:hover:bg-amber-900/40 cursor-pointer transition-colors inline-flex items-center gap-1"
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                  <span>Fontes</span>
                 </button>
               </div>
             </div>
@@ -1402,11 +1478,21 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    Confira os lançamentos identificados antes de salvar no seu extrato
+                    Confira os lançamentos capturados (Bancos, Google Wallet, SMS e Programados) antes de salvar
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  <button
+                    onClick={() => {
+                      setCaptureConfigInitialTab('sources');
+                      setIsCaptureConfigOpen(true);
+                    }}
+                    className="flex items-center gap-1 px-3 py-2 min-h-[38px] rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold cursor-pointer transition-colors"
+                  >
+                    <Settings2 className="w-3.5 h-3.5" />
+                    <span>Fontes</span>
+                  </button>
                   <button
                     onClick={approveAllPendingBankNotifications}
                     className="flex items-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer transition-colors"
@@ -1430,6 +1516,17 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                     day: 'numeric',
                     month: 'short',
                   }).format(new Date(item.date + 'T00:00:00'));
+
+                  const sourceKindTag =
+                    item.sourceKind === 'wallet'
+                      ? 'Google Wallet'
+                      : item.sourceKind === 'sms'
+                      ? 'SMS'
+                      : item.sourceKind === 'manual_app'
+                      ? 'App Manual'
+                      : item.sourceKind === 'scheduled_rule'
+                      ? 'Programado'
+                      : null;
 
                   return (
                     <div
@@ -1456,6 +1553,16 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                             <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
                               {item.bankName}
                             </span>
+                            {sourceKindTag && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                                {sourceKindTag}
+                              </span>
+                            )}
+                            {item.isScheduled && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300">
+                                {item.scheduledLabel || 'Agendado'}
+                              </span>
+                            )}
                             <span className="text-xs text-zinc-300 dark:text-zinc-700">•</span>
                             <span className="text-xs text-zinc-500 dark:text-zinc-400">
                               {formattedDate}
@@ -1569,16 +1676,37 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   />
                 </div>
 
-                <button
-                  onClick={() => {
-                    setPasteError(null);
-                    setIsPasteBankModalOpen(true);
-                  }}
-                  className="flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-[38px] rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap shrink-0"
-                >
-                  <ClipboardPaste className="w-3.5 h-3.5" />
-                  <span>Colar aviso / SMS</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => {
+                      setPasteError(null);
+                      setIncludeScheduledInPaste(
+                        bankCaptureSettings.captureScheduledMessagesEnabled
+                      );
+                      setIsPasteBankModalOpen(true);
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                  >
+                    <ClipboardPaste className="w-3.5 h-3.5" />
+                    <span>Colar aviso / SMS</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setCaptureConfigInitialTab('sources');
+                      setIsCaptureConfigOpen(true);
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                  >
+                    <Settings2 className="w-3.5 h-3.5" />
+                    <span>
+                      Fontes & Apps
+                      {scheduledValueMessages.filter((m) => m.enabled).length > 0
+                        ? ` (${scheduledValueMessages.filter((m) => m.enabled).length})`
+                        : ''}
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1950,9 +2078,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             </div>
 
             <form onSubmit={handleEnqueuePastedText} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Texto da notificação ou SMS *
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  Texto da notificação, Google Wallet ou SMS *
                 </label>
                 <textarea
                   rows={4}
@@ -1962,14 +2090,65 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                     setPasteBankText(e.target.value);
                     if (pasteError) setPasteError(null);
                   }}
-                  placeholder="Cole aqui o texto do aviso ou SMS bancário"
+                  placeholder="Ex.: Padaria Central R$ 24,50 com Visa •••• 1234 | SMS Itaú | Pix agendado..."
                   className="w-full px-3.5 py-2.5 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                />
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] text-zinc-500 dark:text-zinc-400">Exemplos:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPasteBankName('Google Wallet');
+                      setPasteBankText('Padaria Central R$ 24,50 com Visa •••• 1234');
+                    }}
+                    className="px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-[11px] font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer"
+                  >
+                    Google Wallet
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPasteBankName('');
+                      setPasteBankText('CAIXA: Compra aprovada R$62,40 MERCADO BOM DIA 23/11 10:15');
+                    }}
+                    className="px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-[11px] font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer"
+                  >
+                    SMS Banco
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPasteBankName('');
+                      setIncludeScheduledInPaste(true);
+                      setPasteBankText('Nubank: Pix agendado de R$ 450,00 para Condominio para 05/12');
+                    }}
+                    className="px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-[11px] font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer"
+                  >
+                    Pix Agendado
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/80 dark:border-zinc-700">
+                <label
+                  htmlFor="paste-include-scheduled"
+                  className="text-xs font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-2 cursor-pointer"
+                >
+                  <BellRing className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>Reconhecer mensagens agendadas / programadas e faturas com valor</span>
+                </label>
+                <input
+                  id="paste-include-scheduled"
+                  type="checkbox"
+                  checked={includeScheduledInPaste}
+                  onChange={(e) => setIncludeScheduledInPaste(e.target.checked)}
+                  className="w-4 h-4 accent-indigo-600 cursor-pointer shrink-0"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Banco ou carteira (opcional)
+                  Banco, carteira ou app manual (opcional)
                 </label>
                 <input
                   type="text"
@@ -1982,10 +2161,17 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
 
               {livePastePreview && (
                 <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-indigo-600 dark:text-indigo-400">
-                      {livePastePreview.bankName}
-                    </span>
+                  <div className="flex items-center justify-between text-xs gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                        {livePastePreview.bankName}
+                      </span>
+                      {livePastePreview.isScheduled && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 text-[10px] font-semibold">
+                          {livePastePreview.scheduledLabel || 'Programado'}
+                        </span>
+                      )}
+                    </div>
                     <span
                       className={`font-bold px-2 py-0.5 rounded-md ${
                         livePastePreview.type === 'receita'
@@ -2056,495 +2242,88 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
         </div>
       )}
 
-      {/* Add / Edit Transaction Modal */}
-      {isAddModalOpen && (
-        <div
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              hapticSelection();
-              resetTransactionModal();
-              setIsAddModalOpen(false);
-            }
-          }}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-backdrop-in keyboard-modal-backdrop"
-        >
-          <div className="w-full sm:max-w-lg bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sm:p-8 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:pb-8 keyboard-modal-sheet overflow-y-auto animate-bottom-sheet">
-            <div className="sm:hidden w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700 mx-auto mb-3 shrink-0" />
-            <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800">
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                {editingPendingBankId
-                  ? 'Revisar Lançamento Bancário'
-                  : editingTransactionId
-                  ? 'Editar Transação'
-                  : 'Nova Transação'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => {
-                  hapticSelection();
-                  resetTransactionModal();
-                  setIsAddModalOpen(false);
-                }}
-                className="pressable p-1.5 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
-                aria-label="Fechar"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <FinanceTransactionModal
+        isOpen={isAddModalOpen}
+        editingPendingBankId={editingPendingBankId}
+        editingTransactionId={editingTransactionId}
+        txType={txType}
+        setTxType={setTxType}
+        txTitle={txTitle}
+        setTxTitle={setTxTitle}
+        txAmount={txAmount}
+        setTxAmount={setTxAmount}
+        txCategory={txCategory}
+        setTxCategory={setTxCategory}
+        txDate={txDate}
+        setTxDate={setTxDate}
+        txPaymentMethod={txPaymentMethod}
+        setTxPaymentMethod={setTxPaymentMethod}
+        txNotes={txNotes}
+        setTxNotes={setTxNotes}
+        txRecurring={txRecurring}
+        setTxRecurring={setTxRecurring}
+        onClose={() => {
+          resetTransactionModal();
+          setIsAddModalOpen(false);
+        }}
+        onSubmit={handleCreateTransaction}
+      />
 
-            <form onSubmit={handleCreateTransaction} className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-2 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setTxType('despesa')}
-                  className={`py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                    txType === 'despesa'
-                      ? 'bg-rose-600 text-white shadow-xs'
-                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
-                  }`}
-                >
-                  Despesa (Saída)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTxType('receita')}
-                  className={`py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                    txType === 'receita'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
-                  }`}
-                >
-                  Receita (Entrada)
-                </button>
-              </div>
+      <FinanceBudgetModal
+        isOpen={isBudgetModalOpen}
+        budgetDrafts={budgetDrafts}
+        setBudgetDrafts={setBudgetDrafts}
+        getCategoryLabel={getCategoryLabel}
+        onClose={() => setIsBudgetModalOpen(false)}
+        onSubmit={handleSaveBudgets}
+      />
 
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Descrição da Transação *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Descrição da transação"
-                  value={txTitle}
-                  onChange={(e) => setTxTitle(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                />
-              </div>
+      <FinanceGoalModal
+        isOpen={isGoalModalOpen}
+        editingGoalId={editingGoalId}
+        goalTitle={goalTitle}
+        setGoalTitle={setGoalTitle}
+        goalTarget={goalTarget}
+        setGoalTarget={setGoalTarget}
+        goalCurrent={goalCurrent}
+        setGoalCurrent={setGoalCurrent}
+        goalDate={goalDate}
+        setGoalDate={setGoalDate}
+        onClose={() => setIsGoalModalOpen(false)}
+        onSubmit={handleCreateGoal}
+      />
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Valor (R$) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    required
-                    placeholder="Valor"
-                    value={txAmount}
-                    onChange={(e) => setTxAmount(e.target.value)}
-                    className="w-full px-3.5 py-2 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Data
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={txDate}
-                    onChange={(e) => setTxDate(e.target.value)}
-                    className="w-full px-3.5 py-2 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Categoria
-                  </label>
-                  <select
-                    value={txCategory}
-                    onChange={(e) => setTxCategory(e.target.value as FinanceCategory)}
-                    className="w-full px-3.5 py-2 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                  >
-                    <option value="moradia">Moradia & Contas</option>
-                    <option value="alimentacao">Alimentação</option>
-                    <option value="transporte">Transporte</option>
-                    <option value="saude">Saúde</option>
-                    <option value="educacao">Educação</option>
-                    <option value="lazer">Lazer</option>
-                    <option value="salario">Salário</option>
-                    <option value="freelance">Freelance</option>
-                    <option value="investimentos">Investimentos</option>
-                    <option value="outros">Outros</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Método de Pagamento
-                  </label>
-                  <select
-                    value={txPaymentMethod}
-                    onChange={(e) =>
-                      setTxPaymentMethod(e.target.value as Transaction['paymentMethod'])
-                    }
-                    className="w-full px-3.5 py-2 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                  >
-                    <option value="pix">Pix</option>
-                    <option value="cartao_credito">Cartão de Crédito</option>
-                    <option value="cartao_debito">Cartão de Débito</option>
-                    <option value="dinheiro">Dinheiro</option>
-                    <option value="transferencia">Transferência</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="txRecurringCheckbox"
-                  checked={txRecurring}
-                  onChange={(e) => setTxRecurring(e.target.checked)}
-                  className="w-4 h-4 rounded text-emerald-600 cursor-pointer"
-                />
-                <label
-                  htmlFor="txRecurringCheckbox"
-                  className="text-xs font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer"
-                >
-                  Despesa / Entrada Fixa Recorrente (todo mês)
-                </label>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Notas / Observações
-                </label>
-                <input
-                  type="text"
-                  placeholder="Observações (opcional)"
-                  value={txNotes}
-                  onChange={(e) => setTxNotes(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                />
-              </div>
-
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-zinc-100 dark:border-zinc-800">
-                <button
-                  type="button"
-                  onClick={() => {
-                    hapticSelection();
-                    resetTransactionModal();
-                    setIsAddModalOpen(false);
-                  }}
-                  className="pressable min-h-[40px] px-4 py-2 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className={`pressable min-h-[40px] px-5 py-2 rounded-xl text-sm font-semibold text-white shadow-md cursor-pointer ${
-                    txType === 'receita'
-                      ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
-                      : 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
-                  }`}
-                >
-                  {editingPendingBankId
-                    ? 'Confirmar e Lançar'
-                    : editingTransactionId
-                    ? 'Salvar Alterações'
-                    : 'Adicionar Transação'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Budget Adjust Modal */}
-      {isBudgetModalOpen && (
-        <div
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              hapticSelection();
-              setIsBudgetModalOpen(false);
-            }
-          }}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-backdrop-in keyboard-modal-backdrop"
-        >
-          <div className="w-full sm:max-w-md bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sm:p-8 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:pb-8 keyboard-modal-sheet overflow-y-auto animate-bottom-sheet">
-            <div className="sm:hidden w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700 mx-auto mb-3 shrink-0" />
-            <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800">
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                Limites de Orçamento Mensal
-              </h3>
-              <button
-                type="button"
-                onClick={() => {
-                  hapticSelection();
-                  setIsBudgetModalOpen(false);
-                }}
-                className="pressable p-1.5 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
-                aria-label="Fechar"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveBudgets}>
-              <div className="mt-4 space-y-3">
-                {(
-                  [
-                    'moradia',
-                    'alimentacao',
-                    'transporte',
-                    'saude',
-                    'lazer',
-                    'outros',
-                  ] as FinanceCategory[]
-                ).map((cat) => (
-                  <div key={cat} className="flex items-center justify-between gap-4">
-                    <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                      {getCategoryLabel(cat)}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-zinc-400">R$</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="Sem limite"
-                        value={budgetDrafts[cat] ?? ''}
-                        onChange={(e) =>
-                          setBudgetDrafts((prev) => ({ ...prev, [cat]: e.target.value }))
-                        }
-                        className="w-28 px-2.5 py-1.5 text-xs rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 text-right font-semibold tabular-nums focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    hapticSelection();
-                    setIsBudgetModalOpen(false);
-                  }}
-                  className="pressable min-h-[40px] px-4 py-2 rounded-xl text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="pressable min-h-[40px] px-4 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
-                >
-                  Salvar Limites
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Goal Create Modal */}
-      {isGoalModalOpen && (
-        <div
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              hapticSelection();
-              setIsGoalModalOpen(false);
-            }
-          }}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-backdrop-in keyboard-modal-backdrop"
-        >
-          <div className="w-full sm:max-w-md bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sm:p-8 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:pb-8 keyboard-modal-sheet overflow-y-auto animate-bottom-sheet">
-            <div className="sm:hidden w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700 mx-auto mb-3 shrink-0" />
-            <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800">
-              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                {editingGoalId ? 'Editar Meta Financeira' : 'Nova Meta Financeira'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => {
-                  hapticSelection();
-                  setIsGoalModalOpen(false);
-                }}
-                className="pressable p-1.5 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
-                aria-label="Fechar"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateGoal} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Título da Meta *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Nome da meta"
-                  value={goalTitle}
-                  onChange={(e) => setGoalTitle(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Valor Alvo (R$) *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="0.01"
-                    step="0.01"
-                    placeholder="Valor alvo"
-                    value={goalTarget}
-                    onChange={(e) => setGoalTarget(e.target.value)}
-                    className="w-full px-3.5 py-2 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Já Guardado (R$)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Valor inicial"
-                    value={goalCurrent}
-                    onChange={(e) => setGoalCurrent(e.target.value)}
-                    className="w-full px-3.5 py-2 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Data Alvo (opcional)
-                </label>
-                <input
-                  type="date"
-                  value={goalDate}
-                  onChange={(e) => setGoalDate(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                />
-              </div>
-
-              <div className="pt-3 flex justify-end gap-3 border-t border-zinc-100 dark:border-zinc-800">
-                <button
-                  type="button"
-                  onClick={() => {
-                    hapticSelection();
-                    setIsGoalModalOpen(false);
-                  }}
-                  className="pressable min-h-[40px] px-4 py-2 rounded-xl text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="pressable min-h-[40px] px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
-                >
-                  Salvar Meta
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Add Amount to Goal Modal */}
-      {addingToGoal && (
-        <div
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              hapticSelection();
-              setAddingToGoal(null);
-            }
-          }}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-backdrop-in keyboard-modal-backdrop"
-        >
-          <div className="w-full sm:max-w-sm bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:pb-6 keyboard-modal-sheet overflow-y-auto animate-bottom-sheet">
-            <div className="sm:hidden w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700 mx-auto mb-3 shrink-0" />
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
-              <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 truncate pr-2">
-                Adicionar à meta
-              </h3>
-              <button
-                type="button"
-                onClick={() => {
-                  hapticSelection();
-                  setAddingToGoal(null);
-                }}
-                className="pressable p-1.5 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
-                aria-label="Fechar"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddAmountToGoal} className="mt-4 space-y-4">
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Meta:{' '}
-                <strong className="text-zinc-800 dark:text-zinc-200">{addingToGoal.title}</strong>
-              </p>
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Valor a adicionar (R$) *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="0.01"
-                  step="0.01"
-                  autoFocus
-                  placeholder="Valor"
-                  value={addGoalAmount}
-                  onChange={(e) => setAddGoalAmount(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    hapticSelection();
-                    setAddingToGoal(null);
-                  }}
-                  className="pressable min-h-[40px] px-4 py-2 rounded-xl text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="pressable min-h-[40px] px-4 py-2 rounded-xl text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 cursor-pointer"
-                >
-                  Adicionar
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <FinanceAddToGoalModal
+        addingToGoal={addingToGoal}
+        addGoalAmount={addGoalAmount}
+        setAddGoalAmount={setAddGoalAmount}
+        onClose={() => setAddingToGoal(null)}
+        onSubmit={handleAddAmountToGoal}
+      />
 
       {/* AI Receipt Scanner Modal (lazy-loaded on demand) */}
       {isScannerOpen && (
         <Suspense fallback={null}>
-          <ReceiptScannerModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
+          <ReceiptScannerModal
+            isOpen={isScannerOpen}
+            onClose={() => {
+              onConsumeInitialReceiptFile?.();
+              setIsScannerOpen(false);
+            }}
+            initialFile={initialReceiptFile}
+            onConsumeInitialFile={onConsumeInitialReceiptFile}
+          />
+        </Suspense>
+      )}
+
+      {/* Bank Capture, Wallet, SMS, Manual Apps & Scheduled Value Messages Modal */}
+      {isCaptureConfigOpen && (
+        <Suspense fallback={null}>
+          <BankCaptureConfigModal
+            isOpen={isCaptureConfigOpen}
+            initialTab={captureConfigInitialTab}
+            onClose={() => setIsCaptureConfigOpen(false)}
+          />
         </Suspense>
       )}
     </div>

@@ -267,18 +267,44 @@ export async function scanReceiptWithAI(
 
   diagnostics.serverErrorSummary = serverFailedMessage;
 
-  // Contingency Step: Run on-device Offline OCR automatically
+  // Contingency Step: Run on-device Offline OCR + QR Code recognition automatically
   diagnostics.offlineAttempted = true;
   try {
     const ocr = await extractReceiptTextOffline(prepared.dataUrl);
     diagnostics.offlineEngine = ocr.engine;
 
     const parsedOffline = parseReceiptOcrText(ocr.text);
-    if (parsedOffline) {
+    const qr = ocr.qrParsed;
+
+    if (parsedOffline || (qr && (qr.amount || qr.title || qr.accessKey))) {
+      const mergedTitle =
+        parsedOffline?.title && parsedOffline.title !== 'Compra Nota Fiscal'
+          ? parsedOffline.title
+          : qr?.title || parsedOffline?.title || 'Compra Nota Fiscal';
+      const mergedAmount =
+        qr?.amount && qr.amount > 0
+          ? qr.amount
+          : parsedOffline?.amount || 0;
+      const mergedDate = qr?.date || parsedOffline?.date || formatLocalDateIso();
+      const mergedNotes = [qr?.notes, parsedOffline?.notes].filter(Boolean).join(' · ');
+
       diagnostics.offlineStatus = 'success';
-      diagnostics.offlineDetail = `${ocr.text.length} caracteres extraídos localmente`;
+      diagnostics.offlineDetail = [
+        `${ocr.text.length} caracteres extraídos localmente`,
+        qr ? `QR Code ${qr.kind.toUpperCase()} detectado` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+
       return {
-        data: sanitizeParsedReceiptData(parsedOffline),
+        data: sanitizeParsedReceiptData({
+          title: mergedTitle,
+          amount: mergedAmount,
+          date: mergedDate,
+          category: parsedOffline?.category || 'alimentacao',
+          paymentMethod: qr?.paymentMethod || parsedOffline?.paymentMethod || 'cartao_credito',
+          notes: mergedNotes,
+        }),
         source: 'offline_ocr',
         diagnostics,
       };
@@ -287,7 +313,7 @@ export async function scanReceiptWithAI(
     diagnostics.offlineStatus = 'no_data';
     diagnostics.offlineDetail = ocr.text
       ? `Texto insuficiente (${ocr.text.length} caracteres)`
-      : 'Nenhum texto legível encontrado na foto';
+      : 'Nenhum texto ou QR Code legível encontrado na foto';
   } catch (ocrErr: any) {
     diagnostics.offlineStatus = 'failed';
     diagnostics.offlineDetail = ocrErr?.message

@@ -1,6 +1,6 @@
 import React from 'react';
-import { Bell, Moon, Settings, Sparkles, Sun } from 'lucide-react';
-import { useApp } from '../context/AppContext';
+import { Bell, Eye, EyeOff, Moon, Search, Settings, Sparkles, Sun } from 'lucide-react';
+import { useApp, useFinance } from '../context/AppContext';
 import { hapticImpactLight, hapticSelection } from '../services/hapticsService';
 
 interface HeaderProps {
@@ -8,6 +8,7 @@ interface HeaderProps {
   setCurrentTab: (tab: string) => void;
   openAccountModal: () => void;
   openNotificationCenter: () => void;
+  openGlobalSearch: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -15,6 +16,7 @@ export const Header: React.FC<HeaderProps> = ({
   setCurrentTab,
   openAccountModal,
   openNotificationCenter,
+  openGlobalSearch,
 }) => {
   const {
     theme,
@@ -23,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
     notificationsList,
     appUpdateResult,
   } = useApp();
+  const { hideValues, toggleHideValues } = useFinance();
 
   const todayStr = new Intl.DateTimeFormat('pt-BR', {
     weekday: 'short',
@@ -83,6 +86,34 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Zone 3: Minimal Right Controls */}
           <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                hapticSelection();
+                openGlobalSearch();
+              }}
+              title="Busca global (Ctrl+K)"
+              aria-label="Busca global"
+              className="pressable w-9 h-9 flex items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200/80 dark:border-zinc-700/80 hover:bg-zinc-200/70 dark:hover:bg-zinc-700 cursor-pointer shrink-0"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleHideValues}
+              title={hideValues ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'}
+              aria-label={hideValues ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'}
+              aria-pressed={hideValues}
+              className={`pressable w-9 h-9 flex items-center justify-center rounded-xl border cursor-pointer shrink-0 ${
+                hideValues
+                  ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800'
+                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border-zinc-200/80 dark:border-zinc-700/80 hover:bg-zinc-200/70 dark:hover:bg-zinc-700'
+              }`}
+            >
+              {hideValues ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+
             <button
               type="button"
               onClick={() => {

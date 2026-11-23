@@ -7,15 +7,18 @@ import {
   Eye,
   EyeOff,
   FileKey2,
+  FileText,
   Lock,
+  Receipt,
   RefreshCw,
   RotateCcw,
   Share2,
   ShieldCheck,
   Upload,
+  Wallet,
   X,
 } from 'lucide-react';
-import { useApp, usePlanner, useWorkspace } from '../../context/AppContext';
+import { useApp, useFinance, usePlanner, useWorkspace } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import {
   addIncomingFileListener,
@@ -23,6 +26,7 @@ import {
   IncomingFilePayload,
 } from '../../services/appHealthBridge';
 import { classifyIncomingFile } from '../../services/backupShareAndAudit';
+import { parseBankNotificationText } from '../../services/bankNotificationParser';
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
 import { parseIcsToLocalEvents } from '../../services/icsCalendarService';
 import { BackupCountsSummary } from '../../utils/backupSummary';
@@ -605,17 +609,40 @@ export const BackupImportModal: React.FC<BackupImportModalProps> = ({
   );
 };
 
+function dataUrlToImageFile(dataUrl: string, fileName: string, mimeType: string): File | null {
+  try {
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/i);
+    if (!match) return null;
+    const resolvedMime = mimeType || match[1] || 'image/jpeg';
+    const binary = atob(match[2]);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const cleanBaseName = (fileName || 'comprovante').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const safeName = cleanBaseName.includes('.') ? cleanBaseName : `${cleanBaseName}.jpg`;
+    return new File([bytes], safeName, { type: resolvedMime });
+  } catch {
+    return null;
+  }
+}
+
 interface IncomingFileCoordinatorProps {
   initialIncoming?: { file: IncomingFilePayload; id: number } | null;
   onImportedIcs?: () => void;
+  onOpenReceiptImage?: (file: File) => void;
+  onNavigateTab?: (tab: 'dashboard' | 'agenda' | 'financas') => void;
 }
 
 export const IncomingFileCoordinator: React.FC<IncomingFileCoordinatorProps> = ({
   initialIncoming,
   onImportedIcs,
+  onOpenReceiptImage,
+  onNavigateTab,
 }) => {
   const { onboardingCompleted } = useWorkspace();
-  const { importIcsCalendar } = usePlanner();
+  const { importIcsCalendar, addDraftNote } = usePlanner();
+  const { enqueueParsedBankText, formatMoney } = useFinance();
   const [pendingBackupFile, setPendingBackupFile] = useState<{
     name: string;
     size: number;
@@ -626,6 +653,17 @@ export const IncomingFileCoordinator: React.FC<IncomingFileCoordinatorProps> = (
     size: number;
     content: string;
     eventCount: number;
+  } | null>(null);
+  const [pendingImageFile, setPendingImageFile] = useState<{
+    name: string;
+    mimeType: string;
+    size: number;
+    dataUrl: string;
+  } | null>(null);
+  const [pendingSharedText, setPendingSharedText] = useState<{
+    name: string;
+    content: string;
+    parsedBank: ReturnType<typeof parseBankNotificationText>;
   } | null>(null);
   const [icsImportError, setIcsImportError] = useState<string | null>(null);
   const [unsupportedFileName, setUnsupportedFileName] = useState<string | null>(null);
@@ -638,9 +676,16 @@ export const IncomingFileCoordinator: React.FC<IncomingFileCoordinatorProps> = (
   }, [incomingToast]);
 
   const handleIncomingPayload = React.useCallback((file: IncomingFilePayload) => {
-    const kind = classifyIncomingFile({ name: file.name, content: file.content });
+    const kind = classifyIncomingFile({
+      name: file.name,
+      content: file.content,
+      mimeType: file.mimeType,
+      kind: file.kind,
+    });
     if (kind === 'backup') {
       setPendingIcsFile(null);
+      setPendingImageFile(null);
+      setPendingSharedText(null);
       setUnsupportedFileName(null);
       setPendingBackupFile({
         name: file.name,
@@ -653,6 +698,8 @@ export const IncomingFileCoordinator: React.FC<IncomingFileCoordinatorProps> = (
     if (kind === 'ics') {
       const parsed = parseIcsToLocalEvents(file.content);
       setPendingBackupFile(null);
+      setPendingImageFile(null);
+      setPendingSharedText(null);
       setUnsupportedFileName(null);
       setIcsImportError(
         parsed.events.length === 0
@@ -668,8 +715,43 @@ export const IncomingFileCoordinator: React.FC<IncomingFileCoordinatorProps> = (
       return;
     }
 
+    if (kind === 'image') {
+      setPendingBackupFile(null);
+      setPendingIcsFile(null);
+      setPendingSharedText(null);
+      setUnsupportedFileName(null);
+      setPendingImageFile({
+        name: file.name || 'comprovante.jpg',
+        mimeType: file.mimeType || 'image/jpeg',
+        size: file.size,
+        dataUrl: file.content,
+      });
+      return;
+    }
+
+    if (kind === 'text') {
+      const cleanText = file.content.trim();
+      const parsedBank = parseBankNotificationText({
+        rawText: cleanText,
+        source: 'manual',
+        allowAmbiguous: false,
+      });
+      setPendingBackupFile(null);
+      setPendingIcsFile(null);
+      setPendingImageFile(null);
+      setUnsupportedFileName(null);
+      setPendingSharedText({
+        name: file.name || 'Texto compartilhado',
+        content: cleanText,
+        parsedBank,
+      });
+      return;
+    }
+
     setPendingBackupFile(null);
     setPendingIcsFile(null);
+    setPendingImageFile(null);
+    setPendingSharedText(null);
     setUnsupportedFileName(file.name);
   }, []);
 
@@ -715,6 +797,16 @@ export const IncomingFileCoordinator: React.FC<IncomingFileCoordinatorProps> = (
     return true;
   });
 
+  useBackHandler(Boolean(pendingImageFile), () => {
+    setPendingImageFile(null);
+    return true;
+  });
+
+  useBackHandler(Boolean(pendingSharedText), () => {
+    setPendingSharedText(null);
+    return true;
+  });
+
   useBackHandler(Boolean(unsupportedFileName), () => {
     setUnsupportedFileName(null);
     return true;
@@ -738,6 +830,55 @@ export const IncomingFileCoordinator: React.FC<IncomingFileCoordinatorProps> = (
       setIncomingToast('Todos os compromissos deste arquivo já estavam na Agenda.');
     }
     onImportedIcs?.();
+  };
+
+  const handleOpenSharedReceipt = () => {
+    if (!pendingImageFile) return;
+    const converted = dataUrlToImageFile(
+      pendingImageFile.dataUrl,
+      pendingImageFile.name,
+      pendingImageFile.mimeType
+    );
+    setPendingImageFile(null);
+    if (!converted) {
+      setIncomingToast('Não foi possível abrir esta imagem no leitor.');
+      return;
+    }
+    hapticImpactLight();
+    onOpenReceiptImage?.(converted);
+  };
+
+  const handleSaveSharedTextAsDraft = () => {
+    if (!pendingSharedText) return;
+    hapticImpactLight();
+    const firstLine = pendingSharedText.content.split(/\r?\n/)[0]?.trim() || '';
+    const title = firstLine.length > 0 ? firstLine.slice(0, 48) : 'Nota compartilhada';
+    addDraftNote({
+      title,
+      content: pendingSharedText.content,
+      kind: 'text',
+    });
+    setPendingSharedText(null);
+    hapticSuccess();
+    onNavigateTab?.('dashboard');
+    setIncomingToast('Texto salvo nos seus Rascunhos.');
+  };
+
+  const handleSendSharedTextToFinance = () => {
+    if (!pendingSharedText) return;
+    hapticImpactLight();
+    const queued = enqueueParsedBankText(
+      pendingSharedText.content,
+      pendingSharedText.parsedBank?.bankName
+    );
+    setPendingSharedText(null);
+    if (queued) {
+      hapticSuccess();
+      onNavigateTab?.('financas');
+      setIncomingToast('Comprovante enviado para revisão em Finanças.');
+    } else {
+      setIncomingToast('Não foi possível interpretar este comprovante.');
+    }
   };
 
   return (
@@ -819,6 +960,150 @@ export const IncomingFileCoordinator: React.FC<IncomingFileCoordinatorProps> = (
         </div>
       )}
 
+      {pendingImageFile && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              hapticSelection();
+              setPendingImageFile(null);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-backdrop-in keyboard-modal-backdrop"
+        >
+          <div className="w-full sm:max-w-md bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:pb-6 keyboard-modal-sheet overflow-y-auto relative animate-bottom-sheet">
+            <div className="sm:hidden w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700 mx-auto mb-3 shrink-0" />
+            <button
+              type="button"
+              onClick={() => setPendingImageFile(null)}
+              aria-label="Fechar"
+              className="pressable absolute top-4 right-4 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-start gap-3 pr-10">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                <Receipt className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                  Ler Nota ou Cupom Compartilhado
+                </h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
+                  {pendingImageFile.name} · {Math.max(1, Math.round(pendingImageFile.size / 1024))} KB
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-800 flex items-center justify-center max-h-56">
+              <img
+                src={pendingImageFile.dataUrl}
+                alt="Imagem compartilhada"
+                className="max-h-56 w-auto object-contain"
+              />
+            </div>
+
+            <div className="mt-5 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingImageFile(null)}
+                className="min-h-[44px] px-4 rounded-xl text-xs font-medium text-zinc-600 dark:text-zinc-300 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenSharedReceipt}
+                className="pressable min-h-[44px] px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-2 cursor-pointer"
+              >
+                <Receipt className="w-4 h-4" />
+                <span>Escanear em Finanças</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingSharedText && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              hapticSelection();
+              setPendingSharedText(null);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-backdrop-in keyboard-modal-backdrop"
+        >
+          <div className="w-full sm:max-w-md bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:pb-6 keyboard-modal-sheet overflow-y-auto relative animate-bottom-sheet">
+            <div className="sm:hidden w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700 mx-auto mb-3 shrink-0" />
+            <button
+              type="button"
+              onClick={() => setPendingSharedText(null)}
+              aria-label="Fechar"
+              className="pressable absolute top-4 right-4 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-start gap-3 pr-10">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                  Texto Recebido no Lifeedy
+                </h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  Escolha salvar como rascunho rápido ou enviar para Finanças.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/80 dark:border-zinc-800 max-h-36 overflow-y-auto text-xs text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words">
+              {pendingSharedText.content}
+            </div>
+
+            {pendingSharedText.parsedBank && (
+              <div className="mt-3 p-3 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/50 text-xs flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-emerald-900 dark:text-emerald-200 truncate">
+                    {pendingSharedText.parsedBank.title}
+                  </p>
+                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                    {pendingSharedText.parsedBank.bankName} ·{' '}
+                    {pendingSharedText.parsedBank.type === 'receita' ? 'Entrada' : 'Saída'}
+                  </p>
+                </div>
+                <span className="font-bold text-emerald-700 dark:text-emerald-300 tabular-nums shrink-0">
+                  {formatMoney(pendingSharedText.parsedBank.amount)}
+                </span>
+              </div>
+            )}
+
+            <div className="mt-5 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleSaveSharedTextAsDraft}
+                className="pressable min-h-[44px] px-4 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Salvar Rascunho</span>
+              </button>
+              {pendingSharedText.parsedBank && (
+                <button
+                  type="button"
+                  onClick={handleSendSharedTextToFinance}
+                  className="pressable min-h-[44px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Wallet className="w-3.5 h-3.5" />
+                  <span>Enviar p/ Finanças</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {unsupportedFileName && (
         <div
           onClick={(e) => {
@@ -838,7 +1123,7 @@ export const IncomingFileCoordinator: React.FC<IncomingFileCoordinatorProps> = (
                   Arquivo não reconhecido
                 </h3>
                 <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 leading-relaxed break-words">
-                  O arquivo <strong>{unsupportedFileName}</strong> não é um backup válido do Lifeedy (.lifeedy ou .json) nem um calendário (.ics).
+                  O arquivo <strong>{unsupportedFileName}</strong> não é um backup válido do Lifeedy (.lifeedy ou .json), calendário (.ics), imagem de cupom ou texto.
                 </p>
               </div>
             </div>

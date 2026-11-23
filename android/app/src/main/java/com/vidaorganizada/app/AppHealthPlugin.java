@@ -12,6 +12,8 @@ import android.content.UriPermission;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.DocumentsContract;
@@ -50,6 +52,7 @@ import java.lang.ref.WeakReference;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -90,6 +93,9 @@ public class AppHealthPlugin extends Plugin {
     private static final String PREF_LAST_FILE_NAME = "last_file_name";
     private static final String EXPORTS_CACHE_DIR = "exports";
     private static final long EXPORT_CACHE_TTL_MS = 60L * 60L * 1000L; // 1 hour
+    private static final int MAX_SHARED_IMAGE_BYTES = 20 * 1024 * 1024;
+    private static final int MAX_SHARED_IMAGE_DIMENSION = 1600;
+    private static final int MAX_SHARED_TEXT_CHARS = 65536;
 
     private static WeakReference<AppHealthPlugin> sActiveInstance = new WeakReference<>(null);
     private static volatile JSObject sPendingIncomingFile = null;
@@ -124,6 +130,34 @@ public class AppHealthPlugin extends Plugin {
             }
         } else if (Intent.ACTION_SEND.equals(action)) {
             uri = getStreamUriCompat(intent);
+            if (uri == null) {
+                String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
+                if (sharedText != null && !sharedText.trim().isEmpty()) {
+                    String trimmedText = sharedText.trim();
+                    if (trimmedText.length() > MAX_SHARED_TEXT_CHARS) {
+                        trimmedText = trimmedText.substring(0, MAX_SHARED_TEXT_CHARS);
+                    }
+                    String subject = intent.getStringExtra(Intent.EXTRA_SUBJECT);
+                    String safeName = (subject != null && !subject.trim().isEmpty())
+                            ? subject.trim()
+                            : "Texto compartilhado";
+
+                    JSObject payload = new JSObject();
+                    payload.put("kind", "text");
+                    payload.put("name", safeName);
+                    payload.put("mimeType", "text/plain");
+                    payload.put("size", trimmedText.length());
+                    payload.put("content", trimmedText);
+                    payload.put("receivedAt", System.currentTimeMillis());
+
+                    sPendingIncomingFile = payload;
+                    AppHealthPlugin instance = sActiveInstance.get();
+                    if (instance != null) {
+                        instance.notifyListeners("incomingFileOpened", payload, true);
+                    }
+                }
+                return;
+            }
         }
 
         if (uri == null) return;
@@ -132,11 +166,15 @@ public class AppHealthPlugin extends Plugin {
                 ? context.getApplicationContext()
                 : context;
         final Uri targetUri = uri;
+        final String intentMimeType = intent.getType() != null ? intent.getType() : "";
 
         sIntentExecutor.execute(() -> {
             try {
                 ContentResolver resolver = appContext.getContentResolver();
                 String mimeType = resolver.getType(targetUri);
+                if (mimeType == null || mimeType.trim().isEmpty()) {
+                    mimeType = intentMimeType;
+                }
                 if (mimeType == null) mimeType = "";
 
                 String fileName = "arquivo_recebido";
@@ -163,19 +201,20 @@ public class AppHealthPlugin extends Plugin {
                         }
                     }
                 } catch (Exception ignored) {
-                    // fallback to URI last path segment
                     String lastSeg = targetUri.getLastPathSegment();
                     if (lastSeg != null && !lastSeg.trim().isEmpty()) {
                         fileName = lastSeg.trim();
                     }
                 }
 
-                if (reportedSize > MAX_VAULT_BYTES) {
+                String lowerMime = mimeType.toLowerCase(Locale.ROOT);
+                boolean isImageShare = lowerMime.startsWith("image/");
+                long maxAllowedSize = isImageShare ? MAX_SHARED_IMAGE_BYTES : MAX_VAULT_BYTES;
+                if (reportedSize > maxAllowedSize) {
                     return;
                 }
 
-                String content;
-                int totalBytes = 0;
+                byte[] rawBytes;
                 try (
                     InputStream is = resolver.openInputStream(targetUri);
                     ByteArrayOutputStream baos = new ByteArrayOutputStream()
@@ -183,24 +222,39 @@ public class AppHealthPlugin extends Plugin {
                     if (is == null) return;
                     byte[] buf = new byte[16 * 1024];
                     int read;
+                    int totalBytes = 0;
                     while ((read = is.read(buf)) != -1) {
                         totalBytes += read;
-                        if (totalBytes > MAX_VAULT_BYTES) {
+                        if (totalBytes > maxAllowedSize) {
                             return;
                         }
                         baos.write(buf, 0, read);
                     }
-                    content = baos.toString(StandardCharsets.UTF_8.name());
+                    rawBytes = baos.toByteArray();
                 }
 
-                if (content == null || content.trim().isEmpty()) return;
+                if (rawBytes.length == 0) return;
 
                 JSObject payload = new JSObject();
-                payload.put("name", fileName);
-                payload.put("mimeType", mimeType);
-                payload.put("size", totalBytes);
-                payload.put("content", content);
-                payload.put("receivedAt", System.currentTimeMillis());
+                if (isImageShare) {
+                    String dataUrl = encodeBoundedSharedImageDataUrl(rawBytes);
+                    if (dataUrl == null || dataUrl.isEmpty()) return;
+                    payload.put("kind", "image");
+                    payload.put("name", fileName);
+                    payload.put("mimeType", "image/jpeg");
+                    payload.put("size", rawBytes.length);
+                    payload.put("content", dataUrl);
+                    payload.put("receivedAt", System.currentTimeMillis());
+                } else {
+                    String content = new String(rawBytes, StandardCharsets.UTF_8);
+                    if (content.trim().isEmpty()) return;
+                    payload.put("kind", "file");
+                    payload.put("name", fileName);
+                    payload.put("mimeType", mimeType);
+                    payload.put("size", rawBytes.length);
+                    payload.put("content", content);
+                    payload.put("receivedAt", System.currentTimeMillis());
+                }
 
                 sPendingIncomingFile = payload;
                 AppHealthPlugin instance = sActiveInstance.get();
@@ -211,6 +265,56 @@ public class AppHealthPlugin extends Plugin {
                 // Safe ignore malformed external URI
             }
         });
+    }
+
+    private static String encodeBoundedSharedImageDataUrl(byte[] rawBytes) {
+        Bitmap decoded = null;
+        Bitmap scaled = null;
+        try {
+            BitmapFactory.Options boundsOpts = new BitmapFactory.Options();
+            boundsOpts.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.length, boundsOpts);
+
+            int width = boundsOpts.outWidth;
+            int height = boundsOpts.outHeight;
+            if (width <= 0 || height <= 0) return null;
+
+            int sampleSize = 1;
+            while ((width / sampleSize) > MAX_SHARED_IMAGE_DIMENSION
+                    || (height / sampleSize) > MAX_SHARED_IMAGE_DIMENSION) {
+                sampleSize *= 2;
+            }
+
+            BitmapFactory.Options decodeOpts = new BitmapFactory.Options();
+            decodeOpts.inSampleSize = sampleSize;
+            decoded = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.length, decodeOpts);
+            if (decoded == null) return null;
+
+            Bitmap exportBitmap = decoded;
+            int maxDim = Math.max(decoded.getWidth(), decoded.getHeight());
+            if (maxDim > MAX_SHARED_IMAGE_DIMENSION) {
+                float ratio = (float) MAX_SHARED_IMAGE_DIMENSION / (float) maxDim;
+                int targetW = Math.max(1, Math.round(decoded.getWidth() * ratio));
+                int targetH = Math.max(1, Math.round(decoded.getHeight() * ratio));
+                scaled = Bitmap.createScaledBitmap(decoded, targetW, targetH, true);
+                exportBitmap = scaled;
+            }
+
+            ByteArrayOutputStream jpegOut = new ByteArrayOutputStream();
+            exportBitmap.compress(Bitmap.CompressFormat.JPEG, 85, jpegOut);
+            byte[] jpegBytes = jpegOut.toByteArray();
+            if (jpegBytes.length == 0) return null;
+            return "data:image/jpeg;base64," + Base64.encodeToString(jpegBytes, Base64.NO_WRAP);
+        } catch (OutOfMemoryError | Exception ignored) {
+            return null;
+        } finally {
+            if (scaled != null && !scaled.isRecycled()) {
+                scaled.recycle();
+            }
+            if (decoded != null && !decoded.isRecycled()) {
+                decoded.recycle();
+            }
+        }
     }
 
     @SuppressWarnings("deprecation")
@@ -374,11 +478,39 @@ public class AppHealthPlugin extends Plugin {
         }
         JSObject res = new JSObject();
         res.put("found", true);
+        res.put("kind", pending.getString("kind", "file"));
         res.put("name", pending.getString("name", "arquivo"));
         res.put("mimeType", pending.getString("mimeType", ""));
         res.put("size", pending.optLong("size", 0L));
         res.put("content", pending.getString("content", ""));
         res.put("receivedAt", pending.optLong("receivedAt", System.currentTimeMillis()));
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void updateWidgetSummary(PluginCall call) {
+        Context context = getContext();
+        if (context == null) {
+            JSObject res = new JSObject();
+            res.put("updated", false);
+            call.resolve(res);
+            return;
+        }
+        int pendingTasksCount = call.getInt("pendingTasksCount", 0);
+        int todayEventsCount = call.getInt("todayEventsCount", 0);
+        String balanceFormatted = call.getString("balanceFormatted", "R$ 0,00");
+        boolean hideValues = Boolean.TRUE.equals(call.getBoolean("hideValues", false));
+
+        LifeedyWidgetProvider.saveSummaryAndRefresh(
+                context,
+                pendingTasksCount,
+                todayEventsCount,
+                balanceFormatted,
+                hideValues
+        );
+
+        JSObject res = new JSObject();
+        res.put("updated", true);
         call.resolve(res);
     }
 
