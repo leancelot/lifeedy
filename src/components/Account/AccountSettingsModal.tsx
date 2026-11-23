@@ -4,20 +4,20 @@ import {
   AlertCircle,
   AlertTriangle,
   CheckCircle2,
-  CloudCheck,
-  CloudDownload,
-  CloudOff,
-  CloudUpload,
   Compass,
   Cpu,
   Download,
   ExternalLink,
+  FileKey2,
   Fingerprint,
+  FolderOpen,
+  FolderSync,
   GitBranch,
   GitCommit,
   Globe,
+  HardDrive,
   Key,
-  LogOut,
+  Lock,
   Moon,
   Package,
   RefreshCw,
@@ -29,6 +29,7 @@ import {
   Smartphone,
   Sparkles,
   Sun,
+  Unlink,
   Upload,
   User as UserIcon,
   X,
@@ -49,7 +50,6 @@ import {
   saveGitHubConfig,
 } from '../../services/githubUpdateService';
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
-import { isFirebaseConfigured } from '../../services/firebase';
 import { validateGitHubRepoSlug } from '../../utils/runtimeValidator';
 import {
   clearCustomAppServerUrl,
@@ -58,6 +58,7 @@ import {
   getCustomAppServerUrl,
   saveCustomAppServerUrl,
 } from '../../utils/appServerUrl';
+import { BackupImportModal, EncryptedBackupExportModal } from '../Backup/BackupModals';
 import { DiagnosticsAndPermissionsSection } from './DiagnosticsAndPermissionsSection';
 
 export type SettingsCategoryTab = 'general' | 'account' | 'security' | 'system';
@@ -75,7 +76,7 @@ const CATEGORY_TABS: Array<{
   Icon: React.FC<{ className?: string }>;
 }> = [
   { id: 'general', label: 'Geral', Icon: SlidersHorizontal },
-  { id: 'account', label: 'Conta', Icon: CloudCheck },
+  { id: 'account', label: 'Backup', Icon: HardDrive },
   { id: 'security', label: 'Segurança', Icon: Shield },
   { id: 'system', label: 'Sistema', Icon: Cpu },
 ];
@@ -91,22 +92,19 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     toggleTheme,
     userName,
     setUserName,
-    user,
-    workspaceAuthStatus,
-    isAuthenticating,
-    authError,
-    clearAuthError,
-    signInWithGoogle,
-    signOut,
-    driveSyncInfo,
-    syncToDriveNow,
-    restoreFromDriveNow,
     tasks,
+    localEvents,
     transactions,
     financialGoals,
     draftNotes,
     exportBackupJson,
-    importBackupJson,
+    backupHealth,
+    autoBackupStatus,
+    selectAutoBackupFolder,
+    configureAutoBackupPassphrase,
+    toggleAutoBackupEnabled,
+    disconnectAutoBackupFolder,
+    runAutoFolderBackupNow,
     confirmDestructiveAction,
     bankListenerSupported,
     bankListenerPermission,
@@ -128,8 +126,15 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<SettingsCategoryTab>('general');
-  const [isSyncingAction, setIsSyncingAction] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isEncryptedExportOpen, setIsEncryptedExportOpen] = useState(false);
+  const [autoPassDraft, setAutoPassDraft] = useState('');
+  const [isSavingAutoPass, setIsSavingAutoPass] = useState(false);
+  const [pendingImportFile, setPendingImportFile] = useState<{
+    name: string;
+    size: number;
+    content: string;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Profile name editor
@@ -157,7 +162,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [isTestingServerUrl, setIsTestingServerUrl] = useState<boolean>(false);
 
   useBackHandler(isOpen, () => {
-    if (isSyncingAction) return false;
     onClose();
     return true;
   });
@@ -196,49 +200,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     }, 4500);
   };
 
-  const handleManualSave = async () => {
-    setIsSyncingAction(true);
-    setFeedback(null);
-    try {
-      await syncToDriveNow();
-      hapticSuccess();
-      showTempFeedback('success', 'Dados salvos com sucesso no Google Drive.');
-    } catch (err: any) {
-      showTempFeedback('error', err?.message || 'Falha ao salvar no Google Drive.');
-    } finally {
-      setIsSyncingAction(false);
-    }
-  };
-
-  const handleManualRestore = () => {
-    confirmDestructiveAction({
-      title: 'Restaurar Dados do Google Drive?',
-      message:
-        'Esta ação substituirá suas tarefas, agenda, rascunhos e finanças locais pelos dados armazenados no Google Drive.',
-      details: [
-        'Arquivo na nuvem: Lifeedy_Data.json (compatível com VidaOrganizada_Data.json)',
-        driveSyncInfo.remoteModifiedAt
-          ? `Última modificação na nuvem: ${new Date(driveSyncInfo.remoteModifiedAt).toLocaleString('pt-BR')}`
-          : 'Verificando versão mais recente...',
-      ],
-      confirmText: 'Restaurar do Drive',
-      isDestructive: false,
-      onConfirm: async () => {
-        setIsSyncingAction(true);
-        setFeedback(null);
-        try {
-          await restoreFromDriveNow();
-          hapticSuccess();
-          showTempFeedback('success', 'Dados restaurados com sucesso do Google Drive.');
-        } catch (err: any) {
-          showTempFeedback('error', err?.message || 'Falha ao restaurar dados do Drive.');
-        } finally {
-          setIsSyncingAction(false);
-        }
-      },
-    });
-  };
-
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -247,22 +208,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     reader.onload = (event) => {
       const content = event.target?.result as string;
       if (content) {
-        confirmDestructiveAction({
-          title: 'Importar Arquivo de Backup?',
-          message:
-            'Os dados locais atuais serão substituídos pelo conteúdo do arquivo JSON selecionado.',
-          details: [`Arquivo: ${file.name}`, `Tamanho: ${(file.size / 1024).toFixed(1)} KB`],
-          confirmText: 'Importar Backup',
-          isDestructive: false,
-          onConfirm: () => {
-            const success = importBackupJson(content);
-            if (success) {
-              hapticSuccess();
-              showTempFeedback('success', 'Backup JSON importado com sucesso.');
-            } else {
-              showTempFeedback('error', 'O arquivo de backup é inválido ou está corrompido.');
-            }
-          },
+        setPendingImportFile({
+          name: file.name,
+          size: file.size,
+          content,
         });
       }
     };
@@ -413,7 +362,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
   const nativeSelfUpdate = isNativeSelfUpdateSupported();
   const isNativeApk = Capacitor.isNativePlatform();
-  const canConnectGoogle = isNativeApk ? true : isFirebaseConfigured;
   const installTarget = resolveInstallableUpdateTarget(appUpdateResult, githubToken);
   const isDownloadingNow =
     updateDownloadState.status === 'downloading' ||
@@ -423,7 +371,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   return (
     <div
       onClick={(e) => {
-        if (e.target === e.currentTarget && !isSyncingAction) {
+        if (e.target === e.currentTarget) {
           hapticSelection();
           onClose();
         }
@@ -438,23 +386,14 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                {user?.photoURL ? (
-                  <img
-                    src={user.photoURL}
-                    alt={user.displayName || 'Conta'}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full rounded-2xl object-cover"
-                  />
-                ) : (
-                  <UserIcon className="w-5 h-5" />
-                )}
+                <UserIcon className="w-5 h-5" />
               </div>
               <div className="min-w-0">
                 <h3 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100 truncate">
                   Configurações
                 </h3>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
-                  {user ? user.email || user.displayName : userName || 'Preferências, dados e sistema'}
+                  {userName || 'Preferências, backup e sistema'}
                 </p>
               </div>
             </div>
@@ -650,153 +589,308 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: CONTA & DADOS (Google Drive, Backup JSON & Cofre) */}
+          {/* TAB 2: BACKUP & COFRE LOCAL (Arquivo cifrado .lifeedy, Pasta Automática & Cofre) */}
           {activeTab === 'account' && (
             <div role="tabpanel" className="space-y-5">
-              <section className="space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
+              <section className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-                    Conta Google & Drive
+                    Backup portátil cifrado (.lifeedy)
                   </span>
-                  <span
-                    className={`inline-flex items-center gap-1 text-xs font-medium ${
-                      user ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400'
-                    }`}
-                  >
-                    {user ? <CloudCheck className="w-3.5 h-3.5" /> : <CloudOff className="w-3.5 h-3.5" />}
-                    <span>{user ? 'Conectada' : 'Offline'}</span>
+                  <span className="text-[11px] font-mono tabular-nums text-zinc-500 dark:text-zinc-400">
+                    {tasks.length} tar. · {localEvents.length} ev. · {transactions.length} lanç. ·{' '}
+                    {financialGoals.length + draftNotes.length} metas/notas
                   </span>
                 </div>
 
-                {user ? (
-                  <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                          {user.displayName || 'Conta Google'}
-                        </p>
-                        <p className="text-xs text-zinc-500 truncate">{user.email}</p>
+                <div className="p-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-3 bg-zinc-50/60 dark:bg-zinc-800/30">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] pb-2 border-b border-zinc-200/70 dark:border-zinc-800">
+                    <span className="text-zinc-600 dark:text-zinc-300 font-medium">
+                      Último backup portátil
+                    </span>
+                    <span
+                      className={`font-semibold tabular-nums ${
+                        backupHealth.level === 'healthy'
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : backupHealth.level === 'warning'
+                          ? 'text-amber-600 dark:text-amber-400'
+                          : 'text-zinc-500 dark:text-zinc-400'
+                      }`}
+                    >
+                      {backupHealth.lastBackupAt
+                        ? backupHealth.daysSinceLastBackup === 0
+                          ? `Hoje · ${new Date(backupHealth.lastBackupAt).toLocaleTimeString('pt-BR', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}`
+                          : `Há ${backupHealth.daysSinceLastBackup} dia(s)`
+                        : 'Nenhum exportado ainda'}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                    Gere um arquivo protegido por senha (AES-256) para guardar seus dados no celular, enviar para você mesmo ou restaurar ao trocar de aparelho.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        hapticImpactLight();
+                        setIsEncryptedExportOpen(true);
+                      }}
+                      className="pressable min-h-[44px] px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <FileKey2 className="w-4 h-4 shrink-0" />
+                      <span>Criar backup cifrado</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="pressable min-h-[44px] px-3.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Upload className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <span>Restaurar (.lifeedy / .json)</span>
+                    </button>
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept={isNativeApk ? undefined : '.lifeedy,.json,application/json,application/octet-stream'}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+
+                  <div className="pt-2 border-t border-zinc-200/70 dark:border-zinc-800 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                      Precisa de formato aberto sem senha?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        hapticImpactLight();
+                        void exportBackupJson({ share: isNativeApk }).then(() => {
+                          showTempFeedback(
+                            'success',
+                            isNativeApk
+                              ? 'Backup JSON pronto para compartilhamento.'
+                              : 'Arquivo JSON simples baixado.'
+                          );
+                        });
+                      }}
+                      className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{isNativeApk ? 'Exportar JSON' : 'Baixar JSON simples'}</span>
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              {/* Pasta Automática Android (Storage Access Framework) */}
+              <section className="space-y-2.5">
+                <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 block">
+                  Cópia automática em pasta do aparelho
+                </span>
+
+                {autoBackupStatus.supported ? (
+                  <div className="p-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <div
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                            autoBackupStatus.configured && autoBackupStatus.accessible
+                              ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400'
+                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
+                          }`}
+                        >
+                          <FolderSync className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block truncate">
+                            {autoBackupStatus.configured
+                              ? autoBackupStatus.folderName || 'Pasta selecionada'
+                              : 'Nenhuma pasta selecionada'}
+                          </span>
+                          <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block">
+                            {autoBackupStatus.configured
+                              ? autoBackupStatus.accessible
+                                ? autoBackupStatus.lastSyncedAt
+                                  ? `Última cópia: ${new Date(
+                                      autoBackupStatus.lastSyncedAt
+                                    ).toLocaleString('pt-BR')}`
+                                  : 'Pasta pronta · defina a senha para ativar'
+                                : 'Permissão revogada · escolha a pasta novamente'
+                              : 'Escolha uma pasta (ex.: Documents/Lifeedy) para manter um .lifeedy atualizado automaticamente.'}
+                          </span>
+                        </div>
                       </div>
+
                       <button
                         type="button"
                         onClick={() => {
-                          hapticSelection();
-                          void signOut();
-                          onClose();
+                          hapticImpactLight();
+                          void selectAutoBackupFolder().then((ok) => {
+                            if (ok) {
+                              showTempFeedback('success', 'Pasta de backup automático conectada.');
+                            }
+                          });
                         }}
-                        className="pressable min-h-[40px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 inline-flex items-center gap-1.5 cursor-pointer shrink-0"
+                        className="pressable min-h-[40px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
                       >
-                        <LogOut className="w-3.5 h-3.5" />
-                        <span>Sair</span>
+                        <FolderOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                        <span>{autoBackupStatus.configured ? 'Alterar' : 'Escolher pasta'}</span>
                       </button>
                     </div>
 
-                    {workspaceAuthStatus === 'needs_reauth' && (
-                      <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/60 flex items-center justify-between gap-2">
-                        <span className="text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
-                          Renove a autorização para sincronizar Drive e Agenda.
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => void signInWithGoogle()}
-                          className="pressable shrink-0 min-h-[36px] px-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold cursor-pointer"
+                    {autoBackupStatus.configured && (
+                      <div className="pt-2.5 border-t border-zinc-100 dark:border-zinc-800 space-y-2.5">
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (autoPassDraft.trim().length < 4) return;
+                            setIsSavingAutoPass(true);
+                            try {
+                              await configureAutoBackupPassphrase(autoPassDraft.trim());
+                              setAutoPassDraft('');
+                              hapticSuccess();
+                              showTempFeedback(
+                                'success',
+                                'Senha protegida no Android Keystore. Cópia automática pronta.'
+                              );
+                            } catch (err: any) {
+                              showTempFeedback(
+                                'error',
+                                err?.message || 'Erro ao salvar senha do backup automático.'
+                              );
+                            } finally {
+                              setIsSavingAutoPass(false);
+                            }
+                          }}
+                          className="space-y-1.5"
                         >
-                          Renovar
-                        </button>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
+                              <Lock className="w-3 h-3 text-indigo-500" />
+                              <span>
+                                {autoBackupStatus.hasPassphrase
+                                  ? 'Senha do backup automático · Configurada'
+                                  : 'Definir senha do backup automático *'}
+                              </span>
+                            </span>
+                          </div>
+                          <div className="flex gap-2">
+                            <input
+                              type="password"
+                              minLength={4}
+                              value={autoPassDraft}
+                              onChange={(e) => setAutoPassDraft(e.target.value)}
+                              placeholder={
+                                autoBackupStatus.hasPassphrase
+                                  ? 'Nova senha (para alterar)'
+                                  : 'Mínimo 4 caracteres'
+                              }
+                              className="flex-1 h-10 px-3 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                            />
+                            <button
+                              type="submit"
+                              disabled={isSavingAutoPass || autoPassDraft.trim().length < 4}
+                              className="pressable h-10 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-semibold cursor-pointer shrink-0 whitespace-nowrap"
+                            >
+                              {isSavingAutoPass
+                                ? 'Salvando...'
+                                : autoBackupStatus.hasPassphrase
+                                ? 'Alterar senha'
+                                : 'Salvar senha'}
+                            </button>
+                          </div>
+                        </form>
+
+                        <label className="flex items-center justify-between gap-2 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer pt-1">
+                          <span>Atualizar arquivo automaticamente após alterações</span>
+                          <input
+                            type="checkbox"
+                            checked={autoBackupStatus.enabled}
+                            onChange={(e) => {
+                              hapticSelection();
+                              toggleAutoBackupEnabled(e.target.checked);
+                            }}
+                            className="w-4 h-4 rounded accent-indigo-600 shrink-0"
+                          />
+                        </label>
+
+                        {autoBackupStatus.lastError && (
+                          <p className="text-[11px] text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl px-3 py-2">
+                            {autoBackupStatus.lastError}
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                          <button
+                            type="button"
+                            disabled={
+                              autoBackupStatus.isSyncing ||
+                              !autoBackupStatus.accessible ||
+                              !autoBackupStatus.hasPassphrase
+                            }
+                            onClick={() => {
+                              hapticImpactLight();
+                              void runAutoFolderBackupNow().then((res) => {
+                                if (res.ok) {
+                                  hapticSuccess();
+                                  showTempFeedback(
+                                    'success',
+                                    'Cópia cifrada atualizada na pasta do aparelho.'
+                                  );
+                                } else if (res.error) {
+                                  showTempFeedback('error', res.error);
+                                }
+                              });
+                            }}
+                            className="pressable min-h-[38px] px-3 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
+                          >
+                            <RefreshCw
+                              className={`w-3.5 h-3.5 ${
+                                autoBackupStatus.isSyncing ? 'animate-spin' : ''
+                              }`}
+                            />
+                            <span>
+                              {autoBackupStatus.isSyncing
+                                ? 'Salvando...'
+                                : 'Salvar cópia na pasta agora'}
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              hapticSelection();
+                              void disconnectAutoBackupFolder();
+                            }}
+                            className="min-h-[38px] px-2.5 rounded-xl text-[11px] font-semibold text-zinc-500 hover:text-rose-600 dark:hover:text-rose-400 inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Unlink className="w-3.5 h-3.5" />
+                            <span>Desconectar</span>
+                          </button>
+                        </div>
                       </div>
                     )}
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={handleManualSave}
-                        disabled={isSyncingAction}
-                        className="pressable min-h-[44px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
-                      >
-                        {isSyncingAction ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <CloudUpload className="w-3.5 h-3.5" />
-                        )}
-                        <span>Salvar no Drive</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleManualRestore}
-                        disabled={isSyncingAction}
-                        className="pressable min-h-[44px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
-                      >
-                        <CloudDownload className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                        <span>Restaurar</span>
-                      </button>
-                    </div>
-
-                    {(driveSyncInfo.lastSyncedAt || driveSyncInfo.remoteModifiedAt) && (
-                      <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 text-[11px] text-zinc-500 flex flex-wrap items-center justify-between gap-1 font-mono tabular-nums">
-                        {driveSyncInfo.lastSyncedAt && (
-                          <span>
-                            Local: {new Date(driveSyncInfo.lastSyncedAt).toLocaleString('pt-BR')}
-                          </span>
-                        )}
-                        {driveSyncInfo.remoteModifiedAt && (
-                          <span>
-                            Drive: {new Date(driveSyncInfo.remoteModifiedAt).toLocaleString('pt-BR')}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : !canConnectGoogle ? (
-                  <div className="p-3.5 rounded-2xl border border-amber-200/80 dark:border-amber-900/50 bg-amber-50/70 dark:bg-amber-950/20 space-y-1.5">
-                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
-                      {isNativeApk
-                        ? 'Informe o servidor do app abaixo para conectar'
-                        : 'Login Google aguardando variáveis de ambiente'}
-                    </p>
-                    <p className="text-[11px] text-amber-700/90 dark:text-amber-200/80 leading-relaxed">
-                      {isNativeApk
-                        ? 'O app funciona 100% offline. Cole o endereço Web do Lifeedy no campo "Servidor de Login e IA" abaixo (ou defina APP_URL nos Secrets ao compilar o APK) para ativar o Login Google e Drive.'
-                        : 'O app continua 100% funcional localmente. Para ativar o Drive e Agenda, defina as chaves públicas VITE_FIREBASE_* nas variáveis do ambiente/CI sem expor segredos no Git.'}
-                    </p>
                   </div>
                 ) : (
-                  <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
-                      Conecte sua conta Google para backup automático no Drive e Google Agenda completo.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => void signInWithGoogle()}
-                      disabled={isAuthenticating}
-                      className="pressable min-h-[44px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shrink-0 cursor-pointer disabled:opacity-60 whitespace-nowrap"
-                    >
-                      {isAuthenticating ? 'Conectando...' : 'Conectar Google'}
-                    </button>
+                  <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                    No aplicativo Android instalado (APK), você pode vincular uma pasta fixa do celular (como <span className="font-mono text-zinc-700 dark:text-zinc-300">Documents/Lifeedy</span>) para gravar cópias cifradas automáticas.
                   </div>
                 )}
+              </section>
 
-                {authError && (
-                  <div
-                    role="alert"
-                    className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/80 flex items-start justify-between gap-2.5 text-xs text-rose-800 dark:text-rose-200"
-                  >
-                    <div className="flex items-start gap-2 min-w-0">
-                      <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-                      <span className="leading-relaxed break-words">{authError}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={clearAuthError}
-                      aria-label="Fechar aviso de login"
-                      className="p-1 rounded-lg text-rose-500 hover:text-rose-700 dark:hover:text-rose-200 cursor-pointer shrink-0"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
+              <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                <DiagnosticsAndPermissionsSection mode="vault" />
+              </div>
 
-                {(isNativeApk || hasCustomServerUrl) && (
+              {(isNativeApk || hasCustomServerUrl) && (
+                <section className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
                   <form
                     onSubmit={handleSaveServerUrl}
                     className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-2.5"
@@ -804,7 +898,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
                         <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                        <span>Servidor opcional de IA na nuvem (APK)</span>
+                        <span>Servidor opcional de IA para cupons (APK)</span>
                       </span>
                       {hasCustomServerUrl && (
                         <button
@@ -817,7 +911,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       )}
                     </div>
                     <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                      Opcional. O Login Google e o leitor de cupons local já funcionam direto neste APK sem servidor.
+                      Opcional. O leitor de cupons offline já funciona direto neste APK sem servidor.
                     </p>
                     <div className="flex gap-2">
                       <input
@@ -836,51 +930,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       </button>
                     </div>
                   </form>
-                )}
-              </section>
-
-              <section className="pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-2.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-                    Backup local (JSON)
-                  </span>
-                  <span className="text-[11px] font-mono tabular-nums text-zinc-500 dark:text-zinc-400">
-                    {tasks.length} tarefas · {transactions.length} lançam. ·{' '}
-                    {financialGoals.length + draftNotes.length} metas/notas
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={exportBackupJson}
-                    className="pressable min-h-[44px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Download className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    <span>Baixar JSON</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="pressable min-h-[44px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Upload className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    <span>Importar JSON</span>
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".json"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                </div>
-              </section>
-
-              <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                <DiagnosticsAndPermissionsSection mode="vault" />
-              </div>
+                </section>
+              )}
             </div>
           )}
 
@@ -1270,6 +1321,18 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           )}
         </div>
       </div>
+
+      <EncryptedBackupExportModal
+        isOpen={isEncryptedExportOpen}
+        onClose={() => setIsEncryptedExportOpen(false)}
+        onExported={() => showTempFeedback('success', 'Backup cifrado (.lifeedy) salvo com sucesso!')}
+      />
+
+      <BackupImportModal
+        pendingFile={pendingImportFile}
+        onClose={() => setPendingImportFile(null)}
+        onImported={() => showTempFeedback('success', 'Backup restaurado com sucesso!')}
+      />
     </div>
   );
 };

@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Lifeedy - Gestor Pessoal</title>
-    <meta name="description" content="Aplicativo de organização pessoal com gestão de tarefas diárias, finanças, sincronização no Google Drive e integração com Google Agenda." />
+    <meta name="description" content="Aplicativo de organização pessoal local-first com gestão de tarefas diárias, agenda com suporte .ics, finanças e backup cifrado no dispositivo." />
     <meta property="og:title" content="Lifeedy - Gestor Pessoal" />
-    <meta property="og:description" content="Aplicativo de organização pessoal com gestão de tarefas diárias, finanças, sincronização no Google Drive e integração com Google Agenda." />
+    <meta property="og:description" content="Aplicativo de organização pessoal local-first com gestão de tarefas diárias, agenda com suporte .ics, finanças e backup cifrado no dispositivo." />
     <meta property="og:type" content="website" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -22,17 +22,6 @@
       rel="stylesheet"
     />
     <link rel="manifest" href="/manifest.json" />
-    <script>
-      (function() {
-        if (window.location.hash && window.location.hash.indexOf('access_token=') !== -1) {
-          // Se carregado em navegador externo mobile durante o fluxo de autenticação
-          if (/Android|iPhone|iPad/i.test(navigator.userAgent) && !window.Capacitor?.isNativePlatform?.()) {
-            var deepLink = 'com.vidaorganizada.app://oauth' + window.location.hash;
-            window.location.href = deepLink;
-          }
-        }
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -6,11 +6,13 @@ import {
   DraftImageAttachment,
   DraftNote,
   FinancialGoal,
+  LocalCalendarEvent,
   LocalSpecialDate,
   PendingBankNotification,
   TaskItem,
   Transaction,
 } from '../types';
+import { formatLocalDateIso } from './dateUtils';
 
 export const CURRENT_DATA_VERSION = 4;
 export const DEFAULT_WIDGETS = [
@@ -99,7 +101,7 @@ function normalizeTaskItem(raw: unknown): TaskItem | null {
     id: r.id.trim(),
     title: r.title,
     description: typeof r.description === 'string' ? r.description : undefined,
-    dueDate: typeof r.dueDate === 'string' ? r.dueDate : new Date().toISOString().slice(0, 10),
+    dueDate: typeof r.dueDate === 'string' ? r.dueDate : formatLocalDateIso(),
     dueTime: typeof r.dueTime === 'string' && r.dueTime ? r.dueTime : undefined,
     priority: r.priority === 'high' || r.priority === 'low' ? r.priority : 'medium',
     category:
@@ -113,8 +115,12 @@ function normalizeTaskItem(raw: unknown): TaskItem | null {
     completed: Boolean(r.completed),
     completedAt: typeof r.completedAt === 'string' ? r.completedAt : undefined,
     subtasks,
-    googleCalendarEventId:
-      typeof r.googleCalendarEventId === 'string' ? r.googleCalendarEventId : undefined,
+    linkedEventId:
+      typeof r.linkedEventId === 'string'
+        ? r.linkedEventId
+        : typeof r.googleCalendarEventId === 'string'
+        ? r.googleCalendarEventId
+        : undefined,
     reminderMinutesBefore:
       typeof r.reminderMinutesBefore === 'number' && Number.isFinite(r.reminderMinutesBefore)
         ? r.reminderMinutesBefore
@@ -146,7 +152,7 @@ function normalizeTransaction(raw: unknown): Transaction | null {
       r.category === 'lazer'
         ? r.category
         : 'outros',
-    date: typeof r.date === 'string' ? r.date : new Date().toISOString().slice(0, 10),
+    date: typeof r.date === 'string' ? r.date : formatLocalDateIso(),
     paymentMethod:
       r.paymentMethod === 'pix' ||
       r.paymentMethod === 'cartao_credito' ||
@@ -273,6 +279,56 @@ function normalizeSpecialDates(raw: unknown): LocalSpecialDate[] {
   );
 }
 
+function normalizeLocalEvent(raw: unknown): LocalCalendarEvent | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.id !== 'string' || !r.id.trim() || typeof r.summary !== 'string') return null;
+
+  const rawStart =
+    r.start && typeof r.start === 'object' ? (r.start as Record<string, unknown>) : null;
+  const startDate = rawStart && typeof rawStart.date === 'string' ? rawStart.date : undefined;
+  const startDateTime =
+    rawStart && typeof rawStart.dateTime === 'string' ? rawStart.dateTime : undefined;
+  if (!startDate && !startDateTime) return null;
+
+  const rawEnd = r.end && typeof r.end === 'object' ? (r.end as Record<string, unknown>) : null;
+  const endDate = rawEnd && typeof rawEnd.date === 'string' ? rawEnd.date : startDate;
+  const endDateTime =
+    rawEnd && typeof rawEnd.dateTime === 'string' ? rawEnd.dateTime : startDateTime;
+
+  const source: LocalCalendarEvent['source'] =
+    r.source === 'ics_import'
+      ? 'ics_import'
+      : r.source === 'brazil_holiday'
+      ? 'brazil_holiday'
+      : r.source === 'local_special'
+      ? 'local_special'
+      : 'local';
+
+  return {
+    id: r.id.trim(),
+    summary: r.summary,
+    description: typeof r.description === 'string' ? r.description : undefined,
+    location: typeof r.location === 'string' ? r.location : undefined,
+    start: startDateTime ? { dateTime: startDateTime } : { date: startDate },
+    end: endDateTime ? { dateTime: endDateTime } : { date: endDate },
+    status: typeof r.status === 'string' ? r.status : 'confirmed',
+    calendarId: typeof r.calendarId === 'string' ? r.calendarId : undefined,
+    calendarSummary: typeof r.calendarSummary === 'string' ? r.calendarSummary : 'Agenda Local',
+    eventCategory:
+      r.eventCategory === 'holiday' ||
+      r.eventCategory === 'commemorative' ||
+      r.eventCategory === 'birthday'
+        ? r.eventCategory
+        : 'event',
+    source,
+    editable: typeof r.editable === 'boolean' ? r.editable : source === 'local' || source === 'ics_import',
+    recurringYearly: typeof r.recurringYearly === 'boolean' ? r.recurringYearly : undefined,
+    specialDateId: typeof r.specialDateId === 'string' ? r.specialDateId : undefined,
+    externalUid: typeof r.externalUid === 'string' ? r.externalUid : undefined,
+  };
+}
+
 /**
  * Deterministic 32-bit FNV-1a checksum hex string for quick payload integrity detection
  */
@@ -285,16 +341,23 @@ export function computePayloadChecksum(serialized: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
+export function computeStableContentChecksum(payload: AppDataPayload): string {
+  const { lastUpdated: _ignoredTimestamp, ...stableFields } = payload;
+  return computePayloadChecksum(JSON.stringify(stableFields));
+}
+
 export function serializeAppPayloadSafely(payload: AppDataPayload): {
   json: string;
   checksum: string;
+  contentChecksum: string;
   byteSize: number;
 } {
   const json = JSON.stringify(payload);
   const checksum = computePayloadChecksum(json);
+  const contentChecksum = computeStableContentChecksum(payload);
   const byteSize =
     typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(json).length : json.length;
-  return { json, checksum, byteSize };
+  return { json, checksum, contentChecksum, byteSize };
 }
 
 export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> {
@@ -331,6 +394,11 @@ export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> 
       : []
   );
   const specialDates = normalizeSpecialDates(record.specialDates);
+  const events = deduplicateById(
+    Array.isArray(record.events)
+      ? record.events.map(normalizeLocalEvent).filter((e): e is LocalCalendarEvent => e !== null)
+      : []
+  );
   const dashboardWidgets = Array.isArray(record.dashboardWidgets)
     ? (record.dashboardWidgets.filter((w): w is string => typeof w === 'string') as string[])
     : DEFAULT_WIDGETS;
@@ -347,6 +415,7 @@ export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> 
       userName: typeof record.userName === 'string' ? record.userName : '',
       onboardingCompleted: Boolean(record.onboardingCompleted),
       tasks: rawTasks,
+      events,
       transactions: rawTxs,
       financialGoals: rawGoals,
       budgetLimits: rawBudgets,
@@ -382,6 +451,7 @@ export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> 
     userName: typeof record.userName === 'string' ? record.userName : '',
     onboardingCompleted: Boolean(record.onboardingCompleted),
     tasks,
+    events,
     transactions,
     financialGoals,
     budgetLimits,

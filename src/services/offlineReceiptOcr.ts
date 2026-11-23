@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { FinanceCategory, Transaction } from '../types';
+import { formatLocalDateIso } from '../utils/dateUtils';
 
 export interface ParsedReceiptFields {
   title: string;
@@ -187,7 +188,7 @@ function extractReceiptDate(text: string): string {
     }
   }
 
-  return new Date().toISOString().split('T')[0];
+  return formatLocalDateIso();
 }
 
 function extractStoreTitle(lines: string[]): string {

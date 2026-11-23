@@ -4,6 +4,7 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
+import android.content.Intent;
 import android.content.res.Configuration;
 import android.os.Bundle;
 import android.os.Handler;
@@ -86,8 +87,11 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BiometricLockPlugin.class);
         registerPlugin(AppUpdaterPlugin.class);
         registerPlugin(AppHealthPlugin.class);
-        registerPlugin(NativeGoogleAuthPlugin.class);
         super.onCreate(savedInstanceState);
+
+        if (savedInstanceState == null) {
+            AppHealthPlugin.handleIncomingIntent(this, getIntent());
+        }
 
         WebView mainWebView = null;
         try {
@@ -120,6 +124,13 @@ public class MainActivity extends BridgeActivity {
             });
             ViewCompat.requestApplyInsets(contentRoot);
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        AppHealthPlugin.handleIncomingIntent(this, intent);
     }
 
     @Override

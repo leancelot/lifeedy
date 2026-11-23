@@ -4,7 +4,7 @@ import {
   deterministicNotificationId,
   NOTIFICATION_CHANNELS,
 } from '../notificationService';
-import { GoogleCalendarEvent, TaskItem, Transaction } from '../../types';
+import { LocalCalendarEvent, TaskItem, Transaction } from '../../types';
 
 describe('notificationService', () => {
   it('generates stable positive 32-bit IDs for identical keys', () => {
@@ -55,7 +55,7 @@ describe('notificationService', () => {
       },
     ];
 
-    const calendarEvents: GoogleCalendarEvent[] = [
+    const calendarEvents: LocalCalendarEvent[] = [
       {
         id: 'b1',
         summary: 'Aniversário Maria',

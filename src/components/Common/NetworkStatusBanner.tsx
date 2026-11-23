@@ -1,16 +1,13 @@
 import React from 'react';
-import { CheckCircle2, CloudUpload, WifiOff, X } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import { CheckCircle2, WifiOff, X } from 'lucide-react';
+import { useWorkspace } from '../../context/AppContext';
 
 export const NetworkStatusBanner: React.FC = () => {
   const {
     isOnline,
     justReconnected,
     dismissReconnectedBanner,
-    user,
-    syncToDriveNow,
-    driveSyncInfo,
-  } = useApp();
+  } = useWorkspace();
 
   if (isOnline && !justReconnected) {
     return null;
@@ -43,26 +40,14 @@ export const NetworkStatusBanner: React.FC = () => {
           Conexão restabelecida.
         </p>
       </div>
-      <div className="flex items-center gap-1.5 shrink-0">
-        {user && driveSyncInfo.status !== 'syncing' && (
-          <button
-            type="button"
-            onClick={() => void syncToDriveNow()}
-            className="pressable min-h-[32px] px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
-          >
-            <CloudUpload className="w-3 h-3" />
-            <span>Sincronizar Drive</span>
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={dismissReconnectedBanner}
-          aria-label="Fechar aviso de reconexão"
-          className="pressable w-7 h-7 rounded-lg text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 flex items-center justify-center cursor-pointer"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={dismissReconnectedBanner}
+        aria-label="Fechar aviso de reconexão"
+        className="pressable w-7 h-7 rounded-lg text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 flex items-center justify-center cursor-pointer"
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
     </div>
   );
 };

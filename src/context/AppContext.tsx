@@ -1,86 +1,94 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
-import { App as CapApp } from '@capacitor/app';
-import { Browser } from '@capacitor/browser';
-import { User } from 'firebase/auth';
-import confetti from 'canvas-confetti';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { triggerConfetti } from '../utils/confettiEffect';
+import { GlobalConfirmModal } from '../components/Common/GlobalConfirmModal';
+import {
+  AndroidPermissionsStatus,
+  AndroidPermissionTarget,
+  clearNativeAutoBackupFolder,
+  clearNativeVaultBackup,
+  getAndroidPermissionsStatus,
+  getNativeAutoBackupFolderStatus,
+  getNativeAutoBackupPassphrase,
+  isAndroidNativeHealthSupported,
+  loadNativeVaultBackup,
+  openAndroidPermissionSettings,
+  pickNativeAutoBackupFolder,
+  saveNativeAutoBackupPassphrase,
+  saveNativeVaultBackup,
+  writeNativeAutoBackupFile,
+} from '../services/appHealthBridge';
+import {
+  AUTO_BACKUP_FILENAME,
+  clearAutoFolderChecksumStorage,
+  clearBackupAuditStorage,
+  evaluatePortableBackupHealth,
+  getBackupReminderSnoozedUntil,
+  getLastAutoFolderChecksum,
+  getLastPortableBackupAt,
+  isAutoFolderBackupEnabled,
+  recordPortableBackupTimestamp,
+  setAutoFolderBackupEnabled,
+  setLastAutoFolderChecksum,
+  snoozeBackupReminder,
+} from '../services/backupShareAndAudit';
+import {
+  decryptBackupEnvelope,
+  detectBackupFormat,
+  encryptBackupPayload,
+  inspectEncryptedBackupMetadata,
+  shareOrDownloadTextFile,
+} from '../services/encryptedBackupService';
+import { recordAppError } from '../services/errorJournalService';
+import { UpdateCheckResult } from '../services/githubUpdateService';
+import { hapticImpactLight, hapticSuccess, hapticWarning } from '../services/hapticsService';
+import {
+  AppDataPayload,
+  BudgetLimit,
+  DraftNote,
+  FinancialGoal,
+  LocalCalendarEvent,
+  LocalSpecialDate,
+  TaskItem,
+  Transaction,
+} from '../types';
+import { hasMeaningfulLocalData, summarizePayloadCounts } from '../utils/backupSummary';
+import { formatLocalDateIso } from '../utils/dateUtils';
+import { validateAndParseBackupJson } from '../utils/runtimeValidator';
 import {
   CURRENT_DATA_VERSION,
   DEFAULT_WIDGETS,
   sanitizeLegacyPayload,
   serializeAppPayloadSafely,
 } from '../utils/storageSanitizer';
-import { validateAndParseBackupJson } from '../utils/runtimeValidator';
+import { FinanceContext, FinanceContextType, useFinance } from './FinanceContext';
+import { PlannerContext, PlannerContextType, usePlanner } from './PlannerContext';
 import {
-  BackupCountsSummary,
-  hasMeaningfulLocalData,
-  summarizePayloadCounts,
-} from '../utils/backupSummary';
-import {
-  AppDataPayload,
-  AppNotification,
-  BudgetLimit,
-  DraftNote,
-  DriveSyncInfo,
-  FinancialGoal,
-  GoogleCalendarEvent,
-  LocalSpecialDate,
-  PendingBankNotification,
-  TaskItem,
-  Transaction,
-} from '../types';
-import {
-  completeNativeGoogleAuth,
-  consumeRedirectSignInResult,
-  getAccessToken,
-  googleSignIn,
-  initAuth,
-  isAccessTokenExpiredOrNearExpiry,
-  loadPersistedUserProfile,
-  logout as fbLogout,
-  mapGoogleAuthError,
-  persistedProfileToUser,
-  setSessionToken,
-} from '../services/firebase';
-import { isWorkspaceAuthError } from '../services/googleAuthError';
-import {
-  DriveFileInfo,
-  findDriveBackupFile,
-  readDriveFile,
-  saveToDrive,
-} from '../services/driveService';
-import { listCalendarEvents } from '../services/calendarService';
-import { NotificationNavigationTarget } from '../services/notificationService';
-import { hapticImpactLight, hapticSuccess, hapticWarning } from '../services/hapticsService';
-import {
-  AndroidPermissionsStatus,
-  AndroidPermissionTarget,
-  clearNativeVaultBackup,
-  getAndroidPermissionsStatus,
-  isAndroidNativeHealthSupported,
-  loadNativeVaultBackup,
-  openAndroidPermissionSettings,
-  saveNativeVaultBackup,
-} from '../services/appHealthBridge';
-import { recordAppError } from '../services/errorJournalService';
-import { UpdateCheckResult } from '../services/githubUpdateService';
-import { GlobalConfirmModal } from '../components/Common/GlobalConfirmModal';
-import { useThemePreference } from './hooks/useThemePreference';
-import { UndoToastInfo, useUndoToast } from './hooks/useUndoToast';
-import { ConfirmActionInput, useConfirmDialog } from './hooks/useConfirmDialog';
-import { AppUpdateDownloadState, useAppUpdater } from './hooks/useAppUpdater';
-import { useConnectivityStatus } from './hooks/useConnectivityStatus';
+  AutoBackupFolderStatusState,
+  BackupInspectionResult,
+  useWorkspace,
+  WorkspaceContext,
+  WorkspaceContextType,
+} from './WorkspaceContext';
+import { useAppUpdater } from './hooks/useAppUpdater';
 import { useBankNotificationQueue } from './hooks/useBankNotificationQueue';
-import { useTasksActions } from './hooks/useTasksActions';
-import { useFinanceActions } from './hooks/useFinanceActions';
+import { useConfirmDialog } from './hooks/useConfirmDialog';
+import { useConnectivityStatus } from './hooks/useConnectivityStatus';
 import { useDraftsActions } from './hooks/useDraftsActions';
-import { CalendarEventPayload, useGoogleCalendarActions } from './hooks/useGoogleCalendarActions';
+import { useFinanceActions } from './hooks/useFinanceActions';
+import { useLocalCalendarActions } from './hooks/useLocalCalendarActions';
 import { useNotificationsEngine } from './hooks/useNotificationsEngine';
+import { useTasksActions } from './hooks/useTasksActions';
+import { useThemePreference } from './hooks/useThemePreference';
+import { useUndoToast } from './hooks/useUndoToast';
 
 export type { AppUpdateDownloadState } from './hooks/useAppUpdater';
+export type { CalendarEventPayload, IcsImportSummary } from './hooks/useLocalCalendarActions';
+export type { BackupInspectionResult, WorkspaceContextType } from './WorkspaceContext';
+export type { FinanceContextType } from './FinanceContext';
+export type { PlannerContextType } from './PlannerContext';
+export { useWorkspace, useFinance, usePlanner };
 
 const STORAGE_KEY_DATA = 'vidaorganizada_local_data_v2';
-const STORAGE_KEY_SYNC = 'vidaorganizada_sync_info_v2';
 const STORAGE_KEY_NOTIFS = 'vidaorganizada_notifications_v2';
 const STORAGE_KEY_PENDING_BANK = 'vidaorganizada_pending_bank_v1';
 const STORAGE_KEY_BANK_SIGS = 'vidaorganizada_ingested_bank_sigs_v1';
@@ -97,200 +105,37 @@ function loadInitialLocalPayload(): Partial<AppDataPayload> {
   return {};
 }
 
-interface AppContextType {
-  // Tema visual
-  theme: 'light' | 'dark';
-  toggleTheme: () => void;
-  setThemeMode: (mode: 'light' | 'dark') => void;
-
-  // Perfil e boas-vindas
-  userName: string;
-  setUserName: (name: string) => void;
-  onboardingCompleted: boolean;
-  completeOnboarding: (name: string) => void;
-
-  // Conta Google e autenticação
-  user: User | null;
-  accessToken: string | null;
-  workspaceAuthStatus: 'disconnected' | 'connected' | 'refreshing' | 'needs_reauth';
-  isAuthenticating: boolean;
-  authError: string | null;
-  clearAuthError: () => void;
-  signInWithGoogle: () => Promise<string | null>;
-  refreshWorkspaceSession: (options?: { interactiveIfNeeded?: boolean }) => Promise<string | null>;
-  signOut: () => Promise<void>;
-
-  // Dados principais
-  tasks: TaskItem[];
-  transactions: Transaction[];
-  financialGoals: FinancialGoal[];
-  budgetLimits: BudgetLimit[];
-  draftNotes: DraftNote[];
-  specialDates: LocalSpecialDate[];
-  dashboardWidgets: string[];
-  calendarEvents: GoogleCalendarEvent[];
-  isLoadingCalendar: boolean;
-
-  // Ações de tarefas
-  addTask: (task: Omit<TaskItem, 'id'>) => void;
-  updateTask: (id: string, updates: Partial<TaskItem>) => void;
-  toggleTaskCompletion: (id: string) => void;
-  snoozeTaskToTomorrow: (id: string) => void;
-  deleteTask: (id: string) => void;
-  toggleSubtask: (taskId: string, subtaskId: string) => void;
-
-  // Privacidade e bloqueio financeiro
-  hideValues: boolean;
-  toggleHideValues: () => void;
-  formatMoney: (amount: number) => string;
-  financeLockEnabled: boolean;
-  setFinanceLockEnabled: (enabled: boolean) => void;
-
-  // Ações financeiras
-  addTransaction: (tx: Omit<Transaction, 'id'>) => void;
-  updateTransaction: (id: string, updates: Partial<Omit<Transaction, 'id'>>) => void;
-  deleteTransaction: (id: string) => void;
-  addGoal: (goal: Omit<FinancialGoal, 'id'>) => void;
-  updateGoal: (id: string, updates: Partial<FinancialGoal>) => void;
-  deleteGoal: (id: string) => void;
-  updateBudgetLimit: (category: Transaction['category'], limit: number) => void;
-
-  // Fila de notificações bancárias
-  pendingBankNotifications: PendingBankNotification[];
-  bankListenerSupported: boolean;
-  bankListenerPermission: boolean;
-  refreshBankListenerPermission: () => Promise<boolean>;
-  openBankListenerSettings: () => Promise<void>;
-  enqueueParsedBankText: (rawText: string, bankName?: string) => PendingBankNotification | null;
-  approvePendingBankNotification: (
-    id: string,
-    overrides?: Partial<Omit<Transaction, 'id'>>
-  ) => void;
-  approveAllPendingBankNotifications: () => void;
-  dismissPendingBankNotification: (id: string) => void;
-  clearPendingBankNotifications: () => void;
-
-  // Ações de rascunhos e listas
-  addDraftNote: (note: Omit<DraftNote, 'id' | 'updatedAt'>) => void;
-  updateDraftNote: (id: string, updates: Partial<DraftNote>) => void;
-  deleteDraftNote: (id: string) => void;
-  togglePinDraft: (id: string) => void;
-  toggleDraftChecklistItem: (draftId: string, itemId: string) => void;
-  addDraftChecklistItem: (draftId: string, text: string) => void;
-  convertDraftToTask: (draft: DraftNote) => void;
-
-  // Painel inicial modular
-  toggleDashboardWidget: (widgetId: string) => void;
-
-  // Central de notificações e lembretes
-  notificationPermission: NotificationPermission;
-  notificationsList: AppNotification[];
-  enableNotifications: () => Promise<boolean>;
-  triggerTestNotification: () => void;
-  dismissNotification: (id: string) => void;
-  clearAllNotifications: () => void;
-
-  // Agenda e datas especiais
-  refreshCalendar: () => Promise<void>;
-  addSpecialDate: (item: Omit<LocalSpecialDate, 'id' | 'createdAt'>) => void;
-  deleteSpecialDate: (id: string) => void;
-  createTaskFromCalendarEvent: (event: GoogleCalendarEvent) => void;
-  addEventToGoogleCalendar: (event: CalendarEventPayload) => Promise<GoogleCalendarEvent | null>;
-  updateGoogleCalendarEvent: (eventId: string, event: CalendarEventPayload) => void;
-  removeGoogleCalendarEvent: (eventId: string) => Promise<void>;
-  scheduleTaskInCalendar: (task: TaskItem, startHour?: string) => Promise<boolean>;
-
-  // Sincronização em nuvem (Google Drive) e backup
-  driveSyncInfo: DriveSyncInfo;
-  isCheckingDriveOnLogin: boolean;
-  pendingDriveRestore: {
-    driveFile: DriveFileInfo;
-    remoteData: AppDataPayload;
-    remoteSummary: BackupCountsSummary;
-  } | null;
-  autoRestoredNotice: {
-    summary: BackupCountsSummary;
-    driveFile: DriveFileInfo;
-  } | null;
-  isStartFromScratchOpen: boolean;
-  acceptPendingDriveRestore: () => void;
-  dismissPendingDriveRestore: () => void;
-  dismissAutoRestoredNotice: () => void;
-  openStartFromScratchModal: () => void;
-  closeStartFromScratchModal: () => void;
-  resetWorkspaceToZero: (options?: { alsoResetCloud?: boolean }) => Promise<void>;
-  syncToDriveNow: () => Promise<void>;
-  restoreFromDriveNow: () => Promise<void>;
-  exportBackupJson: () => void;
-  importBackupJson: (content: string) => boolean;
-
-  // Aviso rápido Desfazer e confirmações
-  undoToast: UndoToastInfo | null;
-  clearUndoToast: () => void;
-  confirmDestructiveAction: (config: ConfirmActionInput) => void;
-
-  // Atualizador de APK direto (GitHub)
-  installedAppVersion: string;
-  installedBuildNumber: number;
-  distributionChannel: 'githubApk' | 'web';
-  appUpdateResult: UpdateCheckResult | null;
-  isCheckingAppUpdate: boolean;
-  updateDownloadState: AppUpdateDownloadState;
-  isUpdateBannerDismissed: boolean;
-  checkForUpdatesNow: (options?: {
-    repo?: string;
-    token?: string;
-    force?: boolean;
-  }) => Promise<UpdateCheckResult | null>;
-  startInAppUpdate: () => Promise<void>;
-  openUnknownSourcesAndAwaitReturn: () => Promise<void>;
-  retryInstallPendingApk: () => Promise<void>;
-  dismissUpdateBanner: () => void;
-  resetUpdateDownloadState: () => void;
-
-  // Conectividade, permissões Android e integridade do cofre
-  isOnline: boolean;
-  justReconnected: boolean;
-  dismissReconnectedBanner: () => void;
-  androidPermissions: AndroidPermissionsStatus | null;
-  refreshAndroidPermissions: () => Promise<AndroidPermissionsStatus | null>;
-  openAndroidSettings: (target: AndroidPermissionTarget) => Promise<void>;
-  vaultStatus: {
-    lastSavedAt: string | null;
-    checksum: string | null;
-    byteSize: number;
-    recoveredFromNative: boolean;
-  };
-  pendingNotificationTarget: { target: NotificationNavigationTarget; itemId?: string } | null;
-  consumeNotificationTarget: () => void;
-}
+export type AppContextType = WorkspaceContextType & FinanceContextType & PlannerContextType;
 
 const AppContext = createContext<AppContextType | null>(null);
 
+const NO_OP = () => {};
+
 /**
- * Provedor principal do aplicativo:
- * organiza estado central, autenticação Google, sincronização com Drive e
- * conecta os módulos independentes (tarefas, finanças, agenda, rascunhos e atualizações).
+ * Provedor raiz do Lifeedy (100% local-first):
+ * coordena a persistência segura (LocalStorage + cofre nativo AES-256-GCM no Android),
+ * backup cifrado portátil (.lifeedy) e injeta os contextos modulares de domínio
+ * (WorkspaceContext, FinanceContext e PlannerContext).
  */
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // 1. Tema, avisos Desfazer e modal global de confirmação
   const { theme, toggleTheme, setThemeMode } = useThemePreference();
   const { undoToast, showUndoToast, clearUndoToast } = useUndoToast();
   const { confirmConfig, closeConfirmDialog, confirmDestructiveAction } = useConfirmDialog();
 
-  // 2. Carregamento inicial sanitizado do armazenamento local
   const initialPayloadRef = useRef<Partial<AppDataPayload> | null>(null);
   if (initialPayloadRef.current === null) {
     initialPayloadRef.current = loadInitialLocalPayload();
   }
   const initialPayload = initialPayloadRef.current;
 
-  // 3. Perfil e dados centrais do usuário
   const [userName, setUserNameState] = useState<string>(() => initialPayload.userName || '');
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(() =>
     Boolean(initialPayload.onboardingCompleted)
   );
   const [tasks, setTasks] = useState<TaskItem[]>(() => initialPayload.tasks || []);
+  const [localEvents, setLocalEvents] = useState<LocalCalendarEvent[]>(
+    () => initialPayload.events || []
+  );
   const [transactions, setTransactions] = useState<Transaction[]>(
     () => initialPayload.transactions || []
   );
@@ -310,39 +155,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     () => initialPayload.dashboardWidgets || DEFAULT_WIDGETS
   );
 
-  // 4. Estado da conta Google (perfil persiste mesmo após expiração de 1h do token)
-  const [user, setUser] = useState<User | null>(() => {
-    const restored = loadPersistedUserProfile();
-    return restored ? persistedProfileToUser(restored) : null;
-  });
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [workspaceAuthStatus, setWorkspaceAuthStatus] = useState<
-    'disconnected' | 'connected' | 'refreshing' | 'needs_reauth'
-  >(() => (loadPersistedUserProfile() ? 'needs_reauth' : 'disconnected'));
-  const [tokenExpiresAt, setTokenExpiresAt] = useState<number>(0);
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const clearAuthError = useCallback(() => setAuthError(null), []);
-
-  const userRef = useRef<User | null>(user);
-  userRef.current = user;
-
-  // 5. Estado de sincronização em nuvem e cofre Android
-  const [driveSyncInfo, setDriveSyncInfo] = useState<DriveSyncInfo>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_SYNC);
-      if (saved) return JSON.parse(saved);
-    } catch {
-      // ignora erro de leitura
-    }
-    return {
-      fileId: null,
-      lastSyncedAt: null,
-      remoteModifiedAt: null,
-      status: 'idle',
-    };
-  });
-
   const [androidPermissions, setAndroidPermissions] = useState<AndroidPermissionsStatus | null>(null);
   const [vaultStatus, setVaultStatus] = useState({
     lastSavedAt: null as string | null,
@@ -350,43 +162,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     byteSize: 0,
     recoveredFromNative: false,
   });
-
-  const [isCheckingDriveOnLogin, setIsCheckingDriveOnLogin] = useState(false);
-  const [pendingDriveRestore, setPendingDriveRestore] = useState<{
-    driveFile: DriveFileInfo;
-    remoteData: AppDataPayload;
-    remoteSummary: BackupCountsSummary;
-  } | null>(null);
-  const [autoRestoredNotice, setAutoRestoredNotice] = useState<{
-    summary: BackupCountsSummary;
-    driveFile: DriveFileInfo;
-  } | null>(null);
   const [isStartFromScratchOpen, setIsStartFromScratchOpen] = useState(false);
 
-  // Refs pontuais para evitar dependências circulares entre os hooks modulares
-  const triggerAutoSyncRef = useRef<() => void>(() => {});
-  const signInRef = useRef<() => Promise<string | null>>(async () => null);
-  const inspectDriveBackupRef = useRef<(token: string) => Promise<void>>(async () => {});
-  const pushNotificationRef = useRef<
-    (input: { id?: string; title: string; body: string; type: AppNotification['type'] }) => void
-  >(() => {});
-  const setGoogleCalendarEventsRef = useRef<React.Dispatch<React.SetStateAction<GoogleCalendarEvent[]>>>(
-    () => {}
+  const [lastPortableBackupAt, setLastPortableBackupAt] = useState<string | null>(() =>
+    getLastPortableBackupAt()
   );
+  const [backupReminderSnoozedUntil, setBackupReminderSnoozedUntil] = useState<string | null>(() =>
+    getBackupReminderSnoozedUntil()
+  );
+  const [autoBackupStatus, setAutoBackupStatus] = useState<AutoBackupFolderStatusState>(() => ({
+    supported: isAndroidNativeHealthSupported(),
+    configured: false,
+    accessible: false,
+    folderName: null,
+    hasPassphrase: false,
+    enabled: isAutoFolderBackupEnabled(),
+    lastSyncedAt: null,
+    lastFileName: null,
+    isSyncing: false,
+    lastError: null,
+  }));
+
+  const [contentChecksum, setContentChecksum] = useState<string | null>(null);
+
   const checkUpdatesRef = useRef<
     (options?: { force?: boolean }) => Promise<UpdateCheckResult | null>
   >(async () => null);
-
-  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inspectedTokensRef = useRef<Set<string>>(new Set());
-  const cloudOverwriteGuardRef = useRef<boolean>(false);
-  const sessionExpiredNotifiedRef = useRef<boolean>(false);
   const nativeVaultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoFolderSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAutoSyncedChecksumRef = useRef<string | null>(getLastAutoFolderChecksum());
   const vaultBootRecoveredRef = useRef<boolean>(false);
-
-  const onDataChanged = useCallback(() => {
-    triggerAutoSyncRef.current();
-  }, []);
 
   const refreshAndroidPermissions = useCallback(async () => {
     if (!isAndroidNativeHealthSupported()) return null;
@@ -402,34 +207,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await openAndroidPermissionSettings(target);
   }, []);
 
-  const handleWorkspaceAuthError = useCallback((err: unknown): boolean => {
-    if (!isWorkspaceAuthError(err)) return false;
-
-    setSessionToken(null);
-    setAccessToken(null);
-    setTokenExpiresAt(0);
-    setWorkspaceAuthStatus(userRef.current ? 'needs_reauth' : 'disconnected');
-
-    if (userRef.current && !sessionExpiredNotifiedRef.current) {
-      sessionExpiredNotifiedRef.current = true;
-      pushNotificationRef.current({
-        id: 'notif-auth-refresh-' + Date.now(),
-        title: 'Sincronização Google em espera',
-        body: 'Sua conta continua conectada no Lifeedy. Toque em "Renovar sincronização" nos ajustes ou na nuvem quando quiser atualizar Drive e Agenda.',
-        type: 'reminder',
-      });
-    }
-    return true;
-  }, []);
-
-  const ensureSignedInToken = useCallback(async (): Promise<string | null> => {
-    return accessToken || (await getAccessToken()) || (await signInRef.current());
-  }, [accessToken]);
-
-  // 6. Módulos de domínio (hooks independentes)
   const handleApproveBankTransactions = useCallback((newTxs: Transaction[]) => {
     setTransactions((prev) => [...newTxs, ...prev]);
-    triggerAutoSyncRef.current();
   }, []);
 
   const bankQueue = useBankNotificationQueue({
@@ -440,7 +219,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const tasksActions = useTasksActions({
     tasks,
     setTasks,
-    onDataChanged,
+    onDataChanged: NO_OP,
     showUndoToast,
   });
 
@@ -449,7 +228,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTransactions,
     setFinancialGoals,
     setBudgetLimits,
-    onDataChanged,
+    onDataChanged: NO_OP,
     showUndoToast,
   });
 
@@ -457,23 +236,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     draftNotes,
     setDraftNotes,
     setTasks,
-    onDataChanged,
+    onDataChanged: NO_OP,
     showUndoToast,
   });
 
-  const calendarActions = useGoogleCalendarActions({
-    accessToken,
+  const calendarActions = useLocalCalendarActions({
+    localEvents,
+    setLocalEvents,
     specialDates,
     setSpecialDates,
     setTasks,
     updateTask: tasksActions.updateTask,
-    ensureSignedInToken,
-    handleWorkspaceAuthError,
     confirmDestructiveAction,
     showUndoToast,
-    onDataChanged,
+    onDataChanged: NO_OP,
   });
-  setGoogleCalendarEventsRef.current = calendarActions.setGoogleCalendarEvents;
 
   const notificationsEngine = useNotificationsEngine({
     tasks,
@@ -481,7 +258,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     transactions,
     refreshAndroidPermissions,
   });
-  pushNotificationRef.current = notificationsEngine.pushAppNotification;
 
   const updater = useAppUpdater({
     refreshAndroidPermissions,
@@ -493,24 +269,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     void checkUpdatesRef.current({ force: false });
   });
 
-  // Snapshot mais recente para comparações seguras pós-login e restauração
-  const latestDataRef = useRef({
-    tasks,
-    transactions,
-    financialGoals,
-    draftNotes,
-    specialDates,
-    pendingBankNotifications: bankQueue.pendingBankNotifications,
-  });
-  latestDataRef.current = {
-    tasks,
-    transactions,
-    financialGoals,
-    draftNotes,
-    specialDates,
-    pendingBankNotifications: bankQueue.pendingBankNotifications,
-  };
-
   const buildCurrentPayload = useCallback(
     (): AppDataPayload => ({
       version: CURRENT_DATA_VERSION,
@@ -518,6 +276,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       userName,
       onboardingCompleted,
       tasks,
+      events: localEvents,
       transactions,
       financialGoals,
       budgetLimits,
@@ -532,6 +291,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       dashboardWidgets,
       draftNotes,
       financialGoals,
+      localEvents,
       onboardingCompleted,
       specialDates,
       tasks,
@@ -540,10 +300,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ]
   );
 
-  // 7. Persistência local automática + espelhamento no cofre nativo do Android
+  // Persistência local automática + espelhamento cifrado no cofre nativo do Android
   useEffect(() => {
     const payload = buildCurrentPayload();
-    const { json, checksum, byteSize } = serializeAppPayloadSafely(payload);
+    const {
+      json,
+      checksum,
+      contentChecksum: nextContentChecksum,
+      byteSize,
+    } = serializeAppPayloadSafely(payload);
+    setContentChecksum(nextContentChecksum);
 
     try {
       localStorage.setItem(STORAGE_KEY_DATA, json);
@@ -572,217 +338,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [buildCurrentPayload]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_SYNC, JSON.stringify(driveSyncInfo));
-    } catch {
-      // ignora erro de gravação
-    }
-  }, [driveSyncInfo]);
-
-  // 8. Observadores de Autenticação Google (Web + Android nativo)
-  useEffect(() => {
-    const unsubscribe = initAuth(
-      (currentUser, token, expiresAt) => {
-        setUser(currentUser);
-        if (token) {
-          setAccessToken(token);
-          setTokenExpiresAt(expiresAt);
-          setWorkspaceAuthStatus('connected');
-        } else {
-          setAccessToken(null);
-          setTokenExpiresAt(0);
-          setWorkspaceAuthStatus((prev) => (prev === 'refreshing' ? 'refreshing' : 'needs_reauth'));
-        }
-      },
-      () => {
-        setUser(null);
-        setAccessToken(null);
-        setTokenExpiresAt(0);
-        setWorkspaceAuthStatus('disconnected');
-      }
-    );
-    return () => unsubscribe();
-  }, []);
-
-  // Callback de deep-link OAuth caso algum fluxo abra o navegador externo no Android
-  const processedOAuthUrlsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-    let isMounted = true;
-
-    const handleNativeOAuthUrl = async (raw?: string | null) => {
-      if (!isMounted || !raw) return;
-      if (!raw.includes('com.vidaorganizada.app') || !raw.includes('access_token=')) return;
-      if (processedOAuthUrlsRef.current.has(raw)) return;
-      processedOAuthUrlsRef.current.add(raw);
-
-      try {
-        const hashIdx = raw.indexOf('#');
-        const queryIdx = raw.indexOf('?');
-        const searchStr =
-          hashIdx !== -1
-            ? raw.substring(hashIdx + 1)
-            : queryIdx !== -1
-            ? raw.substring(queryIdx + 1)
-            : '';
-        const params = new URLSearchParams(searchStr);
-
-        const token = params.get('access_token');
-        const idToken = params.get('id_token');
-        const expiresInParam = params.get('expires_in');
-        const expiresInSec = expiresInParam ? parseInt(expiresInParam, 10) : undefined;
-
-        try {
-          await Browser.close();
-        } catch {
-          // ignora
-        }
-
-        if (token) {
-          setIsAuthenticating(true);
-          setAuthError(null);
-          sessionExpiredNotifiedRef.current = false;
-          const loggedUser = await completeNativeGoogleAuth(token, idToken, expiresInSec);
-          setAccessToken(token);
-          setTokenExpiresAt(
-            Date.now() + (expiresInSec && expiresInSec > 60 ? expiresInSec : 3500) * 1000
-          );
-          setWorkspaceAuthStatus('connected');
-          if (loggedUser) setUser(loggedUser);
-
-          confetti({ particleCount: 35, spread: 60, origin: { y: 0.8 } });
-
-          try {
-            await inspectDriveBackupRef.current(token);
-          } catch (e) {
-            console.warn('Erro ao consultar Drive pós deep link:', e);
-          }
-
-          try {
-            const events = await listCalendarEvents(token);
-            setGoogleCalendarEventsRef.current(events);
-          } catch (e) {
-            console.warn('Erro ao consultar Agenda pós deep link:', e);
-          }
-
-          pushNotificationRef.current({
-            id: 'notif-auth-ok-' + Date.now(),
-            title: '🎉 Google Conectado com Sucesso',
-            body: 'Sua conta Google foi sincronizada. Google Drive e Agenda estão ativos.',
-            type: 'reminder',
-          });
-        }
-      } catch (err) {
-        console.error('Falha ao processar login nativo do Google:', err);
-        setAuthError(mapGoogleAuthError(err));
-      } finally {
-        if (isMounted) setIsAuthenticating(false);
-      }
-    };
-
-    CapApp.getLaunchUrl()
-      .then((launch) => handleNativeOAuthUrl(launch?.url))
-      .catch(() => {});
-
-    const listenerPromise = CapApp.addListener('appUrlOpen', (data) => {
-      void handleNativeOAuthUrl(data?.url);
-    });
-
-    return () => {
-      isMounted = false;
-      listenerPromise.then((h) => h?.remove()).catch(() => {});
-    };
-  }, []);
-
-  // Finaliza redirecionamento na Web caso o popup não tenha sido usado
-  useEffect(() => {
-    if (Capacitor.isNativePlatform()) return;
-    if (
-      typeof window !== 'undefined' &&
-      new URLSearchParams(window.location.search).get('connect_native') === '1'
-    ) {
-      return;
-    }
-
-    let active = true;
-    consumeRedirectSignInResult()
-      .then((res) => {
-        if (!active || !res?.accessToken || !res.user) return;
-        sessionExpiredNotifiedRef.current = false;
-        setAuthError(null);
-        setUser(res.user);
-        setAccessToken(res.accessToken);
-        setTokenExpiresAt(res.expiresAt);
-        setWorkspaceAuthStatus('connected');
-      })
-      .catch((err) => {
-        console.warn('Erro ao finalizar login Google via redirecionamento:', err);
-        if (active) setAuthError(mapGoogleAuthError(err));
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // Monitora expiração do token de 1h sem desconectar o usuário
-  useEffect(() => {
-    if (!user) return;
-
-    const markNeedsReauthIfExpired = () => {
-      if (userRef.current && accessToken && isAccessTokenExpiredOrNearExpiry(30_000)) {
-        setSessionToken(null);
-        setAccessToken(null);
-        setTokenExpiresAt(0);
-        setWorkspaceAuthStatus('needs_reauth');
-      }
-    };
-
-    let expiryTimer: ReturnType<typeof setTimeout> | null = null;
-    if (accessToken && tokenExpiresAt > Date.now()) {
-      const delayMs = Math.max(5_000, tokenExpiresAt - Date.now() - 30_000);
-      expiryTimer = setTimeout(markNeedsReauthIfExpired, delayMs);
-    }
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        markNeedsReauthIfExpired();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    let capAppHandle: { remove: () => Promise<void> } | null = null;
-    if (Capacitor.isNativePlatform()) {
-      CapApp.addListener('appStateChange', ({ isActive }) => {
-        if (isActive) markNeedsReauthIfExpired();
-      })
-        .then((h) => {
-          capAppHandle = h;
-        })
-        .catch(() => {});
-    }
-
-    return () => {
-      if (expiryTimer) clearTimeout(expiryTimer);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      if (capAppHandle) capAppHandle.remove().catch(() => {});
-    };
-  }, [user, accessToken, tokenExpiresAt]);
-
-  // 9. Restauração de backup e sincronização automática com Google Drive
   const applySanitizedPayload = useCallback(
-    (
-      sanitized: Partial<AppDataPayload>,
-      fileId?: string | null,
-      remoteModifiedAt?: string | null
-    ) => {
-      if (syncTimeoutRef.current) {
-        clearTimeout(syncTimeoutRef.current);
-        syncTimeoutRef.current = null;
-      }
-      cloudOverwriteGuardRef.current = false;
-
+    (sanitized: Partial<AppDataPayload>) => {
       if (sanitized.tasks) setTasks(sanitized.tasks);
+      if (sanitized.events) setLocalEvents(sanitized.events);
       if (sanitized.transactions) setTransactions(sanitized.transactions);
       if (sanitized.financialGoals) setFinancialGoals(sanitized.financialGoals);
       if (sanitized.budgetLimits) setBudgetLimits(sanitized.budgetLimits);
@@ -796,8 +355,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setUserNameState(sanitized.userName.trim());
       }
 
-      const remoteHasData = hasMeaningfulLocalData({
+      const restoredHasData = hasMeaningfulLocalData({
         tasks: sanitized.tasks || [],
+        events: sanitized.events || [],
         transactions: sanitized.transactions || [],
         financialGoals: sanitized.financialGoals || [],
         draftNotes: sanitized.draftNotes || [],
@@ -808,181 +368,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (
         sanitized.onboardingCompleted ||
         (typeof sanitized.userName === 'string' && sanitized.userName.trim()) ||
-        remoteHasData
+        restoredHasData
       ) {
         setOnboardingCompleted(true);
-      }
-
-      if (fileId) {
-        setDriveSyncInfo({
-          fileId,
-          lastSyncedAt: new Date().toISOString(),
-          remoteModifiedAt: remoteModifiedAt || sanitized.lastUpdated || new Date().toISOString(),
-          status: 'synced',
-        });
       }
     },
     [bankQueue]
   );
 
-  const inspectDriveBackupAfterAuth = useCallback(
-    async (token: string) => {
-      if (!token || inspectedTokensRef.current.has(token)) return;
-      inspectedTokensRef.current.add(token);
-      setIsCheckingDriveOnLogin(true);
-
-      try {
-        const driveFile = await findDriveBackupFile(token);
-        if (!driveFile) {
-          setDriveSyncInfo((prev) => ({
-            ...prev,
-            status: prev.status === 'error' ? 'idle' : prev.status,
-          }));
-          return;
-        }
-
-        const rawRemote = await readDriveFile(token, driveFile.id);
-        if (!rawRemote) {
-          setDriveSyncInfo((prev) => ({
-            ...prev,
-            fileId: driveFile.id,
-            remoteModifiedAt: driveFile.modifiedTime,
-            status: 'synced',
-          }));
-          return;
-        }
-
-        const sanitized = sanitizeLegacyPayload(rawRemote);
-        const remoteSummary = summarizePayloadCounts(sanitized);
-
-        if (remoteSummary.totalItems === 0) {
-          setDriveSyncInfo((prev) => ({
-            ...prev,
-            fileId: driveFile.id,
-            remoteModifiedAt: driveFile.modifiedTime,
-            status: 'synced',
-          }));
-          return;
-        }
-
-        const localHasData = hasMeaningfulLocalData(latestDataRef.current);
-        if (!localHasData) {
-          applySanitizedPayload(sanitized, driveFile.id, driveFile.modifiedTime);
-          setPendingDriveRestore(null);
-          setAutoRestoredNotice({ summary: remoteSummary, driveFile });
-          hapticSuccess();
-          confetti({ particleCount: 35, spread: 60, origin: { y: 0.75 } });
-        } else {
-          setDriveSyncInfo((prev) => ({
-            ...prev,
-            fileId: driveFile.id,
-            remoteModifiedAt: driveFile.modifiedTime,
-            status: 'cloud_newer',
-          }));
-          setPendingDriveRestore({
-            driveFile,
-            remoteData: sanitized as AppDataPayload,
-            remoteSummary,
-          });
-        }
-      } catch (err) {
-        if (!handleWorkspaceAuthError(err)) {
-          console.warn('Erro ao inspecionar backup do Google Drive no login:', err);
-        }
-      } finally {
-        setIsCheckingDriveOnLogin(false);
-      }
-    },
-    [applySanitizedPayload, handleWorkspaceAuthError]
-  );
-  inspectDriveBackupRef.current = inspectDriveBackupAfterAuth;
-
-  useEffect(() => {
-    if (accessToken) {
-      void inspectDriveBackupAfterAuth(accessToken);
-    }
-  }, [accessToken, inspectDriveBackupAfterAuth]);
-
-  const checkDriveStatus = useCallback(async () => {
-    if (cloudOverwriteGuardRef.current) return;
-    const token = accessToken || (await getAccessToken());
-    if (!token) return;
-
-    try {
-      const file = await findDriveBackupFile(token);
-      if (file) {
-        setDriveSyncInfo((prev) => {
-          const remoteTime = new Date(file.modifiedTime).getTime();
-          const localTime = prev.lastSyncedAt ? new Date(prev.lastSyncedAt).getTime() : 0;
-          const isCloudNewer = remoteTime > localTime + 2000;
-
-          return {
-            ...prev,
-            fileId: file.id,
-            remoteModifiedAt: file.modifiedTime,
-            status: isCloudNewer
-              ? 'cloud_newer'
-              : prev.status === 'cloud_newer'
-              ? 'cloud_newer'
-              : 'synced',
-          };
-        });
-      }
-    } catch (err) {
-      if (!handleWorkspaceAuthError(err)) {
-        console.warn('Erro ao verificar status do Google Drive:', err);
-      }
-    }
-  }, [accessToken, handleWorkspaceAuthError]);
-
-  useEffect(() => {
-    if (!accessToken || workspaceAuthStatus !== 'connected') return;
-    const interval = setInterval(() => {
-      void checkDriveStatus();
-    }, 45000);
-    return () => clearInterval(interval);
-  }, [accessToken, workspaceAuthStatus, checkDriveStatus]);
-
-  const triggerAutoSync = useCallback(() => {
-    if (!accessToken || cloudOverwriteGuardRef.current) return;
-
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current);
-    }
-
-    syncTimeoutRef.current = setTimeout(async () => {
-      if (cloudOverwriteGuardRef.current) return;
-      try {
-        setDriveSyncInfo((prev) => ({ ...prev, status: 'syncing' }));
-        const payload = buildCurrentPayload();
-        const result: DriveFileInfo = await saveToDrive(accessToken, payload, driveSyncInfo.fileId);
-        setDriveSyncInfo({
-          fileId: result.id,
-          lastSyncedAt: new Date().toISOString(),
-          remoteModifiedAt: result.modifiedTime,
-          status: 'synced',
-        });
-      } catch (err: any) {
-        if (!handleWorkspaceAuthError(err)) {
-          console.warn('Falha na sincronização em segundo plano:', err);
-          setDriveSyncInfo((prev) => ({
-            ...prev,
-            status: 'error',
-            errorMessage: err.message || 'Falha ao sincronizar',
-          }));
-        }
-      }
-    }, 4000);
-  }, [accessToken, buildCurrentPayload, driveSyncInfo.fileId, handleWorkspaceAuthError]);
-  triggerAutoSyncRef.current = triggerAutoSync;
-
-  // Recuperação automática do cofre nativo do Android se o WebView iniciar vazio
+  // Recuperação automática do cofre nativo Android se o armazenamento do WebView iniciar vazio
   useEffect(() => {
     if (vaultBootRecoveredRef.current || !isAndroidNativeHealthSupported()) return;
     vaultBootRecoveredRef.current = true;
 
     const webHasData = hasMeaningfulLocalData({
       tasks,
+      events: localEvents,
       transactions,
       financialGoals,
       draftNotes,
@@ -999,6 +400,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const sanitized = sanitizeLegacyPayload(parsed);
           const vaultHasData = hasMeaningfulLocalData({
             tasks: sanitized.tasks || [],
+            events: sanitized.events || [],
             transactions: sanitized.transactions || [],
             financialGoals: sanitized.financialGoals || [],
             draftNotes: sanitized.draftNotes || [],
@@ -1020,134 +422,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 10. Ações de perfil, login, Drive e backup JSON
-  const setUserName = useCallback(
-    (name: string) => {
-      setUserNameState(name.trim());
-      onDataChanged();
-    },
-    [onDataChanged]
-  );
-
-  const completeOnboarding = useCallback(
-    (name: string) => {
-      const cleaned = name.trim();
-      if (cleaned) setUserNameState(cleaned);
-      setOnboardingCompleted(true);
-      hapticSuccess();
-      onDataChanged();
-    },
-    [onDataChanged]
-  );
-
-  const signInWithGoogle = useCallback(async (): Promise<string | null> => {
-    setIsAuthenticating(true);
-    setAuthError(null);
-    try {
-      const result = await googleSignIn({
-        allowRedirectFallback: !Capacitor.isNativePlatform(),
-        loginHint: userRef.current?.email || undefined,
-      });
-
-      if (!result) {
-        setAuthError('Não foi possível concluir o login com o Google. Tente novamente.');
-        return null;
-      }
-
-      if (result.cancelled) {
-        const cancelMsg = result.sha1
-          ? `Login não concluído após selecionar a conta. Se você não cancelou manualmente, cadastre a impressão SHA-1 deste APK (${result.sha1}) no cliente Android (com.vidaorganizada.app) no Google Cloud Console.`
-          : 'Login com Google cancelado antes de concluir. Se a janela fechou sozinha, permita pop-ups ou tente novamente.';
-        setAuthError(cancelMsg);
-        return null;
-      }
-
-      if (result.isNativeRedirect || result.isWebRedirect) {
-        return null;
-      }
-
-      if (result.user && result.accessToken) {
-        sessionExpiredNotifiedRef.current = false;
-        cloudOverwriteGuardRef.current = false;
-        setAuthError(null);
-        setUser(result.user);
-        setAccessToken(result.accessToken);
-        setTokenExpiresAt(result.expiresAt || Date.now() + 3500 * 1000);
-        setWorkspaceAuthStatus('connected');
-        await inspectDriveBackupAfterAuth(result.accessToken);
-
-        try {
-          const events = await listCalendarEvents(result.accessToken);
-          calendarActions.setGoogleCalendarEvents(events);
-        } catch (e) {
-          console.warn('Aviso ao consultar agenda pós login:', e);
-        }
-        return result.accessToken;
-      }
-      setAuthError('O Google não retornou a autorização necessária. Tente novamente.');
-      return null;
-    } catch (err) {
-      console.warn('Aviso de login:', err);
-      const userMessage = mapGoogleAuthError(err);
-      setAuthError(userMessage);
-      recordAppError('auth.googleSignIn', err);
-      notificationsEngine.pushAppNotification({
-        id: 'notif-auth-' + Date.now(),
-        title: 'Aviso de Login',
-        body: userMessage,
-        type: 'reminder',
-      });
-      return null;
-    } finally {
-      setIsAuthenticating(false);
-    }
-  }, [calendarActions, inspectDriveBackupAfterAuth, notificationsEngine]);
-  signInRef.current = signInWithGoogle;
-
-  const refreshWorkspaceSession = useCallback(
-    async (options?: { interactiveIfNeeded?: boolean }): Promise<string | null> => {
-      const existing = accessToken || (await getAccessToken());
-      if (existing) return existing;
-
-      if (options?.interactiveIfNeeded) {
-        return await signInWithGoogle();
-      }
-      return null;
-    },
-    [accessToken, signInWithGoogle]
-  );
-
-  const signOut = useCallback(async () => {
-    inspectedTokensRef.current.clear();
-    cloudOverwriteGuardRef.current = false;
-    setAuthError(null);
-    setPendingDriveRestore(null);
-    setAutoRestoredNotice(null);
-    await fbLogout();
-    setUser(null);
-    setAccessToken(null);
-    setTokenExpiresAt(0);
-    setWorkspaceAuthStatus('disconnected');
-    calendarActions.setGoogleCalendarEvents([]);
-    setDriveSyncInfo((prev) => ({ ...prev, status: 'idle' }));
-  }, [calendarActions]);
-
-  const acceptPendingDriveRestore = useCallback(() => {
-    if (!pendingDriveRestore) return;
-    const { driveFile, remoteData } = pendingDriveRestore;
-    const sanitized = sanitizeLegacyPayload(remoteData);
-    applySanitizedPayload(sanitized, driveFile.id, driveFile.modifiedTime);
-    setPendingDriveRestore(null);
-    hapticSuccess();
-    confetti({ particleCount: 50, spread: 70, origin: { y: 0.7 } });
-  }, [applySanitizedPayload, pendingDriveRestore]);
-
-  const dismissPendingDriveRestore = useCallback(() => {
-    setPendingDriveRestore(null);
+  const setUserName = useCallback((name: string) => {
+    setUserNameState(name.trim());
   }, []);
 
-  const dismissAutoRestoredNotice = useCallback(() => {
-    setAutoRestoredNotice(null);
+  const completeOnboarding = useCallback((name: string) => {
+    const cleaned = name.trim();
+    if (cleaned) setUserNameState(cleaned);
+    setOnboardingCompleted(true);
+    hapticSuccess();
+  }, []);
+
+  const toggleDashboardWidget = useCallback((widgetId: string) => {
+    setDashboardWidgets((prev) =>
+      prev.includes(widgetId) ? prev.filter((w) => w !== widgetId) : [...prev, widgetId]
+    );
   }, []);
 
   const openStartFromScratchModal = useCallback(() => {
@@ -1158,209 +447,379 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsStartFromScratchOpen(false);
   }, []);
 
-  const resetWorkspaceToZero = useCallback(
-    async (options?: { alsoResetCloud?: boolean }) => {
-      const alsoResetCloud = Boolean(options?.alsoResetCloud);
+  const resetWorkspaceToZero = useCallback(async () => {
+    setTasks([]);
+    setLocalEvents([]);
+    setTransactions([]);
+    setFinancialGoals([]);
+    setBudgetLimits([]);
+    setDraftNotes([]);
+    setSpecialDates([]);
+    setDashboardWidgets(DEFAULT_WIDGETS);
+    bankQueue.setPendingBankNotifications([]);
+    notificationsEngine.resetNotificationMemory();
+    setUserNameState('');
+    setOnboardingCompleted(false);
+    clearUndoToast();
 
-      if (syncTimeoutRef.current) {
-        clearTimeout(syncTimeoutRef.current);
-        syncTimeoutRef.current = null;
-      }
+    try {
+      localStorage.removeItem(STORAGE_KEY_DATA);
+      localStorage.removeItem(STORAGE_KEY_PENDING_BANK);
+      localStorage.removeItem(STORAGE_KEY_BANK_SIGS);
+      localStorage.removeItem(STORAGE_KEY_NOTIFS);
+    } catch {
+      // ignora falha de limpeza do navegador
+    }
+    clearBackupAuditStorage();
+    setLastPortableBackupAt(null);
+    setBackupReminderSnoozedUntil(null);
+    lastAutoSyncedChecksumRef.current = null;
+    void clearNativeVaultBackup();
+    void clearNativeAutoBackupFolder(false);
+    setAutoBackupStatus((prev) => ({
+      ...prev,
+      configured: false,
+      accessible: false,
+      folderName: null,
+      lastSyncedAt: null,
+      lastFileName: null,
+      lastError: null,
+    }));
+    hapticWarning();
+  }, [bankQueue, clearUndoToast, notificationsEngine]);
 
-      let cloudResetResult: DriveFileInfo | null = null;
-      if (alsoResetCloud) {
-        let token = accessToken || (await getAccessToken());
-        if (!token) token = await signInWithGoogle();
-        if (!token) {
-          throw new Error('Conecte ou renove sua conta Google para reiniciar o backup na nuvem.');
-        }
+  const refreshAutoBackupStatus = useCallback(async () => {
+    if (!isAndroidNativeHealthSupported()) return;
+    const status = await getNativeAutoBackupFolderStatus();
+    if (!status) return;
+    setAutoBackupStatus((prev) => ({
+      ...prev,
+      supported: true,
+      configured: status.configured,
+      accessible: status.accessible,
+      folderName: status.folderName || null,
+      hasPassphrase: status.hasPassphrase,
+      lastSyncedAt: status.lastSyncedAt > 0 ? status.lastSyncedAt : null,
+      lastFileName: status.lastFileName || null,
+    }));
+  }, []);
 
-        const cleanPayload: AppDataPayload = {
-          version: CURRENT_DATA_VERSION,
-          lastUpdated: new Date().toISOString(),
-          userName: '',
-          onboardingCompleted: false,
-          tasks: [],
-          transactions: [],
-          financialGoals: [],
-          budgetLimits: [],
-          draftNotes: [],
-          specialDates: [],
-          dashboardWidgets: DEFAULT_WIDGETS,
-          pendingBankNotifications: [],
-        };
+  useEffect(() => {
+    void refreshAutoBackupStatus();
+  }, [refreshAutoBackupStatus]);
 
-        try {
-          cloudResetResult = await saveToDrive(token, cleanPayload, driveSyncInfo.fileId);
-        } catch (err) {
-          if (handleWorkspaceAuthError(err)) {
-            throw new Error(
-              'Permissão temporária do Google em renovação. Tente novamente em instantes.'
-            );
-          }
-          throw err;
-        }
-      }
+  const runAutoFolderBackupNow = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
+    if (!isAndroidNativeHealthSupported()) {
+      return { ok: false, error: 'Disponível apenas no aplicativo Android.' };
+    }
+    const status = await getNativeAutoBackupFolderStatus();
+    if (!status?.configured || !status.accessible) {
+      const msg = 'Selecione uma pasta de destino acessível no aparelho primeiro.';
+      setAutoBackupStatus((prev) => ({ ...prev, lastError: msg }));
+      return { ok: false, error: msg };
+    }
+    const passphrase = await getNativeAutoBackupPassphrase();
+    if (!passphrase || passphrase.trim().length < 4) {
+      const msg = 'Defina uma senha para cifrar o backup automático.';
+      setAutoBackupStatus((prev) => ({ ...prev, hasPassphrase: false, lastError: msg }));
+      return { ok: false, error: msg };
+    }
 
-      cloudOverwriteGuardRef.current = !alsoResetCloud && Boolean(accessToken);
+    setAutoBackupStatus((prev) => ({ ...prev, isSyncing: true, lastError: null }));
+    try {
+      const payload = buildCurrentPayload();
+      const { contentChecksum: nextContentChecksum } = serializeAppPayloadSafely(payload);
+      const encryptedContent = await encryptBackupPayload(
+        payload,
+        passphrase,
+        updater.installedAppVersion
+      );
+      const writeRes = await writeNativeAutoBackupFile({
+        fileName: AUTO_BACKUP_FILENAME,
+        content: encryptedContent,
+        mimeType: 'application/octet-stream',
+      });
+      const recordedIso = recordPortableBackupTimestamp(writeRes.updatedAt);
+      lastAutoSyncedChecksumRef.current = nextContentChecksum;
+      setLastAutoFolderChecksum(nextContentChecksum);
+      setLastPortableBackupAt(recordedIso);
+      setBackupReminderSnoozedUntil(null);
+      setAutoBackupStatus((prev) => ({
+        ...prev,
+        isSyncing: false,
+        configured: true,
+        accessible: true,
+        hasPassphrase: true,
+        lastSyncedAt: writeRes.updatedAt,
+        lastFileName: writeRes.fileName,
+        lastError: null,
+      }));
+      return { ok: true };
+    } catch (err: any) {
+      const msg = err?.message || 'Erro ao gravar backup automático na pasta.';
+      recordAppError('autoFolderBackup.write', err);
+      setAutoBackupStatus((prev) => ({
+        ...prev,
+        isSyncing: false,
+        lastError: msg,
+      }));
+      return { ok: false, error: msg };
+    }
+  }, [buildCurrentPayload, updater.installedAppVersion]);
 
-      setTasks([]);
-      setTransactions([]);
-      setFinancialGoals([]);
-      setBudgetLimits([]);
-      setDraftNotes([]);
-      setSpecialDates([]);
-      setDashboardWidgets(DEFAULT_WIDGETS);
-      bankQueue.setPendingBankNotifications([]);
-      notificationsEngine.resetNotificationMemory();
-      setUserNameState('');
-      setOnboardingCompleted(false);
-      setPendingDriveRestore(null);
-      setAutoRestoredNotice(null);
-      clearUndoToast();
+  const selectAutoBackupFolder = useCallback(async (): Promise<boolean> => {
+    if (!isAndroidNativeHealthSupported()) return false;
+    try {
+      const res = await pickNativeAutoBackupFolder();
+      if (!res.selected) return false;
+      lastAutoSyncedChecksumRef.current = null;
+      clearAutoFolderChecksumStorage();
+      await refreshAutoBackupStatus();
+      hapticSuccess();
+      return true;
+    } catch (err: any) {
+      const msg = err?.message || 'Não foi possível selecionar a pasta.';
+      setAutoBackupStatus((prev) => ({ ...prev, lastError: msg }));
+      return false;
+    }
+  }, [refreshAutoBackupStatus]);
 
-      try {
-        localStorage.removeItem(STORAGE_KEY_DATA);
-        localStorage.removeItem(STORAGE_KEY_PENDING_BANK);
-        localStorage.removeItem(STORAGE_KEY_BANK_SIGS);
-        localStorage.removeItem(STORAGE_KEY_NOTIFS);
-        localStorage.removeItem(STORAGE_KEY_SYNC);
-      } catch {
-        // ignora
-      }
-      void clearNativeVaultBackup();
-
-      if (cloudResetResult) {
-        setDriveSyncInfo({
-          fileId: cloudResetResult.id,
-          lastSyncedAt: new Date().toISOString(),
-          remoteModifiedAt: cloudResetResult.modifiedTime,
-          status: 'synced',
-        });
-      } else {
-        setDriveSyncInfo((prev) => ({
-          fileId: accessToken ? prev.fileId : null,
-          lastSyncedAt: null,
-          remoteModifiedAt: accessToken ? prev.remoteModifiedAt : null,
-          status: accessToken && prev.fileId ? 'cloud_newer' : 'idle',
-        }));
-      }
-
-      hapticWarning();
+  const configureAutoBackupPassphrase = useCallback(
+    async (passphrase: string): Promise<void> => {
+      await saveNativeAutoBackupPassphrase(passphrase);
+      lastAutoSyncedChecksumRef.current = null;
+      clearAutoFolderChecksumStorage();
+      setAutoBackupStatus((prev) => ({
+        ...prev,
+        hasPassphrase: true,
+        lastError: null,
+      }));
+      await refreshAutoBackupStatus();
     },
+    [refreshAutoBackupStatus]
+  );
+
+  const toggleAutoBackupEnabled = useCallback((enabled: boolean) => {
+    setAutoFolderBackupEnabled(enabled);
+    setAutoBackupStatus((prev) => ({ ...prev, enabled }));
+  }, []);
+
+  const disconnectAutoBackupFolder = useCallback(async (): Promise<void> => {
+    await clearNativeAutoBackupFolder(false);
+    lastAutoSyncedChecksumRef.current = null;
+    clearAutoFolderChecksumStorage();
+    setAutoBackupStatus((prev) => ({
+      ...prev,
+      configured: false,
+      accessible: false,
+      folderName: null,
+      lastSyncedAt: null,
+      lastFileName: null,
+      lastError: null,
+    }));
+  }, []);
+
+  // Espelhamento automático cifrado (.lifeedy) na pasta SAF escolhida no Android
+  useEffect(() => {
+    if (
+      !isAndroidNativeHealthSupported() ||
+      !onboardingCompleted ||
+      !autoBackupStatus.configured ||
+      !autoBackupStatus.accessible ||
+      !autoBackupStatus.hasPassphrase ||
+      !autoBackupStatus.enabled ||
+      !contentChecksum
+    ) {
+      return;
+    }
+
+    if (lastAutoSyncedChecksumRef.current === contentChecksum) {
+      return;
+    }
+
+    if (autoFolderSyncTimerRef.current) {
+      clearTimeout(autoFolderSyncTimerRef.current);
+    }
+
+    autoFolderSyncTimerRef.current = setTimeout(() => {
+      void runAutoFolderBackupNow();
+    }, 3500);
+
+    return () => {
+      if (autoFolderSyncTimerRef.current) {
+        clearTimeout(autoFolderSyncTimerRef.current);
+      }
+    };
+  }, [
+    autoBackupStatus.accessible,
+    autoBackupStatus.configured,
+    autoBackupStatus.enabled,
+    autoBackupStatus.hasPassphrase,
+    contentChecksum,
+    onboardingCompleted,
+    runAutoFolderBackupNow,
+  ]);
+
+  const dismissBackupReminder = useCallback(() => {
+    const snoozed = snoozeBackupReminder(7);
+    setBackupReminderSnoozedUntil(snoozed);
+  }, []);
+
+  const backupHealth = useMemo(
+    () =>
+      evaluatePortableBackupHealth({
+        lastPortableBackupAt,
+        autoFolderConfigured: autoBackupStatus.configured,
+        autoFolderAccessible: autoBackupStatus.accessible,
+        hasAutoPassphrase: autoBackupStatus.hasPassphrase,
+        autoBackupEnabled: autoBackupStatus.enabled,
+        itemCount:
+          tasks.length +
+          localEvents.length +
+          transactions.length +
+          financialGoals.length +
+          draftNotes.length,
+        snoozedUntil: backupReminderSnoozedUntil,
+      }),
     [
-      accessToken,
-      bankQueue,
-      clearUndoToast,
-      driveSyncInfo.fileId,
-      handleWorkspaceAuthError,
-      notificationsEngine,
-      signInWithGoogle,
+      autoBackupStatus.accessible,
+      autoBackupStatus.configured,
+      autoBackupStatus.enabled,
+      autoBackupStatus.hasPassphrase,
+      backupReminderSnoozedUntil,
+      draftNotes.length,
+      financialGoals.length,
+      lastPortableBackupAt,
+      localEvents.length,
+      tasks.length,
+      transactions.length,
     ]
   );
 
-  const syncToDriveNow = useCallback(async () => {
-    let token = accessToken || (await getAccessToken());
-    if (!token) {
-      token = await signInWithGoogle();
-      if (!token) return;
-    }
-
-    cloudOverwriteGuardRef.current = false;
-    setDriveSyncInfo((prev) => ({ ...prev, status: 'syncing', errorMessage: undefined }));
-    try {
+  const exportEncryptedBackup = useCallback(
+    async (
+      password: string,
+      options?: { share?: boolean }
+    ): Promise<'native_share' | 'web_share' | 'download'> => {
       const payload = buildCurrentPayload();
-      const result = await saveToDrive(token, payload, driveSyncInfo.fileId);
-      setDriveSyncInfo({
-        fileId: result.id,
-        lastSyncedAt: new Date().toISOString(),
-        remoteModifiedAt: result.modifiedTime,
-        status: 'synced',
-      });
-      confetti({ particleCount: 30, spread: 60, origin: { y: 0.8 } });
-    } catch (err: any) {
-      if (handleWorkspaceAuthError(err)) {
-        throw new Error('Permissão temporária do Google expirada. Toque em Renovar para continuar.');
-      }
-      console.warn('Falha ao salvar no Drive:', err);
-      setDriveSyncInfo((prev) => ({
-        ...prev,
-        status: 'error',
-        errorMessage: err.message || 'Falha ao sincronizar',
-      }));
-      throw err;
-    }
-  }, [accessToken, buildCurrentPayload, driveSyncInfo.fileId, handleWorkspaceAuthError, signInWithGoogle]);
-
-  const restoreFromDriveNow = useCallback(async () => {
-    let token = accessToken || (await getAccessToken());
-    if (!token) {
-      token = await signInWithGoogle();
-      if (!token) return;
-    }
-
-    setDriveSyncInfo((prev) => ({ ...prev, status: 'syncing' }));
-    try {
-      let fileId = driveSyncInfo.fileId;
-      let remoteModifiedAt = driveSyncInfo.remoteModifiedAt;
-      if (!fileId) {
-        const file = await findDriveBackupFile(token);
-        if (!file) {
-          throw new Error('Nenhum backup do Lifeedy foi encontrado no seu Google Drive.');
-        }
-        fileId = file.id;
-        remoteModifiedAt = file.modifiedTime;
-      }
-
-      const remoteData = await readDriveFile(token, fileId);
-      if (remoteData) {
-        const sanitized = sanitizeLegacyPayload(remoteData);
-        applySanitizedPayload(sanitized, fileId, remoteModifiedAt);
-        setPendingDriveRestore(null);
-        setAutoRestoredNotice(null);
-        confetti({ particleCount: 50, spread: 70, origin: { y: 0.7 } });
-      }
-    } catch (err: any) {
-      if (handleWorkspaceAuthError(err)) {
-        throw new Error('Permissão temporária do Google expirada. Toque em Renovar para continuar.');
-      }
-      console.warn('Falha ao restaurar do Drive:', err);
-      setDriveSyncInfo((prev) => ({
-        ...prev,
-        status: 'error',
-        errorMessage: err.message || 'Falha ao carregar do Google Drive',
-      }));
-      throw err;
-    }
-  }, [
-    accessToken,
-    applySanitizedPayload,
-    driveSyncInfo.fileId,
-    driveSyncInfo.remoteModifiedAt,
-    handleWorkspaceAuthError,
-    signInWithGoogle,
-  ]);
-
-  const toggleDashboardWidget = useCallback(
-    (widgetId: string) => {
-      setDashboardWidgets((prev) =>
-        prev.includes(widgetId) ? prev.filter((w) => w !== widgetId) : [...prev, widgetId]
+      const encryptedContent = await encryptBackupPayload(
+        payload,
+        password,
+        updater.installedAppVersion
       );
-      onDataChanged();
+      const today = formatLocalDateIso();
+      const delivery = await shareOrDownloadTextFile({
+        fileName: `Lifeedy_Backup_${today}.lifeedy`,
+        content: encryptedContent,
+        mimeType: 'application/octet-stream',
+        chooserTitle: 'Compartilhar backup cifrado (.lifeedy)',
+        preferShare: Boolean(options?.share),
+      });
+      const recordedIso = recordPortableBackupTimestamp();
+      setLastPortableBackupAt(recordedIso);
+      setBackupReminderSnoozedUntil(null);
+      hapticSuccess();
+      return delivery;
     },
-    [onDataChanged]
+    [buildCurrentPayload, updater.installedAppVersion]
   );
 
-  const exportBackupJson = useCallback(() => {
-    const payload = buildCurrentPayload();
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Lifeedy_Backup_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [buildCurrentPayload]);
+  const exportBackupJson = useCallback(
+    async (options?: { share?: boolean }): Promise<void> => {
+      const payload = buildCurrentPayload();
+      const today = formatLocalDateIso();
+      await shareOrDownloadTextFile({
+        fileName: `Lifeedy_Backup_${today}.json`,
+        content: JSON.stringify(payload, null, 2),
+        mimeType: 'application/json',
+        chooserTitle: 'Compartilhar backup JSON',
+        preferShare: Boolean(options?.share),
+      });
+      const recordedIso = recordPortableBackupTimestamp();
+      setLastPortableBackupAt(recordedIso);
+      setBackupReminderSnoozedUntil(null);
+      hapticSuccess();
+    },
+    [buildCurrentPayload]
+  );
+
+  const inspectBackupBeforeImport = useCallback((rawText: string): BackupInspectionResult => {
+    const format = detectBackupFormat(rawText);
+    if (format === 'encrypted') {
+      const meta = inspectEncryptedBackupMetadata(rawText);
+      return {
+        format: 'encrypted',
+        exportedAt: meta?.exportedAt || null,
+      };
+    }
+
+    if (format === 'legacy_json') {
+      const validation = validateAndParseBackupJson(rawText);
+      if (!validation.ok || !validation.data) {
+        return {
+          format: 'invalid',
+          exportedAt: null,
+          error: validation.error || 'Arquivo de backup inválido.',
+        };
+      }
+      const summary = summarizePayloadCounts(validation.data.payload);
+      return {
+        format: 'legacy_json',
+        exportedAt: summary.lastUpdated,
+        summary,
+      };
+    }
+
+    return {
+      format: 'invalid',
+      exportedAt: null,
+      error: 'Formato não reconhecido. Selecione um arquivo .lifeedy ou .json do Lifeedy.',
+    };
+  }, []);
+
+  const importBackupFromText = useCallback(
+    async (rawText: string, password?: string) => {
+      const format = detectBackupFormat(rawText);
+      if (format === 'encrypted') {
+        try {
+          const decrypted = await decryptBackupEnvelope(rawText, password || '');
+          applySanitizedPayload(decrypted.payload);
+          const summary = summarizePayloadCounts(decrypted.payload);
+          hapticSuccess();
+          triggerConfetti({ particleCount: 45, spread: 65, origin: { y: 0.75 } });
+          return { ok: true, summary, payload: decrypted.payload };
+        } catch (err: any) {
+          recordAppError('backup.importEncrypted', err);
+          return {
+            ok: false,
+            error: err?.message || 'Não foi possível descriptografar o backup.',
+          };
+        }
+      }
+
+      if (format === 'legacy_json') {
+        const validation = validateAndParseBackupJson(rawText);
+        if (!validation.ok || !validation.data) {
+          recordAppError('backup.importJson', validation.error || 'Backup JSON inválido');
+          return {
+            ok: false,
+            error: validation.error || 'Arquivo JSON inválido.',
+          };
+        }
+        applySanitizedPayload(validation.data.payload);
+        const summary = summarizePayloadCounts(validation.data.payload);
+        hapticSuccess();
+        triggerConfetti({ particleCount: 45, spread: 65, origin: { y: 0.75 } });
+        return { ok: true, summary, payload: validation.data.payload };
+      }
+
+      return {
+        ok: false,
+        error: 'Arquivo inválido. Selecione um backup .lifeedy ou .json do Lifeedy.',
+      };
+    },
+    [applySanitizedPayload]
+  );
 
   const importBackupJson = useCallback(
     (content: string): boolean => {
@@ -1370,137 +829,239 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           recordAppError('backup.import', validation.error || 'Backup JSON inválido');
           return false;
         }
-        const sanitized = validation.data.payload;
-        if (sanitized.tasks) setTasks(sanitized.tasks);
-        if (sanitized.transactions) setTransactions(sanitized.transactions);
-        if (sanitized.financialGoals) setFinancialGoals(sanitized.financialGoals);
-        if (sanitized.budgetLimits) setBudgetLimits(sanitized.budgetLimits);
-        if (sanitized.draftNotes) setDraftNotes(sanitized.draftNotes);
-        if (sanitized.specialDates) setSpecialDates(sanitized.specialDates);
-        if (sanitized.dashboardWidgets) setDashboardWidgets(sanitized.dashboardWidgets);
-        if (sanitized.pendingBankNotifications) {
-          bankQueue.setPendingBankNotifications(sanitized.pendingBankNotifications);
-        }
-        if (sanitized.userName) setUserNameState(sanitized.userName);
-        if (sanitized.onboardingCompleted || sanitized.userName) {
-          setOnboardingCompleted(true);
-        }
-        onDataChanged();
+        applySanitizedPayload(validation.data.payload);
         return true;
       } catch (e) {
         recordAppError('backup.import', e);
-        console.error('Erro ao importar JSON:', e);
         return false;
       }
     },
-    [bankQueue, onDataChanged]
+    [applySanitizedPayload]
+  );
+
+  const workspaceValue = useMemo<WorkspaceContextType>(
+    () => ({
+      theme,
+      toggleTheme,
+      setThemeMode,
+      userName,
+      setUserName,
+      onboardingCompleted,
+      completeOnboarding,
+      dashboardWidgets,
+      toggleDashboardWidget,
+      isStartFromScratchOpen,
+      openStartFromScratchModal,
+      closeStartFromScratchModal,
+      resetWorkspaceToZero,
+      exportEncryptedBackup,
+      exportBackupJson,
+      inspectBackupBeforeImport,
+      importBackupFromText,
+      importBackupJson,
+      lastPortableBackupAt,
+      backupHealth,
+      dismissBackupReminder,
+      autoBackupStatus,
+      refreshAutoBackupStatus,
+      selectAutoBackupFolder,
+      configureAutoBackupPassphrase,
+      toggleAutoBackupEnabled,
+      disconnectAutoBackupFolder,
+      runAutoFolderBackupNow,
+      undoToast,
+      clearUndoToast,
+      confirmDestructiveAction,
+      installedAppVersion: updater.installedAppVersion,
+      installedBuildNumber: updater.installedBuildNumber,
+      distributionChannel: updater.distributionChannel,
+      appUpdateResult: updater.appUpdateResult,
+      isCheckingAppUpdate: updater.isCheckingAppUpdate,
+      updateDownloadState: updater.updateDownloadState,
+      isUpdateBannerDismissed: updater.isUpdateBannerDismissed,
+      checkForUpdatesNow: updater.checkForUpdatesNow,
+      startInAppUpdate: updater.startInAppUpdate,
+      openUnknownSourcesAndAwaitReturn: updater.openUnknownSourcesAndAwaitReturn,
+      retryInstallPendingApk: updater.retryInstallPendingApk,
+      dismissUpdateBanner: updater.dismissUpdateBanner,
+      resetUpdateDownloadState: updater.resetUpdateDownloadState,
+      isOnline: connectivity.isOnline,
+      justReconnected: connectivity.justReconnected,
+      dismissReconnectedBanner: connectivity.dismissReconnectedBanner,
+      androidPermissions,
+      refreshAndroidPermissions,
+      openAndroidSettings,
+      vaultStatus,
+    }),
+    [
+      androidPermissions,
+      autoBackupStatus,
+      backupHealth,
+      clearUndoToast,
+      closeStartFromScratchModal,
+      completeOnboarding,
+      configureAutoBackupPassphrase,
+      confirmDestructiveAction,
+      connectivity.dismissReconnectedBanner,
+      connectivity.isOnline,
+      connectivity.justReconnected,
+      dashboardWidgets,
+      disconnectAutoBackupFolder,
+      dismissBackupReminder,
+      exportBackupJson,
+      exportEncryptedBackup,
+      importBackupFromText,
+      importBackupJson,
+      inspectBackupBeforeImport,
+      isStartFromScratchOpen,
+      lastPortableBackupAt,
+      onboardingCompleted,
+      openAndroidSettings,
+      openStartFromScratchModal,
+      refreshAndroidPermissions,
+      refreshAutoBackupStatus,
+      resetWorkspaceToZero,
+      runAutoFolderBackupNow,
+      selectAutoBackupFolder,
+      setThemeMode,
+      setUserName,
+      theme,
+      toggleAutoBackupEnabled,
+      toggleDashboardWidget,
+      toggleTheme,
+      undoToast,
+      updater.appUpdateResult,
+      updater.checkForUpdatesNow,
+      updater.dismissUpdateBanner,
+      updater.distributionChannel,
+      updater.installedAppVersion,
+      updater.installedBuildNumber,
+      updater.isCheckingAppUpdate,
+      updater.isUpdateBannerDismissed,
+      updater.openUnknownSourcesAndAwaitReturn,
+      updater.resetUpdateDownloadState,
+      updater.retryInstallPendingApk,
+      updater.startInAppUpdate,
+      updater.updateDownloadState,
+      userName,
+      vaultStatus,
+    ]
+  );
+
+  const financeValue = useMemo<FinanceContextType>(
+    () => ({
+      transactions,
+      financialGoals,
+      budgetLimits,
+      ...financeActions,
+      pendingBankNotifications: bankQueue.pendingBankNotifications,
+      bankListenerSupported: bankQueue.bankListenerSupported,
+      bankListenerPermission: bankQueue.bankListenerPermission,
+      refreshBankListenerPermission: bankQueue.refreshBankListenerPermission,
+      openBankListenerSettings: bankQueue.openBankListenerSettings,
+      enqueueParsedBankText: bankQueue.enqueueParsedBankText,
+      approvePendingBankNotification: bankQueue.approvePendingBankNotification,
+      approveAllPendingBankNotifications: bankQueue.approveAllPendingBankNotifications,
+      dismissPendingBankNotification: bankQueue.dismissPendingBankNotification,
+      clearPendingBankNotifications: bankQueue.clearPendingBankNotifications,
+    }),
+    [
+      bankQueue.approveAllPendingBankNotifications,
+      bankQueue.approvePendingBankNotification,
+      bankQueue.bankListenerPermission,
+      bankQueue.bankListenerSupported,
+      bankQueue.clearPendingBankNotifications,
+      bankQueue.dismissPendingBankNotification,
+      bankQueue.enqueueParsedBankText,
+      bankQueue.openBankListenerSettings,
+      bankQueue.pendingBankNotifications,
+      bankQueue.refreshBankListenerPermission,
+      financeActions,
+      financialGoals,
+      budgetLimits,
+      transactions,
+    ]
+  );
+
+  const plannerValue = useMemo<PlannerContextType>(
+    () => ({
+      tasks,
+      localEvents: calendarActions.localEvents,
+      specialDates,
+      calendarEvents: calendarActions.calendarEvents,
+      draftNotes,
+      ...tasksActions,
+      ...draftsActions,
+      addSpecialDate: calendarActions.addSpecialDate,
+      deleteSpecialDate: calendarActions.deleteSpecialDate,
+      createTaskFromCalendarEvent: calendarActions.createTaskFromCalendarEvent,
+      addLocalEvent: calendarActions.addLocalEvent,
+      updateLocalEvent: calendarActions.updateLocalEvent,
+      removeLocalEvent: calendarActions.removeLocalEvent,
+      scheduleTaskInCalendar: calendarActions.scheduleTaskInCalendar,
+      importIcsCalendar: calendarActions.importIcsCalendar,
+      exportAgendaIcs: calendarActions.exportAgendaIcs,
+      notificationPermission: notificationsEngine.notificationPermission,
+      notificationsList: notificationsEngine.notificationsList,
+      enableNotifications: notificationsEngine.enableNotifications,
+      triggerTestNotification: notificationsEngine.triggerTestNotification,
+      dismissNotification: notificationsEngine.dismissNotification,
+      clearAllNotifications: notificationsEngine.clearAllNotifications,
+      pendingNotificationTarget: notificationsEngine.pendingNotificationTarget,
+      consumeNotificationTarget: notificationsEngine.consumeNotificationTarget,
+    }),
+    [
+      calendarActions.addLocalEvent,
+      calendarActions.addSpecialDate,
+      calendarActions.calendarEvents,
+      calendarActions.createTaskFromCalendarEvent,
+      calendarActions.deleteSpecialDate,
+      calendarActions.exportAgendaIcs,
+      calendarActions.importIcsCalendar,
+      calendarActions.localEvents,
+      calendarActions.removeLocalEvent,
+      calendarActions.scheduleTaskInCalendar,
+      calendarActions.updateLocalEvent,
+      draftNotes,
+      draftsActions,
+      notificationsEngine.clearAllNotifications,
+      notificationsEngine.consumeNotificationTarget,
+      notificationsEngine.dismissNotification,
+      notificationsEngine.enableNotifications,
+      notificationsEngine.notificationPermission,
+      notificationsEngine.notificationsList,
+      notificationsEngine.pendingNotificationTarget,
+      notificationsEngine.triggerTestNotification,
+      specialDates,
+      tasks,
+      tasksActions,
+    ]
+  );
+
+  const combinedValue = useMemo<AppContextType>(
+    () => ({
+      ...workspaceValue,
+      ...financeValue,
+      ...plannerValue,
+    }),
+    [financeValue, plannerValue, workspaceValue]
   );
 
   return (
-    <AppContext.Provider
-      value={{
-        theme,
-        toggleTheme,
-        setThemeMode,
-        userName,
-        setUserName,
-        onboardingCompleted,
-        completeOnboarding,
-        user,
-        accessToken,
-        workspaceAuthStatus,
-        isAuthenticating,
-        authError,
-        clearAuthError,
-        signInWithGoogle,
-        refreshWorkspaceSession,
-        signOut,
-        tasks,
-        transactions,
-        financialGoals,
-        budgetLimits,
-        draftNotes,
-        specialDates,
-        dashboardWidgets,
-        calendarEvents: calendarActions.calendarEvents,
-        isLoadingCalendar: calendarActions.isLoadingCalendar,
-        ...tasksActions,
-        ...financeActions,
-        pendingBankNotifications: bankQueue.pendingBankNotifications,
-        bankListenerSupported: bankQueue.bankListenerSupported,
-        bankListenerPermission: bankQueue.bankListenerPermission,
-        refreshBankListenerPermission: bankQueue.refreshBankListenerPermission,
-        openBankListenerSettings: bankQueue.openBankListenerSettings,
-        enqueueParsedBankText: bankQueue.enqueueParsedBankText,
-        approvePendingBankNotification: bankQueue.approvePendingBankNotification,
-        approveAllPendingBankNotifications: bankQueue.approveAllPendingBankNotifications,
-        dismissPendingBankNotification: bankQueue.dismissPendingBankNotification,
-        clearPendingBankNotifications: bankQueue.clearPendingBankNotifications,
-        ...draftsActions,
-        toggleDashboardWidget,
-        notificationPermission: notificationsEngine.notificationPermission,
-        notificationsList: notificationsEngine.notificationsList,
-        enableNotifications: notificationsEngine.enableNotifications,
-        triggerTestNotification: notificationsEngine.triggerTestNotification,
-        dismissNotification: notificationsEngine.dismissNotification,
-        clearAllNotifications: notificationsEngine.clearAllNotifications,
-        refreshCalendar: calendarActions.refreshCalendar,
-        addSpecialDate: calendarActions.addSpecialDate,
-        deleteSpecialDate: calendarActions.deleteSpecialDate,
-        createTaskFromCalendarEvent: calendarActions.createTaskFromCalendarEvent,
-        addEventToGoogleCalendar: calendarActions.addEventToGoogleCalendar,
-        updateGoogleCalendarEvent: calendarActions.updateGoogleCalendarEvent,
-        removeGoogleCalendarEvent: calendarActions.removeGoogleCalendarEvent,
-        scheduleTaskInCalendar: calendarActions.scheduleTaskInCalendar,
-        driveSyncInfo,
-        isCheckingDriveOnLogin,
-        pendingDriveRestore,
-        autoRestoredNotice,
-        isStartFromScratchOpen,
-        acceptPendingDriveRestore,
-        dismissPendingDriveRestore,
-        dismissAutoRestoredNotice,
-        openStartFromScratchModal,
-        closeStartFromScratchModal,
-        resetWorkspaceToZero,
-        syncToDriveNow,
-        restoreFromDriveNow,
-        exportBackupJson,
-        importBackupJson,
-        undoToast,
-        clearUndoToast,
-        confirmDestructiveAction,
-        installedAppVersion: updater.installedAppVersion,
-        installedBuildNumber: updater.installedBuildNumber,
-        distributionChannel: updater.distributionChannel,
-        appUpdateResult: updater.appUpdateResult,
-        isCheckingAppUpdate: updater.isCheckingAppUpdate,
-        updateDownloadState: updater.updateDownloadState,
-        isUpdateBannerDismissed: updater.isUpdateBannerDismissed,
-        checkForUpdatesNow: updater.checkForUpdatesNow,
-        startInAppUpdate: updater.startInAppUpdate,
-        openUnknownSourcesAndAwaitReturn: updater.openUnknownSourcesAndAwaitReturn,
-        retryInstallPendingApk: updater.retryInstallPendingApk,
-        dismissUpdateBanner: updater.dismissUpdateBanner,
-        resetUpdateDownloadState: updater.resetUpdateDownloadState,
-        isOnline: connectivity.isOnline,
-        justReconnected: connectivity.justReconnected,
-        dismissReconnectedBanner: connectivity.dismissReconnectedBanner,
-        androidPermissions,
-        refreshAndroidPermissions,
-        openAndroidSettings,
-        vaultStatus,
-        pendingNotificationTarget: notificationsEngine.pendingNotificationTarget,
-        consumeNotificationTarget: notificationsEngine.consumeNotificationTarget,
-      }}
-    >
-      {children}
-      <GlobalConfirmModal config={confirmConfig} onClose={closeConfirmDialog} />
-    </AppContext.Provider>
+    <WorkspaceContext.Provider value={workspaceValue}>
+      <FinanceContext.Provider value={financeValue}>
+        <PlannerContext.Provider value={plannerValue}>
+          <AppContext.Provider value={combinedValue}>
+            {children}
+            <GlobalConfirmModal config={confirmConfig} onClose={closeConfirmDialog} />
+          </AppContext.Provider>
+        </PlannerContext.Provider>
+      </FinanceContext.Provider>
+    </WorkspaceContext.Provider>
   );
 };
 
-export const useApp = () => {
+export const useApp = (): AppContextType => {
   const context = useContext(AppContext);
   if (!context) {
     throw new Error('useApp must be used within an AppProvider');

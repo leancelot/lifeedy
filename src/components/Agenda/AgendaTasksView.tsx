@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import {
+  AlertCircle,
   Cake,
   Calendar,
   CalendarClock,
@@ -10,23 +12,23 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Download,
   Edit3,
-  ExternalLink,
   Gift,
   MapPin,
   Pause,
   Play,
   Plus,
-  RefreshCw,
   RotateCcw,
   Search,
   Sparkles,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
-import { CalendarEventCategory, GoogleCalendarEvent, TaskItem } from '../../types';
+import { CalendarEventCategory, LocalCalendarEvent, TaskItem } from '../../types';
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
 import { formatMonthYearTitle } from '../../utils/agendaMonthUtils';
 import { MonthCalendarGrid } from './MonthCalendarGrid';
@@ -61,13 +63,13 @@ const getWeekDays = (anchorDateStr: string): string[] => {
   });
 };
 
-const getEventDateStr = (ev: GoogleCalendarEvent): string => {
+const getEventDateStr = (ev: LocalCalendarEvent): string => {
   if (ev.start?.date) return ev.start.date;
   if (ev.start?.dateTime) return toLocalDateStr(new Date(ev.start.dateTime));
   return '';
 };
 
-const getEventTimeStr = (ev: GoogleCalendarEvent): string => {
+const getEventTimeStr = (ev: LocalCalendarEvent): string => {
   if (ev.start?.dateTime) {
     return new Date(ev.start.dateTime).toLocaleTimeString('pt-BR', {
       hour: '2-digit',
@@ -77,7 +79,7 @@ const getEventTimeStr = (ev: GoogleCalendarEvent): string => {
   return 'Dia todo';
 };
 
-const getEventSortTime = (ev: GoogleCalendarEvent): string => {
+const getEventSortTime = (ev: LocalCalendarEvent): string => {
   if (!ev.start?.dateTime) return '00:00';
   const d = new Date(ev.start.dateTime);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -99,7 +101,7 @@ const PRIORITY_LABELS: Record<TaskItem['priority'], string> = {
 };
 
 type TimelineEntry =
-  | { kind: 'event'; sortTime: string; hasTime: boolean; event: GoogleCalendarEvent }
+  | { kind: 'event'; sortTime: string; hasTime: boolean; event: LocalCalendarEvent }
   | { kind: 'task'; sortTime: string; hasTime: boolean; task: TaskItem };
 
 export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
@@ -107,16 +109,15 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
   onConsumeQuickOpen,
 }) => {
   const {
-    user,
-    signInWithGoogle,
+    localEvents,
     calendarEvents,
-    isLoadingCalendar,
-    refreshCalendar,
     createTaskFromCalendarEvent,
-    addEventToGoogleCalendar,
-    updateGoogleCalendarEvent,
-    removeGoogleCalendarEvent,
+    addLocalEvent,
+    updateLocalEvent,
+    removeLocalEvent,
     addSpecialDate,
+    importIcsCalendar,
+    exportAgendaIcs,
     tasks,
     addTask,
     updateTask,
@@ -135,13 +136,17 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
   const [showCompleted, setShowCompleted] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [quickTaskTitle, setQuickTaskTitle] = useState<string>('');
+  const [icsFeedback, setIcsFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(
+    null
+  );
+  const icsFileInputRef = useRef<HTMLInputElement>(null);
 
   // Modals
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [isSpecialModalOpen, setIsSpecialModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<TaskItem | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<GoogleCalendarEvent | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<LocalCalendarEvent | null>(null);
   const [isEditingEvent, setIsEditingEvent] = useState(false);
 
   // Special date / Birthday form
@@ -217,7 +222,6 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
   const [eventStartTime, setEventStartTime] = useState('');
   const [eventEndTime, setEventEndTime] = useState('');
   const [eventAllDay, setEventAllDay] = useState(false);
-  const [isSubmittingEvent, setIsSubmittingEvent] = useState(false);
 
   // Focus Timer (Pomodoro 25m)
   const [focusTask, setFocusTask] = useState<TaskItem | null>(null);
@@ -484,46 +488,84 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
     setEditingTask(null);
   };
 
-  const handleCreateEvent = async (e: React.FormEvent) => {
+  const handleCreateEvent = (e: React.FormEvent) => {
     e.preventDefault();
     if (!eventSummary.trim()) return;
 
-    setIsSubmittingEvent(true);
-    try {
-      if (eventAllDay) {
-        await addEventToGoogleCalendar({
-          summary: eventSummary.trim(),
-          description: eventDescription.trim() || undefined,
-          location: eventLocation.trim() || undefined,
-          allDay: true,
-          date: eventDate,
-          startDateTime: `${eventDate}T00:00:00Z`,
-          endDateTime: `${eventDate}T23:59:59Z`,
-        });
-      } else {
-        if (!eventStartTime || !eventEndTime) return;
-        const startIso = new Date(`${eventDate}T${eventStartTime}:00`).toISOString();
-        const endIso = new Date(`${eventDate}T${eventEndTime}:00`).toISOString();
-        await addEventToGoogleCalendar({
-          summary: eventSummary.trim(),
-          description: eventDescription.trim() || undefined,
-          location: eventLocation.trim() || undefined,
-          startDateTime: startIso,
-          endDateTime: endIso,
-        });
-      }
-
-      setEventSummary('');
-      setEventDescription('');
-      setEventLocation('');
-      setEventStartTime('');
-      setEventEndTime('');
-      setIsEventModalOpen(false);
-    } catch (err) {
-      console.error('Erro ao criar evento:', err);
-    } finally {
-      setIsSubmittingEvent(false);
+    if (eventAllDay) {
+      addLocalEvent({
+        summary: eventSummary.trim(),
+        description: eventDescription.trim() || undefined,
+        location: eventLocation.trim() || undefined,
+        allDay: true,
+        date: eventDate,
+        startDateTime: `${eventDate}T00:00:00Z`,
+        endDateTime: `${eventDate}T23:59:59Z`,
+      });
+    } else {
+      if (!eventStartTime || !eventEndTime) return;
+      const startIso = new Date(`${eventDate}T${eventStartTime}:00`).toISOString();
+      const endIso = new Date(`${eventDate}T${eventEndTime}:00`).toISOString();
+      addLocalEvent({
+        summary: eventSummary.trim(),
+        description: eventDescription.trim() || undefined,
+        location: eventLocation.trim() || undefined,
+        startDateTime: startIso,
+        endDateTime: endIso,
+      });
     }
+
+    setEventSummary('');
+    setEventDescription('');
+    setEventLocation('');
+    setEventStartTime('');
+    setEventEndTime('');
+    setIsEventModalOpen(false);
+  };
+
+  const showIcsToast = (type: 'success' | 'error', text: string) => {
+    setIcsFeedback({ type, text });
+    setTimeout(() => {
+      setIcsFeedback((curr) => (curr?.text === text ? null : curr));
+    }, 5000);
+  };
+
+  const handleImportIcsFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (!content) {
+        showIcsToast('error', 'Arquivo .ics vazio ou ilegível.');
+        return;
+      }
+      const res = importIcsCalendar(content);
+      if (res.addedCount > 0) {
+        const extra =
+          res.duplicateCount > 0 ? ` (${res.duplicateCount} repetido(s) ignorado(s))` : '';
+        showIcsToast('success', `${res.addedCount} compromisso(s) importado(s)${extra}.`);
+      } else if (res.duplicateCount > 0) {
+        showIcsToast(
+          'success',
+          `Todos os ${res.duplicateCount} evento(s) do arquivo já estavam na agenda.`
+        );
+      } else {
+        showIcsToast('error', 'Nenhum evento válido encontrado nesse arquivo .ics.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleExportIcs = () => {
+    if (localEvents.length === 0) {
+      showIcsToast('error', 'Crie ao menos um compromisso próprio antes de exportar.');
+      return;
+    }
+    const count = exportAgendaIcs();
+    showIcsToast('success', `${count} compromisso(s) exportado(s) em arquivo .ics.`);
   };
 
   const upcomingSpecialDates = useMemo(() => {
@@ -549,7 +591,7 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
       .sort((a, b) => getEventDateStr(a).localeCompare(getEventDateStr(b)));
   }, [calendarEvents, todayStr, searchQuery]);
 
-  const openEventDetails = (ev: GoogleCalendarEvent) => {
+  const openEventDetails = (ev: LocalCalendarEvent) => {
     hapticSelection();
     setSelectedEvent(ev);
     setIsEditingEvent(false);
@@ -603,7 +645,7 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
     e.preventDefault();
     if (!selectedEvent || !editEventSummary.trim()) return;
     if (editEventAllDay) {
-      updateGoogleCalendarEvent(selectedEvent.id, {
+      updateLocalEvent(selectedEvent.id, {
         summary: editEventSummary.trim(),
         location: editEventLocation.trim() || undefined,
         description: selectedEvent.description,
@@ -611,18 +653,16 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
         date: editEventDate,
         startDateTime: `${editEventDate}T00:00:00Z`,
         endDateTime: `${editEventDate}T23:59:59Z`,
-        calendarId: selectedEvent.calendarId,
       });
     } else {
       const startIso = new Date(`${editEventDate}T${editEventStartTime}:00`).toISOString();
       const endIso = new Date(`${editEventDate}T${editEventEndTime}:00`).toISOString();
-      updateGoogleCalendarEvent(selectedEvent.id, {
+      updateLocalEvent(selectedEvent.id, {
         summary: editEventSummary.trim(),
         location: editEventLocation.trim() || undefined,
         description: selectedEvent.description,
         startDateTime: startIso,
         endDateTime: endIso,
-        calendarId: selectedEvent.calendarId,
       });
     }
     hapticSuccess();
@@ -698,11 +738,11 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
               >
                 Prioridade {PRIORITY_LABELS[task.priority]}
               </span>
-              {task.googleCalendarEventId && (
+              {task.linkedEventId && (
                 <>
                   <span aria-hidden="true">·</span>
                   <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                    Na Google Agenda
+                    Na Agenda
                   </span>
                 </>
               )}
@@ -779,7 +819,7 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
                   </label>
                 </>
               )}
-              {!task.googleCalendarEventId && (
+              {!task.linkedEventId && (
                 <button
                   type="button"
                   onClick={() => scheduleTaskInCalendar(task)}
@@ -825,7 +865,7 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
     );
   };
 
-  const renderEventRow = (ev: GoogleCalendarEvent, compact = false, showDateBadge = false) => {
+  const renderEventRow = (ev: LocalCalendarEvent, compact = false, showDateBadge = false) => {
     const timeStr = getEventTimeStr(ev);
     const evDate = getEventDateStr(ev);
     const dateBadge =
@@ -844,7 +884,7 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
         ? 'Feriado'
         : ev.eventCategory === 'commemorative'
         ? 'Data comemorativa'
-        : ev.calendarSummary || 'Google Agenda';
+        : ev.calendarSummary || 'Agenda Local';
 
     return (
       <div
@@ -914,7 +954,7 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                void removeGoogleCalendarEvent(ev.id);
+                removeLocalEvent(ev.id);
               }}
               title="Excluir"
               className="p-2 rounded-lg text-zinc-400 hover:text-rose-500 transition-colors cursor-pointer"
@@ -940,26 +980,47 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
               <span>{totalPendingCount} pendente(s)</span>
               <span aria-hidden="true">·</span>
               <span>{calendarEvents.length} compromisso(s)</span>
-              {user ? (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                    Google Agenda ativa
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <button
-                    type="button"
-                    onClick={signInWithGoogle}
-                    className="text-indigo-600 dark:text-indigo-400 font-medium hover:underline cursor-pointer"
-                  >
-                    Conectar Google Agenda
-                  </button>
-                </>
-              )}
+              <span aria-hidden="true">·</span>
+              <button
+                type="button"
+                onClick={() => icsFileInputRef.current?.click()}
+                className="text-indigo-600 dark:text-indigo-400 font-medium hover:underline inline-flex items-center gap-1 cursor-pointer"
+              >
+                <Upload className="w-3 h-3" />
+                <span>Importar .ics</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleExportIcs}
+                className="text-zinc-600 dark:text-zinc-300 font-medium hover:underline inline-flex items-center gap-1 cursor-pointer"
+              >
+                <Download className="w-3 h-3" />
+                <span>Exportar .ics</span>
+              </button>
+              <input
+                ref={icsFileInputRef}
+                type="file"
+                accept={Capacitor.isNativePlatform() ? undefined : '.ics,text/calendar,application/ics,application/octet-stream'}
+                onChange={handleImportIcsFile}
+                className="hidden"
+              />
             </div>
+            {icsFeedback && (
+              <div
+                className={`mt-2 px-3 py-2 rounded-xl border flex items-center gap-2 text-xs font-medium ${
+                  icsFeedback.type === 'success'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                }`}
+              >
+                {icsFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span>{icsFeedback.text}</span>
+              </div>
+            )}
           </div>
 
           {/* Segmented Dia / Semana / Mês + Ações de Criação */}
@@ -1009,18 +1070,6 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
                   Mês
                 </button>
               </div>
-
-              {user && (
-                <button
-                  type="button"
-                  onClick={() => refreshCalendar()}
-                  disabled={isLoadingCalendar}
-                  title="Atualizar Google Agenda"
-                  className="w-10 h-10 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors cursor-pointer shrink-0"
-                >
-                  <RefreshCw className={`w-4 h-4 ${isLoadingCalendar ? 'animate-spin' : ''}`} />
-                </button>
-              )}
             </div>
 
             <div className="grid grid-cols-3 sm:flex items-center gap-2 w-full sm:w-auto">
@@ -1932,11 +1981,11 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
         </div>
       )}
 
-      {/* Modal: Novo Evento no Google Calendar */}
+      {/* Modal: Novo Compromisso Local */}
       {isEventModalOpen && (
         <div
           onClick={(e) => {
-            if (e.target === e.currentTarget && !isSubmittingEvent) {
+            if (e.target === e.currentTarget) {
               hapticSelection();
               setIsEventModalOpen(false);
             }
@@ -1947,7 +1996,7 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
             <div className="sm:hidden w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700 mx-auto mb-3 shrink-0" />
             <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800">
               <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                Novo Evento na Google Agenda
+                Novo Compromisso
               </h3>
               <button
                 type="button"
@@ -1962,143 +2011,127 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
               </button>
             </div>
 
-            {!user ? (
-              <div className="py-6 text-center space-y-3">
-                <p className="text-sm text-zinc-600 dark:text-zinc-300">
-                  Conecte sua conta Google para criar e sincronizar eventos diretamente na sua agenda.
-                </p>
+            <form onSubmit={handleCreateEvent} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                  Título do Compromisso *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Título do compromisso"
+                  value={eventSummary}
+                  onChange={(e) => setEventSummary(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                  Descrição
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Detalhes do compromisso"
+                  value={eventDescription}
+                  onChange={(e) => setEventDescription(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                  Localização ou Link
+                </label>
+                <input
+                  type="text"
+                  placeholder="Local ou link"
+                  value={eventLocation}
+                  onChange={(e) => setEventLocation(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="unifiedAllDayCheckbox"
+                  checked={eventAllDay}
+                  onChange={(e) => setEventAllDay(e.target.checked)}
+                  className="w-4 h-4 rounded text-indigo-600 cursor-pointer"
+                />
+                <label
+                  htmlFor="unifiedAllDayCheckbox"
+                  className="text-xs font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer"
+                >
+                  Evento de dia inteiro
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className={eventAllDay ? 'sm:col-span-3' : 'sm:col-span-1'}>
+                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                    Data *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={eventDate}
+                    onChange={(e) => setEventDate(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                  />
+                </div>
+
+                {!eventAllDay && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                        Início *
+                      </label>
+                      <input
+                        type="time"
+                        required
+                        value={eventStartTime}
+                        onChange={(e) => setEventStartTime(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                        Fim *
+                      </label>
+                      <input
+                        type="time"
+                        required
+                        value={eventEndTime}
+                        onChange={(e) => setEventEndTime(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="pt-4 flex items-center justify-end gap-3 border-t border-zinc-100 dark:border-zinc-800">
                 <button
                   type="button"
-                  onClick={signInWithGoogle}
-                  className="min-h-[44px] px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold cursor-pointer"
+                  onClick={() => {
+                    hapticSelection();
+                    setIsEventModalOpen(false);
+                  }}
+                  className="pressable min-h-[40px] px-4 py-2 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 cursor-pointer"
                 >
-                  Conectar conta Google
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="pressable min-h-[40px] px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
+                >
+                  Salvar Compromisso
                 </button>
               </div>
-            ) : (
-              <form onSubmit={handleCreateEvent} className="mt-4 space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Título do Evento *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Título do evento"
-                    value={eventSummary}
-                    onChange={(e) => setEventSummary(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Descrição
-                  </label>
-                  <textarea
-                    rows={2}
-                    placeholder="Detalhes do evento"
-                    value={eventDescription}
-                    onChange={(e) => setEventDescription(e.target.value)}
-                    className="w-full px-3.5 py-2 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none resize-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Localização ou Link
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Local ou link"
-                    value={eventLocation}
-                    onChange={(e) => setEventLocation(e.target.value)}
-                    className="w-full px-3.5 py-2 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="unifiedAllDayCheckbox"
-                    checked={eventAllDay}
-                    onChange={(e) => setEventAllDay(e.target.checked)}
-                    className="w-4 h-4 rounded text-indigo-600 cursor-pointer"
-                  />
-                  <label
-                    htmlFor="unifiedAllDayCheckbox"
-                    className="text-xs font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer"
-                  >
-                    Evento de dia inteiro
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className={eventAllDay ? 'sm:col-span-3' : 'sm:col-span-1'}>
-                    <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                      Data *
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      value={eventDate}
-                      onChange={(e) => setEventDate(e.target.value)}
-                      className="w-full px-3 py-2 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                    />
-                  </div>
-
-                  {!eventAllDay && (
-                    <>
-                      <div>
-                        <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                          Início *
-                        </label>
-                        <input
-                          type="time"
-                          required
-                          value={eventStartTime}
-                          onChange={(e) => setEventStartTime(e.target.value)}
-                          className="w-full px-3 py-2 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                          Fim *
-                        </label>
-                        <input
-                          type="time"
-                          required
-                          value={eventEndTime}
-                          onChange={(e) => setEventEndTime(e.target.value)}
-                          className="w-full px-3 py-2 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div className="pt-4 flex items-center justify-end gap-3 border-t border-zinc-100 dark:border-zinc-800">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      hapticSelection();
-                      setIsEventModalOpen(false);
-                    }}
-                    className="pressable min-h-[40px] px-4 py-2 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmittingEvent}
-                    className="pressable min-h-[40px] px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 cursor-pointer"
-                  >
-                    {isSubmittingEvent ? 'Salvando...' : 'Salvar Evento'}
-                  </button>
-                </div>
-              </form>
-            )}
+            </form>
           </div>
         </div>
       )}
@@ -2247,19 +2280,8 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
                     <span>Criar tarefa para esta data</span>
                   </button>
 
-                  {selectedEvent.htmlLink && (
-                    <a
-                      href={selectedEvent.htmlLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="pressable min-h-[44px] w-full px-4 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold flex items-center justify-center gap-2"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      <span>Abrir no Google Agenda</span>
-                    </a>
-                  )}
-
-                  {selectedEvent.source === 'google' && selectedEvent.editable !== false && (
+                  {(selectedEvent.source === 'local' || selectedEvent.source === 'ics_import') &&
+                    selectedEvent.editable !== false && (
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
@@ -2274,7 +2296,7 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
                         onClick={() => {
                           const id = selectedEvent.id;
                           setSelectedEvent(null);
-                          void removeGoogleCalendarEvent(id);
+                          removeLocalEvent(id);
                         }}
                         className="pressable min-h-[42px] px-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
                       >
@@ -2290,7 +2312,7 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
                       onClick={() => {
                         const id = selectedEvent.id;
                         setSelectedEvent(null);
-                        void removeGoogleCalendarEvent(id);
+                        removeLocalEvent(id);
                       }}
                       className="pressable min-h-[42px] w-full px-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
                     >

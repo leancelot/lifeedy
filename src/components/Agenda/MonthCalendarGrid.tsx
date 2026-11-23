@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Cake, Sparkles } from 'lucide-react';
-import { GoogleCalendarEvent, TaskItem } from '../../types';
+import { LocalCalendarEvent, TaskItem } from '../../types';
 import { buildMonthGrid, summarizeMonthDayItems } from '../../utils/agendaMonthUtils';
 import { hapticSelection } from '../../services/hapticsService';
 
@@ -8,7 +8,7 @@ interface MonthCalendarGridProps {
   selectedDateStr: string;
   todayStr: string;
   tasks: TaskItem[];
-  events: GoogleCalendarEvent[];
+  events: LocalCalendarEvent[];
   onSelectDate: (dateStr: string) => void;
 }
 

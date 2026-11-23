@@ -31,8 +31,9 @@ import {
   requestMediaPermission,
 } from '../../services/appHealthBridge';
 import { validateReceiptImageFile } from '../../utils/runtimeValidator';
+import { formatLocalDateIso } from '../../utils/dateUtils';
 import { FinanceCategory, Transaction } from '../../types';
-import confetti from 'canvas-confetti';
+import { triggerConfetti } from '../../utils/confettiEffect';
 
 interface ReceiptScannerModalProps {
   isOpen: boolean;
@@ -140,7 +141,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     setErrorMsg(null);
     setTitle('');
     setAmount('');
-    setDate(new Date().toISOString().split('T')[0]);
+    setDate(formatLocalDateIso());
     setCategory('alimentacao');
     setPaymentMethod('cartao_credito');
     setNotes('');
@@ -224,7 +225,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       title: title.trim(),
       amount: amountNum,
       category,
-      date: date || new Date().toISOString().split('T')[0],
+      date: date || formatLocalDateIso(),
       paymentMethod,
       notes:
         notes.trim() ||
@@ -236,7 +237,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       recurring: false,
     });
 
-    confetti({ particleCount: 35, spread: 60, origin: { y: 0.7 } });
+    triggerConfetti({ particleCount: 35, spread: 60, origin: { y: 0.7 } });
     resetAll();
     onClose();
   };

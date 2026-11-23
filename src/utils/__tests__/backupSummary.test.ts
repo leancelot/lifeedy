@@ -6,6 +6,7 @@ describe('backupSummary utilities', () => {
     const summary = summarizePayloadCounts({});
     expect(summary).toEqual({
       tasksCount: 0,
+      eventsCount: 0,
       transactionsCount: 0,
       goalsCount: 0,
       notesCount: 0,
@@ -52,6 +53,15 @@ describe('backupSummary utilities', () => {
           paymentMethod: 'transferencia',
         },
       ],
+      events: [
+        {
+          id: 'ev1',
+          summary: 'Dentista',
+          start: { date: '2026-11-16' },
+          end: { date: '2026-11-16' },
+          source: 'local',
+        },
+      ],
       financialGoals: [],
       draftNotes: [
         {
@@ -66,10 +76,11 @@ describe('backupSummary utilities', () => {
     });
 
     expect(summary.tasksCount).toBe(1);
+    expect(summary.eventsCount).toBe(1);
     expect(summary.transactionsCount).toBe(2);
     expect(summary.goalsCount).toBe(0);
     expect(summary.notesCount).toBe(1);
-    expect(summary.totalItems).toBe(4);
+    expect(summary.totalItems).toBe(5);
     expect(summary.userName).toBe('Maria Clara');
     expect(summary.lastUpdated).toBe('2026-11-15T10:00:00.000Z');
   });

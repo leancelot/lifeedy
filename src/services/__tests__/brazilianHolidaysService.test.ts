@@ -5,7 +5,7 @@ import {
   getBrazilianHolidaysAndDatesForYear,
   mergeAndDeduplicateCalendarEvents,
 } from '../brazilianHolidaysService';
-import { GoogleCalendarEvent, LocalSpecialDate } from '../../types';
+import { LocalCalendarEvent, LocalSpecialDate } from '../../types';
 
 describe('brazilianHolidaysService', () => {
   it('calcula corretamente Páscoa, Sexta-feira Santa, Carnaval e Corpus Christi em 2026', () => {
@@ -47,23 +47,23 @@ describe('brazilianHolidaysService', () => {
     expect(expanded[0].source).toBe('local_special');
   });
 
-  it('mescla eventos do Google sem duplicar feriados iguais na mesma data', () => {
-    const googleEvents: GoogleCalendarEvent[] = [
+  it('mescla eventos locais sem duplicar feriados iguais na mesma data', () => {
+    const localEvents: LocalCalendarEvent[] = [
       {
-        id: 'g-hol-1',
+        id: 'local-hol-1',
         summary: 'Dia Nacional de Zumbi e da Consciência Negra',
         start: { date: '2026-11-20' },
         end: { date: '2026-11-20' },
         eventCategory: 'holiday',
-        source: 'google',
+        source: 'local',
       },
       {
-        id: 'g-meeting',
+        id: 'local-meeting',
         summary: 'Reunião de alinhamento',
         start: { dateTime: '2026-11-20T14:00:00-03:00' },
         end: { dateTime: '2026-11-20T15:00:00-03:00' },
         eventCategory: 'event',
-        source: 'google',
+        source: 'local',
       },
     ];
 
@@ -71,14 +71,14 @@ describe('brazilianHolidaysService', () => {
       (e) => e.start.date === '2026-11-20' || e.start.date === '2026-12-25'
     );
 
-    const merged = mergeAndDeduplicateCalendarEvents(googleEvents, offline);
+    const merged = mergeAndDeduplicateCalendarEvents(localEvents, offline);
     const nov20Holidays = merged.filter(
       (e) => e.start.date === '2026-11-20' && e.eventCategory === 'holiday'
     );
     const dec25Holidays = merged.filter((e) => e.start.date === '2026-12-25');
 
     expect(nov20Holidays).toHaveLength(1);
-    expect(nov20Holidays[0].id).toBe('g-hol-1');
+    expect(nov20Holidays[0].id).toBe('local-hol-1');
     expect(dec25Holidays).toHaveLength(1);
     expect(dec25Holidays[0].summary).toBe('Natal');
   });

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarPlus,
   Check,
@@ -41,18 +41,17 @@ import {
   guessFinanceCategoryFromText,
   matchesDraftSearch,
 } from '../../utils/draftConversionUtils';
-import { DraftAudioPlayer, RichDraftModal } from './RichDraftModal';
+import { formatLocalDateIso } from '../../utils/dateUtils';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
+import { DraftAudioPlayer } from './DraftAudioPlayer';
 
-const getTodayYmd = (): string => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate()
-  ).padStart(2, '0')}`;
-};
+const RichDraftModal = lazyWithRetry(
+  () => import('./RichDraftModal').then((m) => ({ default: m.RichDraftModal })),
+  'rich-draft-modal'
+);
 
 export const DraftsSection: React.FC = () => {
   const {
-    user,
     draftNotes,
     addDraftNote,
     updateDraftNote,
@@ -62,8 +61,7 @@ export const DraftsSection: React.FC = () => {
     addDraftChecklistItem,
     convertDraftToTask,
     addTransaction,
-    addEventToGoogleCalendar,
-    addSpecialDate,
+    addLocalEvent,
   } = useApp();
 
   const [filterMode, setFilterMode] = useState<'all' | 'pinned' | 'lists' | 'media'>('all');
@@ -76,16 +74,15 @@ export const DraftsSection: React.FC = () => {
   const [convTxTitle, setConvTxTitle] = useState('');
   const [convTxAmount, setConvTxAmount] = useState('');
   const [convTxCategory, setConvTxCategory] = useState<FinanceCategory>('outros');
-  const [convTxDate, setConvTxDate] = useState(getTodayYmd);
+  const [convTxDate, setConvTxDate] = useState(() => formatLocalDateIso());
 
   // Convert to Event modal state
   const [eventConvertDraft, setEventConvertDraft] = useState<DraftNote | null>(null);
   const [convEvTitle, setConvEvTitle] = useState('');
   const [convEvNotes, setConvEvNotes] = useState('');
-  const [convEvDate, setConvEvDate] = useState(getTodayYmd);
+  const [convEvDate, setConvEvDate] = useState(() => formatLocalDateIso());
   const [convEvTime, setConvEvTime] = useState('09:00');
   const [convEvAllDay, setConvEvAllDay] = useState(false);
-  const [isSavingEventConv, setIsSavingEventConv] = useState(false);
 
   // Keep-style unified capture bar state
   const [composerMode, setComposerMode] = useState<'idle' | 'text' | 'list'>('idle');
@@ -117,6 +114,7 @@ export const DraftsSection: React.FC = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recStartRef = useRef<number>(0);
 
   useBackHandler(Boolean(previewImage), () => {
@@ -136,7 +134,13 @@ export const DraftsSection: React.FC = () => {
 
   const showTempFeedback = (msg: string) => {
     setConversionFeedback(msg);
-    setTimeout(() => setConversionFeedback(null), 3200);
+    if (feedbackTimerRef.current) {
+      clearTimeout(feedbackTimerRef.current);
+    }
+    feedbackTimerRef.current = setTimeout(() => {
+      feedbackTimerRef.current = null;
+      setConversionFeedback(null);
+    }, 3200);
   };
 
   const openFinanceConversion = (draft: DraftNote) => {
@@ -150,7 +154,7 @@ export const DraftsSection: React.FC = () => {
     setConvTxTitle(title);
     setConvTxAmount(detectedAmount !== null ? detectedAmount.toFixed(2) : '');
     setConvTxCategory(guessedCategory);
-    setConvTxDate(getTodayYmd());
+    setConvTxDate(formatLocalDateIso());
     setFinanceConvertDraft(draft);
   };
 
@@ -167,7 +171,7 @@ export const DraftsSection: React.FC = () => {
       title: convTxTitle.trim(),
       amount: parsedAmount,
       category: convTxCategory,
-      date: convTxDate || getTodayYmd(),
+      date: convTxDate || formatLocalDateIso(),
       paymentMethod: 'pix',
       notes: notes || undefined,
     });
@@ -180,64 +184,39 @@ export const DraftsSection: React.FC = () => {
     const { title, notes } = buildDraftSummaryNote(draft);
     setConvEvTitle(title);
     setConvEvNotes(notes);
-    setConvEvDate(getTodayYmd());
+    setConvEvDate(formatLocalDateIso());
     setConvEvTime('09:00');
     setConvEvAllDay(false);
     setEventConvertDraft(draft);
   };
 
-  const handleConfirmEventConversion = async (e: React.FormEvent) => {
+  const handleConfirmEventConversion = (e: React.FormEvent) => {
     e.preventDefault();
     if (!eventConvertDraft || !convEvTitle.trim() || !convEvDate) return;
-    setIsSavingEventConv(true);
-    try {
-      if (user) {
-        if (convEvAllDay) {
-          await addEventToGoogleCalendar({
-            summary: convEvTitle.trim(),
-            description: convEvNotes.trim() || undefined,
-            allDay: true,
-            date: convEvDate,
-            startDateTime: `${convEvDate}T00:00:00Z`,
-            endDateTime: `${convEvDate}T23:59:59Z`,
-          });
-        } else {
-          const startDate = new Date(`${convEvDate}T${convEvTime || '09:00'}:00`);
-          const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
-          await addEventToGoogleCalendar({
-            summary: convEvTitle.trim(),
-            description: convEvNotes.trim() || undefined,
-            startDateTime: startDate.toISOString(),
-            endDateTime: endDate.toISOString(),
-          });
-        }
-        showTempFeedback(`"${convEvTitle.trim()}" adicionado na Google Agenda.`);
-      } else {
-        addSpecialDate({
-          title: convEvTitle.trim(),
-          monthDay: convEvDate,
-          category: 'commemorative',
-          notes: convEvNotes.trim() || undefined,
-          recurringYearly: false,
-        });
-        showTempFeedback(`"${convEvTitle.trim()}" salvo na sua Agenda.`);
-      }
-      hapticSuccess();
-      setEventConvertDraft(null);
-    } catch {
-      // Fallback to local agenda date if Google sync fails
-      addSpecialDate({
-        title: convEvTitle.trim(),
-        monthDay: convEvDate,
-        category: 'commemorative',
-        notes: convEvNotes.trim() || undefined,
-        recurringYearly: false,
+
+    if (convEvAllDay) {
+      addLocalEvent({
+        summary: convEvTitle.trim(),
+        description: convEvNotes.trim() || undefined,
+        allDay: true,
+        date: convEvDate,
+        startDateTime: `${convEvDate}T00:00:00Z`,
+        endDateTime: `${convEvDate}T23:59:59Z`,
       });
-      setEventConvertDraft(null);
-      showTempFeedback(`"${convEvTitle.trim()}" salvo na Agenda local.`);
-    } finally {
-      setIsSavingEventConv(false);
+    } else {
+      const startDate = new Date(`${convEvDate}T${convEvTime || '09:00'}:00`);
+      const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+      addLocalEvent({
+        summary: convEvTitle.trim(),
+        description: convEvNotes.trim() || undefined,
+        startDateTime: startDate.toISOString(),
+        endDateTime: endDate.toISOString(),
+      });
     }
+
+    showTempFeedback(`"${convEvTitle.trim()}" salvo na sua Agenda.`);
+    hapticSuccess();
+    setEventConvertDraft(null);
   };
 
   const sortedDrafts = useMemo(() => {
@@ -273,6 +252,10 @@ export const DraftsSection: React.FC = () => {
 
   useEffect(() => {
     return () => {
+      if (feedbackTimerRef.current) {
+        clearTimeout(feedbackTimerRef.current);
+        feedbackTimerRef.current = null;
+      }
       if (recorderRef.current && recorderRef.current.state !== 'inactive') {
         try {
           recorderRef.current.onstop = null;
@@ -1061,17 +1044,21 @@ export const DraftsSection: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Completo (para mistura de mídia ou edição avançada) */}
-      <RichDraftModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setEditingDraft(null);
-        }}
-        editingDraft={editingDraft}
-        initialMode={modalInitialMode}
-        onSave={handleSaveFromModal}
-      />
+      {/* Modal Completo (carregado sob demanda) */}
+      {isModalOpen && (
+        <Suspense fallback={null}>
+          <RichDraftModal
+            isOpen={isModalOpen}
+            onClose={() => {
+              setIsModalOpen(false);
+              setEditingDraft(null);
+            }}
+            editingDraft={editingDraft}
+            initialMode={modalInitialMode}
+            onSave={handleSaveFromModal}
+          />
+        </Suspense>
+      )}
 
       {/* Lightbox de Imagem */}
       {previewImage && (
@@ -1335,10 +1322,9 @@ export const DraftsSection: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSavingEventConv}
-                  className="pressable min-h-[40px] px-4 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 cursor-pointer"
+                  className="pressable min-h-[40px] px-4 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
                 >
-                  {isSavingEventConv ? 'Salvando...' : 'Salvar evento'}
+                  Salvar evento
                 </button>
               </div>
             </form>

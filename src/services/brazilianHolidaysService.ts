@@ -1,4 +1,4 @@
-import { CalendarEventCategory, GoogleCalendarEvent, LocalSpecialDate } from '../types';
+import { CalendarEventCategory, LocalCalendarEvent, LocalSpecialDate } from '../types';
 
 function toIsoDate(year: number, month: number, day: number): string {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -53,7 +53,7 @@ interface BuiltInDateEntry {
   category: CalendarEventCategory;
 }
 
-export function getBrazilianHolidaysAndDatesForYear(year: number): GoogleCalendarEvent[] {
+export function getBrazilianHolidaysAndDatesForYear(year: number): LocalCalendarEvent[] {
   const easter = computeEasterSunday(year);
   const carnivalMonday = addDaysToDate(easter, -48);
   const carnivalTuesday = addDaysToDate(easter, -47);
@@ -198,11 +198,11 @@ export function getBrazilianHolidaysAndDatesForYear(year: number): GoogleCalenda
   }));
 }
 
-export function getBrazilianHolidaysInRange(minDate: Date, maxDate: Date): GoogleCalendarEvent[] {
+export function getBrazilianHolidaysInRange(minDate: Date, maxDate: Date): LocalCalendarEvent[] {
   const minStr = formatLocalDate(minDate);
   const maxStr = formatLocalDate(maxDate);
   const years = new Set<number>([minDate.getFullYear(), maxDate.getFullYear()]);
-  const list: GoogleCalendarEvent[] = [];
+  const list: LocalCalendarEvent[] = [];
 
   years.forEach((yr) => {
     getBrazilianHolidaysAndDatesForYear(yr).forEach((ev) => {
@@ -220,12 +220,12 @@ export function expandSpecialDatesToEvents(
   specialDates: LocalSpecialDate[],
   minDate: Date,
   maxDate: Date
-): GoogleCalendarEvent[] {
+): LocalCalendarEvent[] {
   if (!Array.isArray(specialDates) || specialDates.length === 0) return [];
   const minStr = formatLocalDate(minDate);
   const maxStr = formatLocalDate(maxDate);
   const years = new Set<number>([minDate.getFullYear(), maxDate.getFullYear()]);
-  const result: GoogleCalendarEvent[] = [];
+  const result: LocalCalendarEvent[] = [];
 
   specialDates.forEach((item) => {
     if (!item.monthDay) return;
@@ -299,7 +299,7 @@ export function normalizeTitle(value: string): string {
     .trim();
 }
 
-function getEventDateKey(ev: GoogleCalendarEvent): string {
+function getEventDateKey(ev: LocalCalendarEvent): string {
   if (ev.start?.date) return ev.start.date.slice(0, 10);
   if (ev.start?.dateTime) return ev.start.dateTime.slice(0, 10);
   return '';
@@ -322,14 +322,14 @@ function titlesLookEquivalent(a: string, b: string): boolean {
 }
 
 /**
- * Merges synced Google Calendar events with offline Brazilian holidays/commemorative dates
+ * Merges user/imported calendar events with offline Brazilian holidays/commemorative dates
  * and user local special dates, avoiding duplicates on the same day.
  */
 export function mergeAndDeduplicateCalendarEvents(
-  googleEvents: GoogleCalendarEvent[],
-  offlineEvents: GoogleCalendarEvent[]
-): GoogleCalendarEvent[] {
-  const combined: GoogleCalendarEvent[] = [...googleEvents];
+  localAndImportedEvents: LocalCalendarEvent[],
+  offlineEvents: LocalCalendarEvent[]
+): LocalCalendarEvent[] {
+  const combined: LocalCalendarEvent[] = [...localAndImportedEvents];
 
   offlineEvents.forEach((offlineEv) => {
     const offlineDate = getEventDateKey(offlineEv);

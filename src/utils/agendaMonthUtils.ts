@@ -1,4 +1,4 @@
-import { GoogleCalendarEvent, TaskItem } from '../types';
+import { LocalCalendarEvent, TaskItem } from '../types';
 
 export interface MonthGridCell {
   dateStr: string;
@@ -46,7 +46,7 @@ export function buildMonthGrid(year: number, monthIndex: number): MonthGridCell[
   return cells;
 }
 
-const getEventDateKey = (ev: GoogleCalendarEvent): string => {
+const getEventDateKey = (ev: LocalCalendarEvent): string => {
   if (ev.start?.date) return ev.start.date.slice(0, 10);
   if (ev.start?.dateTime) return formatYmd(new Date(ev.start.dateTime));
   return '';
@@ -55,7 +55,7 @@ const getEventDateKey = (ev: GoogleCalendarEvent): string => {
 export function summarizeMonthDayItems(
   cells: MonthGridCell[],
   tasks: TaskItem[],
-  events: GoogleCalendarEvent[]
+  events: LocalCalendarEvent[]
 ): Record<string, MonthDaySummary> {
   const map: Record<string, MonthDaySummary> = {};
   for (const cell of cells) {

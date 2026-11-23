@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { formatLocalDateIso } from '../dateUtils';
 import {
   CURRENT_DATA_VERSION,
   DEFAULT_WIDGETS,
+  computeStableContentChecksum,
   sanitizeLegacyPayload,
   serializeAppPayloadSafely,
 } from '../storageSanitizer';
@@ -160,12 +162,79 @@ describe('sanitizeLegacyPayload', () => {
       version: CURRENT_DATA_VERSION,
       lastUpdated: '2026-11-18T10:00:00.000Z',
       tasks: sanitized.tasks || [],
+      events: [],
       transactions: [],
       financialGoals: [],
       budgetLimits: [],
       draftNotes: [],
     });
     expect(serialized.checksum).toMatch(/^[0-9a-f]{8}$/);
+    expect(serialized.contentChecksum).toMatch(/^[0-9a-f]{8}$/);
     expect(serialized.byteSize).toBeGreaterThan(20);
+  });
+
+  it('mantém contentChecksum estável quando apenas lastUpdated muda e altera quando dados mudam', () => {
+    const basePayload = {
+      version: CURRENT_DATA_VERSION,
+      lastUpdated: '2026-11-18T10:00:00.000Z',
+      tasks: [],
+      events: [],
+      transactions: [],
+      financialGoals: [],
+      budgetLimits: [],
+      draftNotes: [],
+    };
+    const sameContentDifferentTimestamp = {
+      ...basePayload,
+      lastUpdated: '2026-11-19T23:59:59.000Z',
+    };
+    const modifiedContent = {
+      ...basePayload,
+      userName: 'Leandro',
+    };
+
+    expect(computeStableContentChecksum(basePayload)).toBe(
+      computeStableContentChecksum(sameContentDifferentTimestamp)
+    );
+    expect(computeStableContentChecksum(basePayload)).not.toBe(
+      computeStableContentChecksum(modifiedContent)
+    );
+  });
+
+  it('formata data local em YYYY-MM-DD sem deslocamento UTC', () => {
+    const localLateNight = new Date(2026, 10, 22, 23, 45, 0);
+    expect(formatLocalDateIso(localLateNight)).toBe('2026-11-22');
+  });
+
+  it('migra googleCalendarEventId legado para linkedEventId e normaliza eventos locais', () => {
+    const legacy = {
+      version: 3,
+      tasks: [
+        {
+          id: 't-mig',
+          title: 'Consulta médica',
+          dueDate: '2026-12-01',
+          priority: 'high',
+          category: 'saude',
+          completed: false,
+          googleCalendarEventId: 'ev-old-99',
+        },
+      ],
+      events: [
+        {
+          id: 'ev-1',
+          summary: 'Dentista',
+          start: { dateTime: '2026-12-01T10:00:00.000Z' },
+          end: { dateTime: '2026-12-01T11:00:00.000Z' },
+          source: 'local',
+        },
+      ],
+    };
+
+    const sanitized = sanitizeLegacyPayload(legacy);
+    expect(sanitized.tasks?.[0].linkedEventId).toBe('ev-old-99');
+    expect(sanitized.events).toHaveLength(1);
+    expect(sanitized.events?.[0].summary).toBe('Dentista');
+    expect(sanitized.events?.[0].source).toBe('local');
   });
 });

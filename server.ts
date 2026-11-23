@@ -85,14 +85,14 @@ const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
-  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://apis.google.com https://accounts.google.com",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
   "media-src 'self' data: blob:",
   "worker-src 'self' blob:",
-  "connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.github.com https://github.com https://objects.githubusercontent.com https://brasilapi.com.br https://cdn.jsdelivr.net wss:",
-  "frame-src 'self' https://accounts.google.com https://*.firebaseapp.com",
+  "connect-src 'self' https://api.github.com https://github.com https://objects.githubusercontent.com https://brasilapi.com.br https://cdn.jsdelivr.net wss:",
+  "frame-src 'self'",
   "frame-ancestors 'self' https://aistudio.google.com https://*.google.com",
 ].join('; ');
 

@@ -11,17 +11,16 @@ import { notifyNativeAppReady, syncNativeSystemBars } from './services/systemApp
 import { initKeyboardViewportAdapter } from './services/keyboardAdapter';
 import { authenticateFinanceAccess, isBiometricSupportedOnPlatform } from './services/biometricLockBridge';
 import { hapticImpactLight, hapticSuccess } from './services/hapticsService';
-import { AppProvider, useApp } from './context/AppContext';
+import {
+  addIncomingFileListener,
+  consumePendingIncomingFile,
+  IncomingFilePayload,
+} from './services/appHealthBridge';
+import { AppProvider, useApp, useWorkspace } from './context/AppContext';
 import { BackNavigationProvider, useBackNavigation } from './context/BackNavigationContext';
 import { Header } from './components/Header';
 import { MobileNav } from './components/MobileNav';
 import { DashboardView } from './components/Dashboard/DashboardView';
-import { OnboardingView } from './components/Onboarding/OnboardingView';
-import {
-  AutoRestoredDriveBanner,
-  DriveRestorePromptModal,
-  StartFromScratchModal,
-} from './components/DriveSync/DriveDecisionModals';
 import { QuickActionFab } from './components/Common/QuickActionFab';
 import { ToastUndo } from './components/Common/ToastUndo';
 import { InAppUpdateBanner } from './components/Common/InAppUpdateBanner';
@@ -50,13 +49,21 @@ const NotificationCenterModal = lazyWithRetry(
   () => import('./components/Notifications/NotificationCenterModal').then((m) => ({ default: m.NotificationCenterModal })),
   'notifications-modal'
 );
-const NativeConnectBridge = lazyWithRetry(
-  () => import('./components/Auth/NativeConnectBridge').then((m) => ({ default: m.NativeConnectBridge })),
-  'native-connect-bridge'
-);
 const QuickTourModal = lazyWithRetry(
   () => import('./components/Common/QuickTourModal').then((m) => ({ default: m.QuickTourModal })),
   'quick-tour-modal'
+);
+const OnboardingView = lazyWithRetry(
+  () => import('./components/Onboarding/OnboardingView').then((m) => ({ default: m.OnboardingView })),
+  'onboarding-view'
+);
+const StartFromScratchModal = lazyWithRetry(
+  () => import('./components/Backup/BackupModals').then((m) => ({ default: m.StartFromScratchModal })),
+  'start-from-scratch-modal'
+);
+const IncomingFileCoordinator = lazyWithRetry(
+  () => import('./components/Backup/BackupModals').then((m) => ({ default: m.IncomingFileCoordinator })),
+  'incoming-file-coordinator'
 );
 
 const TabLoadingFallback: React.FC = () => (
@@ -300,7 +307,11 @@ const MainApp: React.FC = () => {
   }, [pendingNotificationTarget, consumeNotificationTarget]);
 
   if (!onboardingCompleted) {
-    return <OnboardingView />;
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-zinc-50 dark:bg-zinc-950" />}>
+        <OnboardingView />
+      </Suspense>
+    );
   }
 
   const isFinanceLocked = currentTab === 'financas' && financeLockEnabled && biometricNative && !isFinanceUnlocked;
@@ -335,6 +346,10 @@ const MainApp: React.FC = () => {
                 setIsQuickTourOpen(true);
               }}
               onDismissTourPrompt={() => finishQuickTour()}
+              onOpenBackupSettings={() => {
+                setAccountInitialTab('account');
+                setIsAccountModalOpen(true);
+              }}
             />
           )}
           {currentTab === 'agenda' && (
@@ -461,11 +476,69 @@ const MainApp: React.FC = () => {
   );
 };
 
-export default function App() {
-  const isConnectNative =
-    typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).get('connect_native') === '1';
+const StartFromScratchGate: React.FC = () => {
+  const { isStartFromScratchOpen } = useWorkspace();
+  if (!isStartFromScratchOpen) return null;
+  return (
+    <Suspense fallback={null}>
+      <StartFromScratchModal />
+    </Suspense>
+  );
+};
 
+const NativeIncomingFileGate: React.FC = () => {
+  const [queuedIncoming, setQueuedIncoming] = useState<{
+    file: IncomingFilePayload;
+    id: number;
+  } | null>(null);
+  const seqRef = useRef(0);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let active = true;
+    let sub: { remove: () => Promise<void> } | null = null;
+
+    const enqueue = (file: IncomingFilePayload) => {
+      seqRef.current += 1;
+      setQueuedIncoming({ file, id: seqRef.current });
+    };
+
+    consumePendingIncomingFile()
+      .then((file) => {
+        if (active && file) {
+          enqueue(file);
+        }
+      })
+      .catch(() => {});
+
+    addIncomingFileListener((file) => {
+      if (active) {
+        enqueue(file);
+      }
+    })
+      .then((s) => {
+        sub = s;
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+      if (sub) {
+        void sub.remove();
+      }
+    };
+  }, []);
+
+  if (!queuedIncoming) return null;
+
+  return (
+    <Suspense fallback={null}>
+      <IncomingFileCoordinator initialIncoming={queuedIncoming} />
+    </Suspense>
+  );
+};
+
+export default function App() {
   useEffect(() => {
     return initKeyboardViewportAdapter();
   }, []);
@@ -473,18 +546,9 @@ export default function App() {
   return (
     <BackNavigationProvider>
       <AppProvider>
-        {isConnectNative ? (
-          <Suspense fallback={<TabLoadingFallback />}>
-            <NativeConnectBridge />
-          </Suspense>
-        ) : (
-          <>
-            <MainApp />
-            <AutoRestoredDriveBanner />
-            <DriveRestorePromptModal />
-            <StartFromScratchModal />
-          </>
-        )}
+        <MainApp />
+        <StartFromScratchGate />
+        <NativeIncomingFileGate />
       </AppProvider>
     </BackNavigationProvider>
   );

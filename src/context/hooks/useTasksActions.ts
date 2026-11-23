@@ -1,7 +1,8 @@
 import React, { useCallback } from 'react';
-import confetti from 'canvas-confetti';
 import { hapticImpactLight, hapticSuccess, hapticWarning } from '../../services/hapticsService';
 import { TaskItem } from '../../types';
+import { triggerConfetti } from '../../utils/confettiEffect';
+import { formatLocalDateIso } from '../../utils/dateUtils';
 
 interface UseTasksActionsOptions {
   tasks: TaskItem[];
@@ -49,7 +50,7 @@ export function useTasksActions({
           const nextCompleted = !t.completed;
           if (nextCompleted) {
             hapticSuccess();
-            confetti({ particleCount: 25, spread: 50, origin: { y: 0.85 } });
+            triggerConfetti({ particleCount: 25, spread: 50, origin: { y: 0.85 } });
           } else {
             hapticImpactLight();
           }
@@ -80,10 +81,7 @@ export function useTasksActions({
         Number.isNaN(baseDate.getTime()) || baseDate < todayNoon ? new Date(todayNoon) : baseDate;
       anchor.setDate(anchor.getDate() + 1);
 
-      const tomorrowStr = `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(
-        2,
-        '0'
-      )}-${String(anchor.getDate()).padStart(2, '0')}`;
+      const tomorrowStr = formatLocalDateIso(anchor);
 
       hapticImpactLight();
       setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, dueDate: tomorrowStr } : t)));

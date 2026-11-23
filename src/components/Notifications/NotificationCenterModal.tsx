@@ -16,7 +16,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import { hapticSelection, hapticSuccess } from '../../services/hapticsService';
-import { GoogleCalendarEvent } from '../../types';
+import { LocalCalendarEvent } from '../../types';
 
 interface NotificationCenterModalProps {
   isOpen: boolean;
@@ -30,7 +30,7 @@ const toLocalDateStr = (d: Date): string =>
     '0'
   )}`;
 
-const getEventDateKey = (ev: GoogleCalendarEvent): string => {
+const getEventDateKey = (ev: LocalCalendarEvent): string => {
   if (ev.start?.date) return ev.start.date.slice(0, 10);
   if (ev.start?.dateTime) return toLocalDateStr(new Date(ev.start.dateTime));
   return '';

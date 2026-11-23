@@ -19,7 +19,6 @@ export interface AndroidPermissionsStatus {
   sdkInt: number;
   versionName: string;
   versionCode: number;
-  apkSha1?: string;
 }
 
 export type MediaPermissionTarget = 'microphone' | 'camera';
@@ -42,13 +41,56 @@ export interface VaultBackupResult {
   payloadJson?: string;
 }
 
+export interface NativeAutoBackupFolderStatus {
+  configured: boolean;
+  accessible: boolean;
+  folderName: string;
+  hasPassphrase: boolean;
+  lastSyncedAt: number;
+  lastFileName: string;
+}
+
+export interface IncomingFilePayload {
+  name: string;
+  mimeType: string;
+  size: number;
+  content: string;
+  receivedAt: number;
+}
+
 interface AppHealthPluginInterface {
   saveVaultBackup(options: { payloadJson: string }): Promise<{ ok: boolean; bytes: number; encrypted?: boolean; updatedAt: number }>;
   loadVaultBackup(): Promise<VaultBackupResult>;
   clearVaultBackup(): Promise<{ cleared: boolean }>;
+  consumePendingIncomingFile(): Promise<{ found: boolean } & Partial<IncomingFilePayload>>;
+  shareTextFile(options: {
+    fileName: string;
+    content: string;
+    mimeType: string;
+    chooserTitle?: string;
+  }): Promise<{ shared: boolean; fileName: string }>;
+  pickAutoBackupFolder(): Promise<{
+    selected: boolean;
+    canceled?: boolean;
+    folderName?: string;
+    accessible?: boolean;
+  }>;
+  getAutoBackupFolderStatus(): Promise<NativeAutoBackupFolderStatus>;
+  clearAutoBackupFolder(options?: { clearPassphrase?: boolean }): Promise<{ cleared: boolean }>;
+  saveAutoBackupPassphrase(options: { passphrase: string }): Promise<{ saved: boolean }>;
+  getAutoBackupPassphrase(): Promise<{ found: boolean; passphrase?: string }>;
+  writeAutoBackupFile(options: {
+    fileName: string;
+    content: string;
+    mimeType: string;
+  }): Promise<{ ok: boolean; fileName: string; bytes: number; updatedAt: number }>;
   getAndroidPermissionsStatus(): Promise<AndroidPermissionsStatus>;
   requestAndroidPermission(options: { target: MediaPermissionTarget }): Promise<MediaPermissionRequestResult>;
   openPermissionSettings(options: { target: AndroidPermissionTarget }): Promise<{ opened: boolean; target: string }>;
+  addListener(
+    eventName: 'incomingFileOpened',
+    listenerFunc: (file: IncomingFilePayload) => void
+  ): Promise<{ remove: () => Promise<void> }>;
 }
 
 const AppHealth = registerPlugin<AppHealthPluginInterface>('AppHealth');
@@ -87,6 +129,101 @@ export async function clearNativeVaultBackup(): Promise<void> {
   } catch {
     // ignore cleanup failure
   }
+}
+
+export async function shareNativeTextFile(options: {
+  fileName: string;
+  content: string;
+  mimeType: string;
+  chooserTitle?: string;
+}): Promise<boolean> {
+  if (!isAndroidNativeHealthSupported()) return false;
+  await AppHealth.shareTextFile(options);
+  return true;
+}
+
+export async function consumePendingIncomingFile(): Promise<IncomingFilePayload | null> {
+  if (!isAndroidNativeHealthSupported()) return null;
+  try {
+    const res = await AppHealth.consumePendingIncomingFile();
+    if (!res?.found || !res.content) return null;
+    return {
+      name: res.name || 'arquivo_recebido',
+      mimeType: res.mimeType || '',
+      size: Number(res.size) || res.content.length,
+      content: res.content,
+      receivedAt: Number(res.receivedAt) || Date.now(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function addIncomingFileListener(
+  callback: (file: IncomingFilePayload) => void
+): Promise<{ remove: () => Promise<void> } | null> {
+  if (!isAndroidNativeHealthSupported()) return null;
+  try {
+    return await AppHealth.addListener('incomingFileOpened', callback);
+  } catch {
+    return null;
+  }
+}
+
+export async function pickNativeAutoBackupFolder(): Promise<{
+  selected: boolean;
+  canceled?: boolean;
+  folderName?: string;
+  accessible?: boolean;
+}> {
+  if (!isAndroidNativeHealthSupported()) {
+    return { selected: false };
+  }
+  return await AppHealth.pickAutoBackupFolder();
+}
+
+export async function getNativeAutoBackupFolderStatus(): Promise<NativeAutoBackupFolderStatus | null> {
+  if (!isAndroidNativeHealthSupported()) return null;
+  try {
+    return await AppHealth.getAutoBackupFolderStatus();
+  } catch {
+    return null;
+  }
+}
+
+export async function clearNativeAutoBackupFolder(clearPassphrase = false): Promise<void> {
+  if (!isAndroidNativeHealthSupported()) return;
+  try {
+    await AppHealth.clearAutoBackupFolder({ clearPassphrase });
+  } catch {
+    // ignore
+  }
+}
+
+export async function saveNativeAutoBackupPassphrase(passphrase: string): Promise<void> {
+  if (!isAndroidNativeHealthSupported()) return;
+  await AppHealth.saveAutoBackupPassphrase({ passphrase });
+}
+
+export async function getNativeAutoBackupPassphrase(): Promise<string | null> {
+  if (!isAndroidNativeHealthSupported()) return null;
+  try {
+    const res = await AppHealth.getAutoBackupPassphrase();
+    return res?.found && res.passphrase ? res.passphrase : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeNativeAutoBackupFile(options: {
+  fileName: string;
+  content: string;
+  mimeType: string;
+}): Promise<{ ok: boolean; fileName: string; bytes: number; updatedAt: number }> {
+  if (!isAndroidNativeHealthSupported()) {
+    throw new Error('Pasta automática disponível apenas no aplicativo Android.');
+  }
+  return await AppHealth.writeAutoBackupFile(options);
 }
 
 export async function getAndroidPermissionsStatus(): Promise<AndroidPermissionsStatus | null> {

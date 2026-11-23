@@ -4,7 +4,7 @@ import {
   formatMonthYearTitle,
   summarizeMonthDayItems,
 } from '../agendaMonthUtils';
-import { GoogleCalendarEvent, TaskItem } from '../../types';
+import { LocalCalendarEvent, TaskItem } from '../../types';
 
 describe('agendaMonthUtils', () => {
   it('builds a full Sunday-to-Saturday grid covering all days of November 2026', () => {
@@ -45,7 +45,7 @@ describe('agendaMonthUtils', () => {
         subtasks: [],
       },
     ];
-    const events: GoogleCalendarEvent[] = [
+    const events: LocalCalendarEvent[] = [
       {
         id: 'e1',
         summary: 'Reunião',

@@ -7,7 +7,7 @@
 
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications, LocalNotificationSchema } from '@capacitor/local-notifications';
-import { GoogleCalendarEvent, TaskItem, Transaction } from '../types';
+import { LocalCalendarEvent, TaskItem, Transaction } from '../types';
 
 export const NOTIFICATION_CHANNELS = {
   TASKS: 'lifeedy_tasks',
@@ -192,7 +192,7 @@ export interface ScheduledReminderPlan {
 export function buildUpcomingNotificationPlan(
   params: {
     tasks: TaskItem[];
-    calendarEvents: GoogleCalendarEvent[];
+    calendarEvents: LocalCalendarEvent[];
     transactions: Transaction[];
   },
   nowMs: number = Date.now()
@@ -366,7 +366,7 @@ function saveManagedIds(ids: number[]): void {
 
 export async function syncScheduledNativeNotifications(params: {
   tasks: TaskItem[];
-  calendarEvents: GoogleCalendarEvent[];
+  calendarEvents: LocalCalendarEvent[];
   transactions: Transaction[];
 }): Promise<number> {
   if (!Capacitor.isNativePlatform()) return 0;

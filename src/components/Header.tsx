@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, Moon, RefreshCw, Sparkles, Sun, User as UserIcon } from 'lucide-react';
+import { Bell, Moon, Settings, Sparkles, Sun } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { hapticImpactLight, hapticSelection } from '../services/hapticsService';
 
@@ -19,11 +19,7 @@ export const Header: React.FC<HeaderProps> = ({
   const {
     theme,
     toggleTheme,
-    user,
     userName,
-    workspaceAuthStatus,
-    isAuthenticating,
-    driveSyncInfo,
     notificationsList,
     appUpdateResult,
   } = useApp();
@@ -36,13 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const capitalizedToday = todayStr.charAt(0).toUpperCase() + todayStr.slice(1);
   const unreadCount = notificationsList.filter((n) => !n.read).length;
-  const isSyncBusy =
-    driveSyncInfo.status === 'syncing' || workspaceAuthStatus === 'refreshing' || isAuthenticating;
   const hasAppUpdate = Boolean(appUpdateResult?.hasUpdate);
-  const hasCloudAttention =
-    driveSyncInfo.status === 'cloud_newer' ||
-    (Boolean(user) && workspaceAuthStatus === 'needs_reauth') ||
-    hasAppUpdate;
 
   return (
     <header className="sticky top-0 z-30 pt-[max(env(safe-area-inset-top,0px),var(--safe-area-inset-top,0px))] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-b border-zinc-200/80 dark:border-zinc-800 transition-colors">
@@ -91,7 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
             ))}
           </nav>
 
-          {/* Zone 3: Minimal Right Controls (Theme, Notifications, Single Account & Settings Icon) */}
+          {/* Zone 3: Minimal Right Controls */}
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
@@ -137,34 +127,19 @@ export const Header: React.FC<HeaderProps> = ({
                 openAccountModal();
               }}
               title={
-                user
-                  ? `${userName || user.displayName || user.email || 'Conta Google'} · Conta e Configurações`
-                  : 'Conta e Configurações'
+                userName
+                  ? `${userName} · Backup e Configurações`
+                  : 'Backup e Configurações'
               }
-              aria-label="Conta e Configurações"
+              aria-label="Backup e Configurações"
               className={`pressable relative w-9 h-9 rounded-xl border flex items-center justify-center cursor-pointer shrink-0 overflow-visible ${
-                hasCloudAttention
+                hasAppUpdate
                   ? 'border-amber-400 dark:border-amber-500 bg-amber-50 dark:bg-amber-950/40'
                   : 'border-zinc-200/80 dark:border-zinc-700/80 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200/70 dark:hover:bg-zinc-700'
               }`}
             >
-              {isSyncBusy ? (
-                <RefreshCw className="w-4 h-4 text-indigo-600 dark:text-indigo-400 animate-spin" />
-              ) : user?.photoURL ? (
-                <img
-                  src={user.photoURL}
-                  alt={userName || user.displayName || 'Conta'}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full rounded-[10px] object-cover"
-                />
-              ) : user ? (
-                <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                  {(userName || user.displayName || user.email || 'U')[0].toUpperCase()}
-                </span>
-              ) : (
-                <UserIcon className="w-4 h-4 text-zinc-700 dark:text-zinc-200" />
-              )}
-              {hasCloudAttention && !isSyncBusy && (
+              <Settings className="w-4 h-4 text-zinc-700 dark:text-zinc-200" />
+              {hasAppUpdate && (
                 <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-500 border-2 border-white dark:border-zinc-900" />
               )}
             </button>

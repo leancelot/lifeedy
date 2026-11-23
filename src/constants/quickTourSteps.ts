@@ -45,8 +45,8 @@ export const QUICK_TOUR_STEPS: readonly QuickTourStep[] = [
     stepNumber: 4,
     selector: '[data-tour="settings"]',
     spotlightRadius: 12,
-    title: 'Conta e Configurações',
-    description: 'Tema, backup no Drive ou JSON, biometria, permissões e atualizações.',
+    title: 'Backup e Configurações',
+    description: 'Tema, backup cifrado (.lifeedy), cofre local, biometria e atualizações.',
     target: 'settings',
   },
 ];

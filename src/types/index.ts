@@ -9,7 +9,7 @@ export interface TaskItem {
   completed: boolean;
   completedAt?: string;
   subtasks: { id: string; title: string; completed: boolean }[];
-  googleCalendarEventId?: string;
+  linkedEventId?: string;
   reminderMinutesBefore?: number; // e.g. 15, 30, 60 or 0
 }
 
@@ -102,7 +102,7 @@ export interface AppNotification {
 
 export type CalendarEventCategory = 'event' | 'holiday' | 'commemorative' | 'birthday';
 
-export interface GoogleCalendarEvent {
+export interface LocalCalendarEvent {
   id: string;
   summary: string;
   description?: string;
@@ -115,15 +115,15 @@ export interface GoogleCalendarEvent {
     dateTime?: string;
     date?: string;
   };
-  htmlLink?: string;
   status?: string;
   calendarId?: string;
   calendarSummary?: string;
   eventCategory?: CalendarEventCategory;
-  source?: 'google' | 'brazil_holiday' | 'local_special';
+  source?: 'local' | 'ics_import' | 'brazil_holiday' | 'local_special';
   editable?: boolean;
   recurringYearly?: boolean;
   specialDateId?: string;
+  externalUid?: string;
 }
 
 export interface LocalSpecialDate {
@@ -134,14 +134,6 @@ export interface LocalSpecialDate {
   notes?: string;
   recurringYearly: boolean;
   createdAt: string;
-}
-
-export interface DriveSyncInfo {
-  fileId: string | null;
-  lastSyncedAt: string | null;
-  remoteModifiedAt: string | null;
-  status: 'idle' | 'syncing' | 'synced' | 'error' | 'cloud_newer';
-  errorMessage?: string;
 }
 
 export interface PendingBankNotification {
@@ -165,6 +157,7 @@ export interface AppDataPayload {
   userName?: string;
   onboardingCompleted?: boolean;
   tasks: TaskItem[];
+  events?: LocalCalendarEvent[];
   transactions: Transaction[];
   financialGoals: FinancialGoal[];
   budgetLimits: BudgetLimit[];

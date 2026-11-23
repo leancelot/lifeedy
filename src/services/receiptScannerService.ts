@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { FinanceCategory, Transaction } from '../types';
 import { extractReceiptTextOffline, parseReceiptOcrText } from './offlineReceiptOcr';
 import { getConfiguredAppServerUrl } from '../utils/appServerUrl';
+import { formatLocalDateIso } from '../utils/dateUtils';
 
 export interface ParsedReceiptData {
   title: string;
@@ -91,7 +92,7 @@ function sanitizeParsedReceiptData(data: Partial<ParsedReceiptData>): ParsedRece
   const date =
     data.date && /^\d{4}-\d{2}-\d{2}$/.test(data.date)
       ? data.date
-      : new Date().toISOString().split('T')[0];
+      : formatLocalDateIso();
 
   const validCategories: FinanceCategory[] = [
     'moradia',
@@ -145,7 +146,7 @@ export async function scanReceiptWithAI(
     ? `${configuredBaseUrl}/api/gemini/parse-receipt`
     : '/api/gemini/parse-receipt';
   const resolvedEndpoint = !hasRemoteServer
-    ? 'offline-only (VITE_APP_URL não configurado)'
+    ? 'offline-local (sem servidor externo configurado)'
     : endpoint.startsWith('http') || typeof window === 'undefined'
     ? endpoint
     : `${window.location.origin}${endpoint}`;
@@ -168,7 +169,7 @@ export async function scanReceiptWithAI(
   if (!hasRemoteServer) {
     diagnostics.errorCode = 'SERVER_URL_NOT_CONFIGURED';
     serverFailedMessage =
-      'Servidor de leitura por IA não configurado neste APK (VITE_APP_URL ausente).';
+      'Nenhum servidor externo de IA vinculado (leitura offline no aparelho ativa).';
   } else if (endpoint404InSession) {
     diagnostics.httpStatus = 404;
     diagnostics.errorCode = 'ENDPOINT_NOT_FOUND';

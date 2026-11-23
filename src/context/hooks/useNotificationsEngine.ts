@@ -10,13 +10,14 @@ import {
   sendWebNotification,
   syncScheduledNativeNotifications,
 } from '../../services/notificationService';
-import { AppNotification, GoogleCalendarEvent, TaskItem, Transaction } from '../../types';
+import { AppNotification, LocalCalendarEvent, TaskItem, Transaction } from '../../types';
+import { formatLocalDateIso } from '../../utils/dateUtils';
 
 const STORAGE_KEY_NOTIFS = 'vidaorganizada_notifications_v2';
 
 interface UseNotificationsEngineOptions {
   tasks: TaskItem[];
-  calendarEvents: GoogleCalendarEvent[];
+  calendarEvents: LocalCalendarEvent[];
   transactions: Transaction[];
   refreshAndroidPermissions: () => Promise<unknown>;
 }
@@ -120,7 +121,7 @@ export function useNotificationsEngine({
   useEffect(() => {
     const checkReminders = () => {
       const now = new Date();
-      const todayStr = now.toISOString().split('T')[0];
+      const todayStr = formatLocalDateIso(now);
       const currentTimeMs = now.getTime();
 
       // 1. Tarefas com horário marcado para hoje
@@ -160,7 +161,7 @@ export function useNotificationsEngine({
         }
       });
 
-      // 2. Eventos da Google Agenda começando em breve
+      // 2. Compromissos da Agenda começando em breve
       calendarEvents.forEach((event) => {
         if (!event.start?.dateTime) return;
 
@@ -177,7 +178,7 @@ export function useNotificationsEngine({
               minute: '2-digit',
             });
 
-            const title = `📅 Google Agenda: ${event.summary || 'Compromisso'}`;
+            const title = `📅 Agenda: ${event.summary || 'Compromisso'}`;
             const body =
               diffMinutes <= 1
                 ? `Iniciando agora (${startTimeFormatted})!${event.location ? ` • ${event.location}` : ''}`

@@ -112,6 +112,15 @@ describe('validateAndParseBackupJson', () => {
           category: 'trabalho',
         },
       ],
+      events: [
+        {
+          id: 'ev-1',
+          summary: 'Reunião local',
+          start: { date: '2026-11-20' },
+          end: { date: '2026-11-20' },
+          source: 'local',
+        },
+      ],
       transactions: [],
       financialGoals: [],
       budgetLimits: [],
@@ -122,6 +131,7 @@ describe('validateAndParseBackupJson', () => {
     expect(result.ok).toBe(true);
     expect(result.data?.payload.userName).toBe('Maria');
     expect(result.data?.payload.tasks).toHaveLength(1);
+    expect(result.data?.payload.events).toHaveLength(1);
     expect(result.data?.checksum).toMatch(/^[0-9a-f]{8}$/);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     expect(Object.prototype.hasOwnProperty.call(result.data?.payload || {}, 'polluted')).toBe(false);

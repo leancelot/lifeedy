@@ -167,6 +167,7 @@ export function validateAndParseBackupJson(rawText: string): ValidationResult<{
   const rawRecord = parsed as Record<string, unknown>;
   const collectionKeys = [
     'tasks',
+    'events',
     'transactions',
     'financialGoals',
     'budgetLimits',

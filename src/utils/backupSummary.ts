@@ -2,6 +2,7 @@ import {
   AppDataPayload,
   DraftNote,
   FinancialGoal,
+  LocalCalendarEvent,
   LocalSpecialDate,
   PendingBankNotification,
   TaskItem,
@@ -10,6 +11,7 @@ import {
 
 export interface BackupCountsSummary {
   tasksCount: number;
+  eventsCount: number;
   transactionsCount: number;
   goalsCount: number;
   notesCount: number;
@@ -22,6 +24,7 @@ export interface BackupCountsSummary {
 
 export function summarizePayloadCounts(payload: Partial<AppDataPayload>): BackupCountsSummary {
   const tasksCount = Array.isArray(payload.tasks) ? payload.tasks.length : 0;
+  const eventsCount = Array.isArray(payload.events) ? payload.events.length : 0;
   const transactionsCount = Array.isArray(payload.transactions) ? payload.transactions.length : 0;
   const goalsCount = Array.isArray(payload.financialGoals) ? payload.financialGoals.length : 0;
   const notesCount = Array.isArray(payload.draftNotes) ? payload.draftNotes.length : 0;
@@ -32,6 +35,7 @@ export function summarizePayloadCounts(payload: Partial<AppDataPayload>): Backup
 
   return {
     tasksCount,
+    eventsCount,
     transactionsCount,
     goalsCount,
     notesCount,
@@ -39,6 +43,7 @@ export function summarizePayloadCounts(payload: Partial<AppDataPayload>): Backup
     specialDatesCount,
     totalItems:
       tasksCount +
+      eventsCount +
       transactionsCount +
       goalsCount +
       notesCount +
@@ -51,6 +56,7 @@ export function summarizePayloadCounts(payload: Partial<AppDataPayload>): Backup
 
 export function hasMeaningfulLocalData(state: {
   tasks: TaskItem[];
+  events?: LocalCalendarEvent[];
   transactions: Transaction[];
   financialGoals: FinancialGoal[];
   draftNotes: DraftNote[];
@@ -59,6 +65,7 @@ export function hasMeaningfulLocalData(state: {
 }): boolean {
   return (
     state.tasks.length > 0 ||
+    (state.events?.length ?? 0) > 0 ||
     state.transactions.length > 0 ||
     state.financialGoals.length > 0 ||
     state.draftNotes.length > 0 ||

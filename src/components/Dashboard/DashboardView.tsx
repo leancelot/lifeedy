@@ -12,13 +12,15 @@ import {
   Clock,
   Compass,
   Plus,
+  ShieldCheck,
   Sparkles,
   Target,
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
-import { GoogleCalendarEvent } from '../../types';
+import { LocalCalendarEvent } from '../../types';
+import { formatLocalDateIso } from '../../utils/dateUtils';
 import { DraftsSection } from './DraftsSection';
 
 interface DashboardViewProps {
@@ -26,17 +28,12 @@ interface DashboardViewProps {
   showTourPrompt?: boolean;
   onOpenQuickTour?: () => void;
   onDismissTourPrompt?: () => void;
+  onOpenBackupSettings?: () => void;
 }
 
-const toLocalDateStr = (d: Date): string =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(
-    2,
-    '0'
-  )}`;
-
-const getEventDateKey = (ev: GoogleCalendarEvent): string => {
+const getEventDateKey = (ev: LocalCalendarEvent): string => {
   if (ev.start?.date) return ev.start.date.slice(0, 10);
-  if (ev.start?.dateTime) return toLocalDateStr(new Date(ev.start.dateTime));
+  if (ev.start?.dateTime) return formatLocalDateIso(new Date(ev.start.dateTime));
   return '';
 };
 
@@ -45,6 +42,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   showTourPrompt = false,
   onOpenQuickTour,
   onDismissTourPrompt,
+  onOpenBackupSettings,
 }) => {
   const {
     tasks,
@@ -58,6 +56,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     updateGoal,
     addTransaction,
     formatMoney,
+    backupHealth,
+    dismissBackupReminder,
   } = useApp();
 
   const [quickTaskTitle, setQuickTaskTitle] = useState('');
@@ -67,7 +67,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [goalDepositAmount, setGoalDepositAmount] = useState('');
 
   const now = new Date();
-  const todayStr = toLocalDateStr(now);
+  const todayStr = formatLocalDateIso(now);
 
   // Próximo compromisso, feriado ou aniversário a partir de agora
   const nextAgendaItem = useMemo(() => {
@@ -85,7 +85,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         if (dateKey === todayStr && ev.start?.dateTime && endMs < nowMs) return null;
         return { ev, dateKey, sortMs };
       })
-      .filter((item): item is { ev: GoogleCalendarEvent; dateKey: string; sortMs: number } =>
+      .filter((item): item is { ev: LocalCalendarEvent; dateKey: string; sortMs: number } =>
         Boolean(item)
       )
       .sort((a, b) => a.sortMs - b.sortMs);
@@ -174,7 +174,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     setExpandedTaskIds((prev) => ({ ...prev, [taskId]: !prev[taskId] }));
   };
 
-  const renderNextEventIcon = (category?: GoogleCalendarEvent['eventCategory']) => {
+  const renderNextEventIcon = (category?: LocalCalendarEvent['eventCategory']) => {
     if (category === 'birthday') return <Cake className="w-4 h-4 text-violet-600 dark:text-violet-400" />;
     if (category === 'holiday' || category === 'commemorative') {
       return <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400" />;
@@ -226,6 +226,49 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <X className="w-4 h-4" />
                   </button>
                 )}
+              </div>
+            </div>
+          )}
+
+          {!showTourPrompt && backupHealth.shouldRemind && onOpenBackupSettings && (
+            <div className="bg-white dark:bg-zinc-900 border border-amber-200/80 dark:border-amber-900/60 rounded-2xl px-3.5 py-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                    {backupHealth.level === 'missing'
+                      ? 'Proteja seus dados com backup .lifeedy'
+                      : `Último backup portátil há ${backupHealth.daysSinceLastBackup} dia(s)`}
+                  </p>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                    Salve uma cópia cifrada ou ative a pasta automática no Android
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    hapticSelection();
+                    onOpenBackupSettings();
+                  }}
+                  className="pressable min-h-[40px] px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
+                >
+                  Fazer backup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    hapticSelection();
+                    dismissBackupReminder();
+                  }}
+                  aria-label="Lembrar mais tarde"
+                  className="pressable w-10 h-10 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
           )}
@@ -528,11 +571,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                               )}
                             </button>
                           )}
-                          {!task.completed && !task.googleCalendarEventId && (
+                          {!task.completed && !task.linkedEventId && (
                             <button
                               type="button"
-                              onClick={() => void scheduleTaskInCalendar(task)}
-                              title="Agendar na Google Agenda"
+                              onClick={() => scheduleTaskInCalendar(task)}
+                              title="Agendar compromisso"
                               aria-label={`Agendar ${task.title}`}
                               className="pressable w-9 h-9 rounded-lg text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 flex items-center justify-center cursor-pointer"
                             >

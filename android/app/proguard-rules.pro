@@ -1,9 +1,10 @@
 # Regras de preservação R8 / ProGuard para Lifeedy (Capacitor + Plugins Nativos + ML Kit + Biometria)
 
 -keepattributes SourceFile,LineNumberTable
--keepattributes *Annotation*
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 
 # App & Plugins Nativos Capacitor
+-keep class com.vidaorganizada.app.BuildConfig { *; }
 -keep class com.vidaorganizada.app.** { *; }
 -keep class * extends com.getcapacitor.Plugin { *; }
 -keepclassmembers class * {

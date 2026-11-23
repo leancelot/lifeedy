@@ -1,33 +1,48 @@
-import React, { useEffect, useState } from 'react';
-import { AlertCircle, ArrowRight, Check, Moon, Sparkles, Sun, User, X } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import React, { useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { ArrowRight, Check, Moon, ShieldCheck, Sparkles, Sun, Upload, User } from 'lucide-react';
+import { useWorkspace } from '../../context/AppContext';
 import { hapticImpactLight, hapticSelection } from '../../services/hapticsService';
+import { BackupImportModal } from '../Backup/BackupModals';
 
 export const OnboardingView: React.FC = () => {
   const {
     theme,
     setThemeMode,
-    user,
     userName,
-    isAuthenticating,
-    authError,
-    clearAuthError,
-    signInWithGoogle,
     completeOnboarding,
-  } = useApp();
+  } = useWorkspace();
 
   const [nameInput, setNameInput] = useState(userName || '');
-
-  useEffect(() => {
-    if (!nameInput.trim() && user?.displayName) {
-      setNameInput(user.displayName.split(' ')[0]);
-    }
-  }, [user?.displayName]);
+  const [pendingRestoreFile, setPendingRestoreFile] = useState<{
+    name: string;
+    size: number;
+    content: string;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!nameInput.trim()) return;
     completeOnboarding(nameInput.trim());
+  };
+
+  const handleBackupFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const content = ev.target?.result;
+      if (typeof content === 'string') {
+        setPendingRestoreFile({
+          name: file.name,
+          size: file.size,
+          content,
+        });
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   return (
@@ -45,10 +60,10 @@ export const OnboardingView: React.FC = () => {
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-100 text-balance">
-            Configure seu espaço pessoal
+            Seu espaço privado e offline
           </h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-            Personalize como você prefere usar o aplicativo. Você poderá alterar tudo depois nos ajustes.
+            Sem login obrigatório e sem conta na nuvem. Seus dados ficam protegidos no cofre local do aparelho.
           </p>
         </header>
 
@@ -122,106 +137,51 @@ export const OnboardingView: React.FC = () => {
             </div>
           </div>
 
-          {/* 3. Conta Google (Opcional) */}
+          {/* 3. Restaurar Backup Existente (Opcional) */}
           <div className="space-y-2">
             <span className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-              Sincronização com Google (Opcional)
+              Trocando de celular? (Opcional)
             </span>
 
-            {user ? (
-              <div className="p-3.5 rounded-2xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/60 dark:bg-emerald-950/20 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  {user.photoURL ? (
-                    <img
-                      src={user.photoURL}
-                      alt={user.displayName || 'Conta Google'}
-                      className="w-9 h-9 rounded-xl object-cover shrink-0"
-                    />
-                  ) : (
-                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                      {(user.displayName || user.email || 'G')[0].toUpperCase()}
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">
-                      {user.displayName || 'Conta conectada'}
-                    </p>
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
-                      {user.email}
-                    </p>
-                  </div>
+            <button
+              type="button"
+              onClick={() => {
+                hapticImpactLight();
+                fileInputRef.current?.click();
+              }}
+              className="w-full min-h-[52px] px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-between gap-3 text-left transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <Upload className="w-4 h-4" />
                 </div>
-                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 shrink-0">
-                  Conectado
-                </span>
+                <div className="min-w-0">
+                  <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 block">
+                    Restaurar backup salvo
+                  </span>
+                  <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block truncate">
+                    Aceita arquivo cifrado (.lifeedy) ou legado (.json)
+                  </span>
+                </div>
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  hapticImpactLight();
-                  signInWithGoogle();
-                }}
-                disabled={isAuthenticating}
-                className="w-full min-h-[48px] px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-between gap-3 text-left transition-colors cursor-pointer disabled:opacity-60"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <svg
-                    className="w-4 h-4 shrink-0"
-                    viewBox="0 0 48 48"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      fill="#EA4335"
-                      d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
-                    />
-                    <path
-                      fill="#4285F4"
-                      d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
-                    />
-                  </svg>
-                  <div className="min-w-0">
-                    <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 block">
-                      {isAuthenticating ? 'Conectando...' : 'Conectar conta Google'}
-                    </span>
-                    <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block truncate">
-                      Para backup no Drive e Google Agenda
-                    </span>
-                  </div>
-                </div>
-                <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 shrink-0">
-                  Conectar
-                </span>
-              </button>
-            )}
+              <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 shrink-0">
+                Selecionar
+              </span>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={Capacitor.isNativePlatform() ? undefined : '.lifeedy,.json,application/json,application/octet-stream'}
+              onChange={handleBackupFileSelected}
+              className="hidden"
+            />
+          </div>
 
-            {authError && !user && (
-              <div
-                role="alert"
-                className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/80 flex items-start justify-between gap-2.5 text-xs text-rose-800 dark:text-rose-200"
-              >
-                <div className="flex items-start gap-2 min-w-0">
-                  <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-                  <span className="leading-relaxed break-words">{authError}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={clearAuthError}
-                  aria-label="Fechar aviso de login"
-                  className="p-1 rounded-lg text-rose-500 hover:text-rose-700 dark:hover:text-rose-200 cursor-pointer shrink-0"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
+          <div className="flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400 px-1">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span>
+              Cofre local cifrado no aparelho e biometria opcional disponíveis em Finanças.
+            </span>
           </div>
 
           {/* Botão Primário */}
@@ -235,6 +195,12 @@ export const OnboardingView: React.FC = () => {
           </button>
         </form>
       </div>
+
+      <BackupImportModal
+        pendingFile={pendingRestoreFile}
+        onClose={() => setPendingRestoreFile(null)}
+        replaceWarning={false}
+      />
     </div>
   );
 };
