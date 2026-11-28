@@ -16,7 +16,7 @@ import {
   consumePendingIncomingFile,
   IncomingFilePayload,
 } from './services/appHealthBridge';
-import { AppProvider, useApp, useWorkspace } from './context/AppContext';
+import { AppProvider, useFinance, usePlanner, useWorkspace } from './context/AppContext';
 import { BackNavigationProvider, useBackNavigation } from './context/BackNavigationContext';
 import { Header } from './components/Header';
 import { MobileNav } from './components/MobileNav';
@@ -84,17 +84,14 @@ const TabLoadingFallback: React.FC = () => (
 );
 
 const MainApp: React.FC = () => {
-  const {
-    onboardingCompleted,
-    theme,
-    financeLockEnabled,
-    pendingNotificationTarget,
-    consumeNotificationTarget,
-  } = useApp();
+  const { onboardingCompleted, theme } = useWorkspace();
+  const { financeLockEnabled } = useFinance();
+  const { pendingNotificationTarget, consumeNotificationTarget } = usePlanner();
   const backNavigation = useBackNavigation();
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [agendaQuickOpen, setAgendaQuickOpen] = useState<'task' | 'event' | null>(null);
-  const [financeQuickOpen, setFinanceQuickOpen] = useState<'new-transaction' | 'scan-receipt' | null>(null);
+  const [financeQuickOpen, setFinanceQuickOpen] = useState<'new-transaction' | 'scan-receipt' | 'scan-qr' | null>(null);
+  const [quickDraftFocusToken, setQuickDraftFocusToken] = useState(0);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [accountInitialTab, setAccountInitialTab] = useState<SettingsCategoryTab>('general');
   const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
@@ -246,7 +243,13 @@ const MainApp: React.FC = () => {
       } else if (action === 'scan-receipt') {
         setCurrentTab('financas');
         setFinanceQuickOpen('scan-receipt');
-      } else if (action === 'dashboard' || action === 'quick-draft') {
+      } else if (action === 'scan-qr') {
+        setCurrentTab('financas');
+        setFinanceQuickOpen('scan-qr');
+      } else if (action === 'quick-draft') {
+        setCurrentTab('dashboard');
+        setQuickDraftFocusToken((t) => t + 1);
+      } else if (action === 'dashboard') {
         setCurrentTab('dashboard');
       }
     } catch {
@@ -350,7 +353,7 @@ const MainApp: React.FC = () => {
     );
   }
 
-  const isFinanceLocked = currentTab === 'financas' && financeLockEnabled && biometricNative && !isFinanceUnlocked;
+  const isFinanceLocked = financeLockEnabled && biometricNative && !isFinanceUnlocked;
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans transition-colors selection:bg-indigo-500 selection:text-white">
@@ -387,6 +390,8 @@ const MainApp: React.FC = () => {
                 setAccountInitialTab('account');
                 setIsAccountModalOpen(true);
               }}
+              isFinanceLocked={isFinanceLocked}
+              quickDraftFocusToken={quickDraftFocusToken}
             />
           )}
           {currentTab === 'agenda' && (
@@ -471,6 +476,10 @@ const MainApp: React.FC = () => {
           setCurrentTab('financas');
           setFinanceQuickOpen(mode);
         }}
+        onTriggerQuickDraft={() => {
+          setCurrentTab('dashboard');
+          setQuickDraftFocusToken((t) => t + 1);
+        }}
       />
 
       <ToastUndo />
@@ -512,6 +521,12 @@ const MainApp: React.FC = () => {
             isOpen={isNotificationCenterOpen}
             onClose={() => setIsNotificationCenterOpen(false)}
             onOpenAgenda={() => setCurrentTab('agenda')}
+            onOpenFinance={() => setCurrentTab('financas')}
+            onOpenBackupSettings={() => {
+              setAccountInitialTab('account');
+              setIsAccountModalOpen(true);
+            }}
+            isFinanceLocked={isFinanceLocked}
           />
         </Suspense>
       )}
@@ -522,6 +537,7 @@ const MainApp: React.FC = () => {
             isOpen={isGlobalSearchOpen}
             onClose={() => setIsGlobalSearchOpen(false)}
             onNavigateTab={(tab) => setCurrentTab(tab)}
+            isFinanceLocked={isFinanceLocked}
           />
         </Suspense>
       )}

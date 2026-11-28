@@ -172,7 +172,6 @@ export function validateAndParseBackupJson(rawText: string): ValidationResult<{
     'financialGoals',
     'budgetLimits',
     'draftNotes',
-    'dashboardWidgets',
     'pendingBankNotifications',
     'scheduledValueMessages',
   ];

@@ -5,7 +5,7 @@ import {
   LayoutGrid,
   Plus,
 } from 'lucide-react';
-import { useApp } from '../context/AppContext';
+import { usePlanner } from '../context/AppContext';
 import { hapticImpactLight, hapticSelection } from '../services/hapticsService';
 
 interface MobileNavProps {
@@ -21,7 +21,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   isQuickMenuOpen,
   onToggleQuickMenu,
 }) => {
-  const { tasks } = useApp();
+  const { tasks } = usePlanner();
 
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(

@@ -32,6 +32,7 @@ import {
   normalizeBankCaptureSettings,
   normalizeScheduledValueMessages,
 } from '../../utils/storageSanitizer';
+import { partitionImmediateBankNotifications } from '../../utils/bankQueueUtils';
 
 const STORAGE_KEY_PENDING_BANK = 'vidaorganizada_pending_bank_v1';
 const STORAGE_KEY_BANK_SIGS = 'vidaorganizada_ingested_bank_sigs_v1';
@@ -516,24 +517,14 @@ export function useBankNotificationQueue({
   );
 
   const approveAllPendingBankNotifications = useCallback(() => {
-    if (pendingBankNotifications.length === 0) return;
-
-    const nowBase = Date.now();
-    const batch: Transaction[] = pendingBankNotifications.map((item, idx) => ({
-      id: `tx-${nowBase}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
-      type: item.type,
-      title: item.title,
-      amount: item.amount,
-      category: item.category,
-      date: item.date,
-      paymentMethod: item.paymentMethod,
-      notes: `Origem: ${item.bankName}`,
-      recurring: false,
-    }));
+    const { transactions, remainingItems } = partitionImmediateBankNotifications(
+      pendingBankNotifications
+    );
+    if (transactions.length === 0) return;
 
     hapticSuccess();
-    onApproveTransactions(batch);
-    setPendingBankNotifications([]);
+    onApproveTransactions(transactions);
+    setPendingBankNotifications(remainingItems);
   }, [onApproveTransactions, pendingBankNotifications]);
 
   const dismissPendingBankNotification = useCallback((id: string) => {

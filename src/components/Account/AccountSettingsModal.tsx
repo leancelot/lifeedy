@@ -34,7 +34,7 @@ import {
   User as UserIcon,
   X,
 } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import { useFinance, usePlanner, useWorkspace } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import {
   authenticateFinanceAccess,
@@ -98,11 +98,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     toggleTheme,
     userName,
     setUserName,
-    tasks,
-    localEvents,
-    transactions,
-    financialGoals,
-    draftNotes,
     exportBackupJson,
     backupHealth,
     autoBackupStatus,
@@ -112,14 +107,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     disconnectAutoBackupFolder,
     runAutoFolderBackupNow,
     confirmDestructiveAction,
-    bankListenerSupported,
-    bankListenerPermission,
-    refreshBankListenerPermission,
-    openBankListenerSettings,
-    bankCaptureSettings,
-    scheduledValueMessages,
-    financeLockEnabled,
-    setFinanceLockEnabled,
     openStartFromScratchModal,
     installedAppVersion,
     installedBuildNumber,
@@ -131,7 +118,20 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     startInAppUpdate,
     openUnknownSourcesAndAwaitReturn,
     retryInstallPendingApk,
-  } = useApp();
+  } = useWorkspace();
+  const {
+    transactions,
+    financialGoals,
+    bankListenerSupported,
+    bankListenerPermission,
+    refreshBankListenerPermission,
+    openBankListenerSettings,
+    bankCaptureSettings,
+    scheduledValueMessages,
+    financeLockEnabled,
+    setFinanceLockEnabled,
+  } = useFinance();
+  const { tasks, localEvents, draftNotes } = usePlanner();
 
   const [activeTab, setActiveTab] = useState<SettingsCategoryTab>('general');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -428,7 +428,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           >
             {CATEGORY_TABS.map(({ id, label, Icon }) => {
               const isActive = activeTab === id;
-              const hasUpdateDot = id === 'system' && Boolean(appUpdateResult?.hasUpdate);
+              const hasUpdateDot =
+                id === 'system' && isNativeApk && Boolean(appUpdateResult?.hasUpdate);
               return (
                 <button
                   key={id}
@@ -897,50 +898,6 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
                 <DiagnosticsAndPermissionsSection mode="vault" />
               </div>
-
-              {(isNativeApk || hasCustomServerUrl) && (
-                <section className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                  <form
-                    onSubmit={handleSaveServerUrl}
-                    className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-2.5"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
-                        <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                        <span>Servidor opcional de IA para cupons (APK)</span>
-                      </span>
-                      {hasCustomServerUrl && (
-                        <button
-                          type="button"
-                          onClick={handleClearCustomServerUrl}
-                          className="text-[11px] font-semibold text-zinc-500 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer"
-                        >
-                          Limpar
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                      Opcional. O leitor de cupons offline já funciona direto neste APK sem servidor.
-                    </p>
-                    <div className="flex gap-2">
-                      <input
-                        type="url"
-                        value={serverUrlDraft}
-                        onChange={(e) => setServerUrlDraft(e.target.value)}
-                        placeholder="https://seu-app.run.app"
-                        className="flex-1 h-10 px-3 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!serverUrlDraft.trim() || isTestingServerUrl}
-                        className="pressable h-10 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-semibold cursor-pointer shrink-0 whitespace-nowrap"
-                      >
-                        {isTestingServerUrl ? 'Testando...' : 'Salvar URL'}
-                      </button>
-                    </div>
-                  </form>
-                </section>
-              )}
             </div>
           )}
 
@@ -1086,261 +1043,330 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   </span>
                 </div>
 
-                <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Package className="w-4 h-4 text-indigo-500 shrink-0" />
-                      <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 font-mono truncate">
-                        {githubRepo}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setShowRepoConfig((prev) => !prev)}
-                        className="pressable min-h-[36px] px-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 inline-flex items-center gap-1 cursor-pointer"
-                      >
-                        <Settings className="w-3 h-3" />
-                        <span>Repo</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleCheckUpdates()}
-                        disabled={isCheckingAppUpdate || isDownloadingNow}
-                        className="pressable min-h-[36px] px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60 whitespace-nowrap"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${isCheckingAppUpdate ? 'animate-spin' : ''}`} />
-                        <span>{isCheckingAppUpdate ? 'Buscando...' : 'Buscar atualização'}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {showRepoConfig && (
-                    <form
-                      onSubmit={handleSaveGitHubConfigAndCheck}
-                      className="space-y-2.5 pt-2.5 border-t border-zinc-100 dark:border-zinc-800"
-                    >
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <label className="block space-y-1">
-                          <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 flex items-center gap-1">
-                            <GitBranch className="w-3 h-3" /> Repositório
-                          </span>
-                          <input
-                            type="text"
-                            required
-                            value={githubRepo}
-                            onChange={(e) => setGithubRepo(e.target.value)}
-                            placeholder="usuario/repositorio"
-                            className="w-full h-9 px-3 text-xs rounded-lg bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-700 font-mono"
-                          />
-                        </label>
-                        <label className="block space-y-1">
-                          <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 flex items-center gap-1">
-                            <Key className="w-3 h-3" /> Token (opcional)
-                          </span>
-                          <input
-                            type="password"
-                            value={githubToken}
-                            onChange={(e) => setGithubToken(e.target.value)}
-                            placeholder="ghp_..."
-                            autoComplete="off"
-                            className="w-full h-9 px-3 text-xs rounded-lg bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-700 font-mono"
-                          />
-                        </label>
+                {isNativeApk ? (
+                  <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Package className="w-4 h-4 text-indigo-500 shrink-0" />
+                        <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 font-mono truncate">
+                          {githubRepo}
+                        </span>
                       </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <label className="flex items-center gap-2 text-[11px] text-zinc-600 dark:text-zinc-300 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={autoCheckUpdates}
-                            onChange={(e) => setAutoCheckUpdates(e.target.checked)}
-                            className="w-4 h-4 rounded accent-indigo-600"
-                          />
-                          <span>Verificar automaticamente</span>
-                        </label>
+                      <div className="flex items-center gap-1.5">
                         <button
-                          type="submit"
-                          disabled={isCheckingAppUpdate || !githubRepo.trim()}
-                          className="pressable min-h-[36px] px-3 rounded-lg bg-indigo-600 text-white text-[11px] font-semibold cursor-pointer"
+                          type="button"
+                          onClick={() => setShowRepoConfig((prev) => !prev)}
+                          className="pressable min-h-[36px] px-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 inline-flex items-center gap-1 cursor-pointer"
                         >
-                          Salvar e verificar
+                          <Settings className="w-3 h-3" />
+                          <span>Repo</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleCheckUpdates()}
+                          disabled={isCheckingAppUpdate || isDownloadingNow}
+                          className="pressable min-h-[36px] px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60 whitespace-nowrap"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isCheckingAppUpdate ? 'animate-spin' : ''}`} />
+                          <span>{isCheckingAppUpdate ? 'Buscando...' : 'Buscar atualização'}</span>
                         </button>
                       </div>
-                    </form>
-                  )}
-
-                  {appUpdateResult?.error ? (
-                    <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 space-y-2">
-                      <div className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200">
-                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                        <span>{appUpdateResult.error}</span>
-                      </div>
-                      <a
-                        href={appUpdateResult.actionsUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 inline-flex items-center gap-1 hover:underline"
-                      >
-                        <ExternalLink className="w-3 h-3" /> Abrir GitHub Actions
-                      </a>
                     </div>
-                  ) : appUpdateResult?.hasUpdate ? (
-                    <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 space-y-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>Nova versão disponível: {appUpdateResult.latestVersion}</span>
-                        </div>
-                        {installTarget?.size ? (
-                          <span className="text-[11px] font-mono tabular-nums text-indigo-600/80 dark:text-indigo-300/80">
-                            {formatFileSize(installTarget.size)}
-                          </span>
-                        ) : null}
-                      </div>
 
-                      {isDownloadingNow && (
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between text-[11px] font-mono tabular-nums text-indigo-700 dark:text-indigo-300">
-                            <span>
-                              {updateDownloadState.status === 'extracting'
-                                ? 'Extraindo APK...'
-                                : updateDownloadState.status === 'verifying'
-                                ? 'Verificando pacote...'
-                                : 'Baixando atualização...'}
+                    {showRepoConfig && (
+                      <form
+                        onSubmit={handleSaveGitHubConfigAndCheck}
+                        className="space-y-2.5 pt-2.5 border-t border-zinc-100 dark:border-zinc-800"
+                      >
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <label className="block space-y-1">
+                            <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 flex items-center gap-1">
+                              <GitBranch className="w-3 h-3" /> Repositório
                             </span>
-                            <span>{updateDownloadState.progress}%</span>
-                          </div>
-                          <div className="w-full h-1.5 rounded-full bg-indigo-200/70 dark:bg-indigo-900 overflow-hidden">
-                            <div
-                              className="h-full bg-indigo-600 rounded-full transition-all duration-150"
-                              style={{
-                                width: `${Math.max(4, Math.min(100, updateDownloadState.progress))}%`,
-                              }}
+                            <input
+                              type="text"
+                              required
+                              value={githubRepo}
+                              onChange={(e) => setGithubRepo(e.target.value)}
+                              placeholder="usuario/repositorio"
+                              className="w-full h-9 px-3 text-xs rounded-lg bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-700 font-mono"
                             />
-                          </div>
+                          </label>
+                          <label className="block space-y-1">
+                            <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 flex items-center gap-1">
+                              <Key className="w-3 h-3" /> Token (opcional)
+                            </span>
+                            <input
+                              type="password"
+                              value={githubToken}
+                              onChange={(e) => setGithubToken(e.target.value)}
+                              placeholder="ghp_..."
+                              autoComplete="off"
+                              className="w-full h-9 px-3 text-xs rounded-lg bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-700 font-mono"
+                            />
+                          </label>
                         </div>
-                      )}
-
-                      {updateDownloadState.status === 'permission_required' && (
-                        <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 space-y-2">
-                          <p className="text-[11px] text-amber-800 dark:text-amber-200">
-                            Autorize o Lifeedy a instalar atualizações nas configurações do Android. Ao voltar, a instalação abrirá sozinha.
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void openUnknownSourcesAndAwaitReturn()}
-                              className="pressable min-h-[36px] px-3 rounded-lg bg-amber-600 text-white text-xs font-semibold cursor-pointer"
-                            >
-                              Permitir instalação
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void retryInstallPendingApk()}
-                              className="pressable min-h-[36px] px-3 rounded-lg border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-xs font-semibold cursor-pointer"
-                            >
-                              Já permiti
-                            </button>
-                          </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="flex items-center gap-2 text-[11px] text-zinc-600 dark:text-zinc-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={autoCheckUpdates}
+                              onChange={(e) => setAutoCheckUpdates(e.target.checked)}
+                              className="w-4 h-4 rounded accent-indigo-600"
+                            />
+                            <span>Verificar automaticamente</span>
+                          </label>
+                          <button
+                            type="submit"
+                            disabled={isCheckingAppUpdate || !githubRepo.trim()}
+                            className="pressable min-h-[36px] px-3 rounded-lg bg-indigo-600 text-white text-[11px] font-semibold cursor-pointer"
+                          >
+                            Salvar e verificar
+                          </button>
                         </div>
-                      )}
+                      </form>
+                    )}
 
-                      {updateDownloadState.status === 'installer_launched' && (
-                        <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">
-                          Instalador do Android aberto. Confirme em &ldquo;Atualizar&rdquo; — seus dados serão mantidos.
-                        </p>
-                      )}
-
-                      {updateDownloadState.status === 'error' && updateDownloadState.error && (
-                        <p className="text-[11px] text-rose-600 dark:text-rose-400">
-                          {updateDownloadState.error}
-                        </p>
-                      )}
-
-                      {!isDownloadingNow && updateDownloadState.status !== 'permission_required' && (
-                        <div className="flex flex-wrap gap-2">
-                          {nativeSelfUpdate &&
-                            installTarget &&
-                            (installTarget.kind === 'release_apk' ||
-                              installTarget.kind === 'actions_artifact_zip') ? (
-                            <button
-                              type="button"
-                              onClick={() => void startInAppUpdate()}
-                              className="pressable min-h-[38px] px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                              <span>Atualizar agora</span>
-                            </button>
-                          ) : installTarget ? (
-                            <button
-                              type="button"
-                              onClick={() => void startInAppUpdate()}
-                              className="pressable min-h-[38px] px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                              <span>
-                                {installTarget.kind === 'external_page'
-                                  ? 'Abrir página de download'
-                                  : `Baixar APK${installTarget.size ? ` (${formatFileSize(installTarget.size)})` : ''}`}
-                              </span>
-                            </button>
-                          ) : null}
-
-                          {appUpdateResult.latestRelease?.html_url && (
-                            <a
-                              href={appUpdateResult.latestRelease.html_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="pressable min-h-[38px] px-3 rounded-lg border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 text-xs font-semibold inline-flex items-center gap-1.5"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                              <span>Release</span>
-                            </a>
-                          )}
+                    {appUpdateResult?.error ? (
+                      <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 space-y-2">
+                        <div className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200">
+                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                          <span>{appUpdateResult.error}</span>
                         </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between gap-2 text-xs text-emerald-700 dark:text-emerald-300">
-                      <span className="flex items-center gap-1.5 font-medium">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        {appUpdateResult ? 'Aplicativo atualizado' : 'Versão local pronta'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleHardRefresh}
-                        disabled={isRefreshingCache}
-                        className="text-xs font-semibold hover:underline inline-flex items-center gap-1 cursor-pointer min-h-[32px]"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingCache ? 'animate-spin' : ''}`} />
-                        <span>Recarregar app</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {appUpdateResult?.recentCommits && appUpdateResult.recentCommits.length > 0 && (
-                    <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-1">
-                      {appUpdateResult.recentCommits.slice(0, 2).map((commit) => (
                         <a
-                          key={commit.sha}
-                          href={commit.url}
+                          href={appUpdateResult.actionsUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="flex items-center justify-between gap-2 text-[11px] text-zinc-600 dark:text-zinc-300 hover:text-indigo-600"
+                          className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 inline-flex items-center gap-1 hover:underline"
                         >
-                          <span className="truncate flex items-center gap-1.5">
-                            <GitCommit className="w-3 h-3 shrink-0 text-zinc-400" />
-                            <span className="font-mono text-indigo-600 dark:text-indigo-400">
-                              {commit.shortSha}
-                            </span>
-                            <span className="truncate">{commit.message}</span>
-                          </span>
+                          <ExternalLink className="w-3 h-3" /> Abrir GitHub Actions
                         </a>
-                      ))}
+                      </div>
+                    ) : appUpdateResult?.hasUpdate ? (
+                      <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 space-y-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Nova versão disponível: {appUpdateResult.latestVersion}</span>
+                          </div>
+                          {installTarget?.size ? (
+                            <span className="text-[11px] font-mono tabular-nums text-indigo-600/80 dark:text-indigo-300/80">
+                              {formatFileSize(installTarget.size)}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        {isDownloadingNow && (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[11px] font-mono tabular-nums text-indigo-700 dark:text-indigo-300">
+                              <span>
+                                {updateDownloadState.status === 'extracting'
+                                  ? 'Extraindo APK...'
+                                  : updateDownloadState.status === 'verifying'
+                                  ? 'Verificando pacote...'
+                                  : 'Baixando atualização...'}
+                              </span>
+                              <span>{updateDownloadState.progress}%</span>
+                            </div>
+                            <div className="w-full h-1.5 rounded-full bg-indigo-200/70 dark:bg-indigo-900 overflow-hidden">
+                              <div
+                                className="h-full bg-indigo-600 rounded-full transition-all duration-150"
+                                style={{
+                                  width: `${Math.max(4, Math.min(100, updateDownloadState.progress))}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {updateDownloadState.status === 'permission_required' && (
+                          <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 space-y-2">
+                            <p className="text-[11px] text-amber-800 dark:text-amber-200">
+                              Autorize o Lifeedy a instalar atualizações nas configurações do Android. Ao voltar, a instalação abrirá sozinha.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void openUnknownSourcesAndAwaitReturn()}
+                                className="pressable min-h-[36px] px-3 rounded-lg bg-amber-600 text-white text-xs font-semibold cursor-pointer"
+                              >
+                                Permitir instalação
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void retryInstallPendingApk()}
+                                className="pressable min-h-[36px] px-3 rounded-lg border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-xs font-semibold cursor-pointer"
+                              >
+                                Já permiti
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {updateDownloadState.status === 'installer_launched' && (
+                          <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">
+                            Instalador do Android aberto. Confirme em &ldquo;Atualizar&rdquo; — seus dados serão mantidos.
+                          </p>
+                        )}
+
+                        {updateDownloadState.status === 'error' && updateDownloadState.error && (
+                          <p className="text-[11px] text-rose-600 dark:text-rose-400">
+                            {updateDownloadState.error}
+                          </p>
+                        )}
+
+                        {!isDownloadingNow && updateDownloadState.status !== 'permission_required' && (
+                          <div className="flex flex-wrap gap-2">
+                            {nativeSelfUpdate &&
+                              installTarget &&
+                              (installTarget.kind === 'release_apk' ||
+                                installTarget.kind === 'actions_artifact_zip') ? (
+                              <button
+                                type="button"
+                                onClick={() => void startInAppUpdate()}
+                                className="pressable min-h-[38px] px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Atualizar agora</span>
+                              </button>
+                            ) : installTarget ? (
+                              <button
+                                type="button"
+                                onClick={() => void startInAppUpdate()}
+                                className="pressable min-h-[38px] px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>
+                                  {installTarget.kind === 'external_page'
+                                    ? 'Abrir página de download'
+                                    : `Baixar APK${installTarget.size ? ` (${formatFileSize(installTarget.size)})` : ''}`}
+                                </span>
+                              </button>
+                            ) : null}
+
+                            {appUpdateResult.latestRelease?.html_url && (
+                              <a
+                                href={appUpdateResult.latestRelease.html_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="pressable min-h-[38px] px-3 rounded-lg border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 text-xs font-semibold inline-flex items-center gap-1.5"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                <span>Release</span>
+                              </a>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2 text-xs text-emerald-700 dark:text-emerald-300">
+                        <span className="flex items-center gap-1.5 font-medium">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {appUpdateResult ? 'Aplicativo atualizado' : 'Versão local pronta'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleHardRefresh}
+                          disabled={isRefreshingCache}
+                          className="text-xs font-semibold hover:underline inline-flex items-center gap-1 cursor-pointer min-h-[32px]"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingCache ? 'animate-spin' : ''}`} />
+                          <span>Recarregar app</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {appUpdateResult?.recentCommits && appUpdateResult.recentCommits.length > 0 && (
+                      <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-1">
+                        {appUpdateResult.recentCommits.slice(0, 2).map((commit) => (
+                          <a
+                            key={commit.sha}
+                            href={commit.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center justify-between gap-2 text-[11px] text-zinc-600 dark:text-zinc-300 hover:text-indigo-600"
+                          >
+                            <span className="truncate flex items-center gap-1.5">
+                              <GitCommit className="w-3 h-3 shrink-0 text-zinc-400" />
+                              <span className="font-mono text-indigo-600 dark:text-indigo-400">
+                                {commit.shortSha}
+                              </span>
+                              <span className="truncate">{commit.message}</span>
+                            </span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">
+                          Versão Web ativa
+                        </span>
+                        <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block truncate">
+                          Atualizações aplicadas automaticamente ao recarregar o navegador
+                        </span>
+                      </div>
                     </div>
-                  )}
-                </div>
+                    <button
+                      type="button"
+                      onClick={handleHardRefresh}
+                      disabled={isRefreshingCache}
+                      className="pressable min-h-[36px] px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingCache ? 'animate-spin' : ''}`} />
+                      <span>Recarregar app</span>
+                    </button>
+                  </div>
+                )}
               </section>
+
+              {(isNativeApk || hasCustomServerUrl) && (
+                <section className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                  <form
+                    onSubmit={handleSaveServerUrl}
+                    className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                        <span>Servidor opcional de IA para cupons (APK)</span>
+                      </span>
+                      {hasCustomServerUrl && (
+                        <button
+                          type="button"
+                          onClick={handleClearCustomServerUrl}
+                          className="text-[11px] font-semibold text-zinc-500 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer"
+                        >
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                      Opcional. O leitor de cupons offline já funciona direto neste APK sem servidor.
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={serverUrlDraft}
+                        onChange={(e) => setServerUrlDraft(e.target.value)}
+                        placeholder="https://seu-app.run.app"
+                        className="flex-1 h-10 px-3 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!serverUrlDraft.trim() || isTestingServerUrl}
+                        className="pressable h-10 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-semibold cursor-pointer shrink-0 whitespace-nowrap"
+                      >
+                        {isTestingServerUrl ? 'Testando...' : 'Salvar URL'}
+                      </button>
+                    </div>
+                  </form>
+                </section>
+              )}
 
               <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
                 <DiagnosticsAndPermissionsSection mode="logs" />

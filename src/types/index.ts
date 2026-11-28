@@ -10,7 +10,6 @@ export interface TaskItem {
   completedAt?: string;
   subtasks: { id: string; title: string; completed: boolean }[];
   linkedEventId?: string;
-  reminderMinutesBefore?: number; // e.g. 15, 30, 60 or 0
 }
 
 export type TransactionType = 'receita' | 'despesa';
@@ -207,7 +206,6 @@ export interface AppDataPayload {
   budgetLimits: BudgetLimit[];
   draftNotes: DraftNote[];
   specialDates?: LocalSpecialDate[];
-  dashboardWidgets?: string[];
   pendingBankNotifications?: PendingBankNotification[];
   bankCaptureSettings?: BankCaptureSettings;
   scheduledValueMessages?: ScheduledValueMessage[];

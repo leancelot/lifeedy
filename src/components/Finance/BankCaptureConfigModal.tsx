@@ -15,7 +15,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import { useFinance } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import { extractBRLAmount } from '../../services/bankNotificationParser';
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
@@ -75,7 +75,7 @@ export const BankCaptureConfigModal: React.FC<BankCaptureConfigModalProps> = ({
     deleteScheduledValueMessage,
     triggerScheduledValueMessageNow,
     formatMoney,
-  } = useApp();
+  } = useFinance();
 
   const [activeTab, setActiveTab] = useState<ConfigTab>(initialTab);
   const [appSearch, setAppSearch] = useState('');
@@ -395,8 +395,8 @@ export const BankCaptureConfigModal: React.FC<BankCaptureConfigModalProps> = ({
 
                 <ToggleRow
                   icon={<CalendarClock className="w-4 h-4 text-amber-600" />}
-                  title="Mensagens Programadas e Agendamentos com Valor"
-                  description="Reconhece avisos de Pix agendado, débito automático previsto e faturas/boletos com vencimento e valor futuro."
+                  title="Alertas de Texto Bancário/SMS Agendados"
+                  description="Reconhece notificações e SMS sobre Pix agendado, débito automático previsto ou boletos futuros (sem misturar com sua agenda de programadas)."
                   checked={bankCaptureSettings.captureScheduledMessagesEnabled}
                   onToggle={() =>
                     updateBankCaptureSettings({

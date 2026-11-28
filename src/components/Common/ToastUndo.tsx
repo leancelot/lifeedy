@@ -1,10 +1,10 @@
 import React from 'react';
 import { RotateCcw, X } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import { useWorkspace } from '../../context/AppContext';
 import { hapticImpactLight, hapticSelection } from '../../services/hapticsService';
 
 export const ToastUndo: React.FC = () => {
-  const { undoToast, clearUndoToast } = useApp();
+  const { undoToast, clearUndoToast } = useWorkspace();
 
   if (!undoToast) return null;
 

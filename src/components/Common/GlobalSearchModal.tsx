@@ -8,7 +8,7 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import { useFinance, usePlanner } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import { hapticSelection } from '../../services/hapticsService';
 
@@ -16,6 +16,7 @@ interface GlobalSearchModalProps {
   isOpen: boolean;
   onClose: () => void;
   onNavigateTab: (tab: 'dashboard' | 'agenda' | 'financas') => void;
+  isFinanceLocked?: boolean;
 }
 
 interface SearchHit {
@@ -31,15 +32,10 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   isOpen,
   onClose,
   onNavigateTab,
+  isFinanceLocked = false,
 }) => {
-  const {
-    transactions,
-    tasks,
-    calendarEvents,
-    draftNotes,
-    formatMoney,
-    financeLockEnabled,
-  } = useApp();
+  const { transactions, formatMoney, hideValues, financeLockEnabled } = useFinance();
+  const { tasks, calendarEvents, draftNotes } = usePlanner();
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -57,27 +53,50 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     return () => window.clearTimeout(id);
   }, [isOpen]);
 
+  const financeBlockedInSearch = Boolean(isFinanceLocked || financeLockEnabled);
+
   const results = useMemo<SearchHit[]>(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
 
     const hits: SearchHit[] = [];
 
-    for (const tx of transactions) {
-      const hay = `${tx.title} ${tx.category} ${tx.notes || ''} ${tx.date}`.toLowerCase();
-      if (hay.includes(q)) {
+    if (financeBlockedInSearch) {
+      if (
+        'finanças'.includes(q) ||
+        'financas'.includes(q) ||
+        'gastos'.includes(q) ||
+        'transações'.includes(q) ||
+        'transacoes'.includes(q) ||
+        'saldo'.includes(q) ||
+        'meta'.includes(q)
+      ) {
         hits.push({
-          id: `tx-${tx.id}`,
+          id: 'tx-locked-hint',
           group: 'financas',
-          title: tx.title,
-          subtitle: `${tx.date} · ${tx.category}`,
+          title: 'Finanças protegidas por biometria',
+          subtitle: 'Toque para abrir e autenticar na aba Finanças',
           targetTab: 'financas',
-          badge: financeLockEnabled
-            ? 'Protegido'
-            : `${tx.type === 'receita' ? '+' : '-'} ${formatMoney(tx.amount)}`,
+          badge: 'Protegido',
         });
       }
-      if (hits.length >= 24) break;
+    } else {
+      for (const tx of transactions) {
+        const hay = `${tx.title} ${tx.category} ${tx.notes || ''} ${tx.date}`.toLowerCase();
+        if (hay.includes(q)) {
+          hits.push({
+            id: `tx-${tx.id}`,
+            group: 'financas',
+            title: tx.title,
+            subtitle: `${tx.date} · ${tx.category}`,
+            targetTab: 'financas',
+            badge: hideValues
+              ? 'R$ •••••'
+              : `${tx.type === 'receita' ? '+' : '-'} ${formatMoney(tx.amount)}`,
+          });
+        }
+        if (hits.length >= 24) break;
+      }
     }
 
     for (const task of tasks) {
@@ -127,7 +146,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     }
 
     return hits;
-  }, [calendarEvents, draftNotes, financeLockEnabled, formatMoney, query, tasks, transactions]);
+  }, [calendarEvents, draftNotes, financeBlockedInSearch, formatMoney, hideValues, query, tasks, transactions]);
 
   if (!isOpen) return null;
 

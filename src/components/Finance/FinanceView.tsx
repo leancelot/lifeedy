@@ -23,6 +23,7 @@ import {
   PieChart as PieChartIcon,
   PiggyBank,
   Plus,
+  QrCode,
   Repeat,
   Search,
   Settings2,
@@ -35,7 +36,7 @@ import {
   TrendingUp,
   X,
 } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import { useFinance } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
 import { parseBankNotificationText } from '../../services/bankNotificationParser';
@@ -112,7 +113,7 @@ const PAYMENT_METHOD_LABELS: Record<NonNullable<Transaction['paymentMethod']>, s
 };
 
 interface FinanceViewProps {
-  quickOpenAction?: 'new-transaction' | 'scan-receipt' | null;
+  quickOpenAction?: 'new-transaction' | 'scan-receipt' | 'scan-qr' | null;
   onConsumeQuickOpen?: () => void;
   initialReceiptFile?: File | null;
   onConsumeInitialReceiptFile?: () => void;
@@ -153,7 +154,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     clearPendingBankNotifications,
     bankCaptureSettings,
     scheduledValueMessages,
-  } = useApp();
+  } = useFinance();
 
   const [activeSubTab, setActiveSubTab] = useState<FinanceSubTab>('resumo');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -168,6 +169,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerInitialMode, setScannerInitialMode] = useState<'upload' | 'qr'>('upload');
   const [isPasteBankModalOpen, setIsPasteBankModalOpen] = useState(false);
   const [isCaptureConfigOpen, setIsCaptureConfigOpen] = useState(false);
   const [captureConfigInitialTab, setCaptureConfigInitialTab] = useState<
@@ -199,6 +201,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   // Add amount to existing goal modal
   const [addingToGoal, setAddingToGoal] = useState<{ id: string; title: string } | null>(null);
   const [addGoalAmount, setAddGoalAmount] = useState('');
+  const [addGoalRecordTx, setAddGoalRecordTx] = useState(true);
 
   // Budget drafts when editing limits
   const [budgetDrafts, setBudgetDrafts] = useState<Record<string, string>>({});
@@ -255,6 +258,10 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       setTxRecurring(false);
       setIsAddModalOpen(true);
     } else if (quickOpenAction === 'scan-receipt') {
+      setScannerInitialMode('upload');
+      setIsScannerOpen(true);
+    } else if (quickOpenAction === 'scan-qr') {
+      setScannerInitialMode('qr');
       setIsScannerOpen(true);
     }
     onConsumeQuickOpen?.();
@@ -262,6 +269,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
 
   useEffect(() => {
     if (initialReceiptFile) {
+      setScannerInitialMode('upload');
       setIsScannerOpen(true);
     }
   }, [initialReceiptFile]);
@@ -666,6 +674,17 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     const targetGoal = financialGoals.find((g) => g.id === addingToGoal.id);
     if (!targetGoal || isNaN(num) || num <= 0) return;
     updateGoal(targetGoal.id, { currentAmount: targetGoal.currentAmount + num });
+    if (addGoalRecordTx) {
+      addTransaction({
+        type: 'despesa',
+        title: `Aporte: ${targetGoal.title}`,
+        amount: num,
+        category: 'investimentos',
+        date: getLocalTodayStr(),
+        paymentMethod: 'pix',
+        notes: 'Aporte rápido na meta',
+      });
+    }
     hapticSuccess();
     setAddingToGoal(null);
     setAddGoalAmount('');
@@ -764,13 +783,14 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               type="button"
               onClick={() => {
                 hapticImpactLight();
+                setScannerInitialMode('upload');
                 setIsScannerOpen(true);
               }}
-              title="Ler Nota Fiscal com IA"
+              title="Ler Nota Fiscal (QR Code SEFAZ ou Foto)"
               className="pressable h-9 px-3 rounded-xl bg-gradient-to-r from-[#B6543C] to-[#A64B5E] text-white font-semibold text-xs inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-200 shrink-0" />
-              <span>Ler Nota</span>
+              <QrCode className="w-3.5 h-3.5 text-amber-100 shrink-0" />
+              <span>Ler Nota / QR</span>
             </button>
 
             <button
@@ -1493,13 +1513,20 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                     <Settings2 className="w-3.5 h-3.5" />
                     <span>Fontes</span>
                   </button>
-                  <button
-                    onClick={approveAllPendingBankNotifications}
-                    className="flex items-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer transition-colors"
-                  >
-                    <CheckCheck className="w-3.5 h-3.5" />
-                    <span>Confirmar todos</span>
-                  </button>
+                  {pendingBankNotifications.some((i) => !i.isScheduled) && (
+                    <button
+                      onClick={approveAllPendingBankNotifications}
+                      title="Aprovar em lote apenas transações já ocorridas (itens futuros permanecem para confirmação individual)"
+                      className="flex items-center gap-1.5 px-3 py-2 min-h-[38px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer transition-colors"
+                    >
+                      <CheckCheck className="w-3.5 h-3.5" />
+                      <span>
+                        {pendingBankNotifications.some((i) => i.isScheduled)
+                          ? `Confirmar imediatos (${pendingBankNotifications.filter((i) => !i.isScheduled).length})`
+                          : 'Confirmar todos'}
+                      </span>
+                    </button>
+                  )}
                   <button
                     onClick={clearPendingBankNotifications}
                     className="px-3 py-2 min-h-[38px] rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold cursor-pointer transition-colors"
@@ -2297,11 +2324,13 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
         addingToGoal={addingToGoal}
         addGoalAmount={addGoalAmount}
         setAddGoalAmount={setAddGoalAmount}
+        recordTransaction={addGoalRecordTx}
+        setRecordTransaction={setAddGoalRecordTx}
         onClose={() => setAddingToGoal(null)}
         onSubmit={handleAddAmountToGoal}
       />
 
-      {/* AI Receipt Scanner Modal (lazy-loaded on demand) */}
+      {/* AI & QR Receipt Scanner Modal (lazy-loaded on demand) */}
       {isScannerOpen && (
         <Suspense fallback={null}>
           <ReceiptScannerModal
@@ -2309,9 +2338,11 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             onClose={() => {
               onConsumeInitialReceiptFile?.();
               setIsScannerOpen(false);
+              setScannerInitialMode('upload');
             }}
             initialFile={initialReceiptFile}
             onConsumeInitialFile={onConsumeInitialReceiptFile}
+            initialMode={scannerInitialMode}
           />
         </Suspense>
       )}

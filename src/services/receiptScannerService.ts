@@ -1,6 +1,8 @@
 import { Capacitor } from '@capacitor/core';
 import { FinanceCategory, Transaction } from '../types';
 import { extractReceiptTextOffline, parseReceiptOcrText } from './offlineReceiptOcr';
+import { lookupNfceFromQrOrKey } from './nfceSefazLookupService';
+import { extractNfceFallbackFromOcrText, NfceParsedReceipt } from './nfceSefazParser';
 import { getConfiguredAppServerUrl } from '../utils/appServerUrl';
 import { formatLocalDateIso } from '../utils/dateUtils';
 
@@ -29,8 +31,12 @@ export interface ReceiptScanDiagnostics {
 
 export interface ReceiptScanResult {
   data: ParsedReceiptData;
-  source: 'ai' | 'offline_ocr';
+  source: 'ai' | 'offline_ocr' | 'sefaz_qr' | 'pix_qr';
   diagnostics: ReceiptScanDiagnostics;
+  sefazMeta?: Pick<
+    NfceParsedReceipt,
+    'sefazUrl' | 'sourceStatus' | 'cnpj' | 'captchaBlocked' | 'cnaeDescription'
+  >;
 }
 
 export class ReceiptScanError extends Error {
@@ -275,6 +281,62 @@ export async function scanReceiptWithAI(
 
     const parsedOffline = parseReceiptOcrText(ocr.text);
     const qr = ocr.qrParsed;
+    const ocrNfceFallback = extractNfceFallbackFromOcrText(ocr.text);
+    const nfceLookupTarget =
+      (qr?.kind === 'nfce' && ocr.qrCodes?.[0]) || ocrNfceFallback.accessKey || '';
+
+    if (
+      nfceLookupTarget &&
+      (typeof navigator === 'undefined' || navigator.onLine !== false)
+    ) {
+      try {
+        const sefazData = await lookupNfceFromQrOrKey(nfceLookupTarget);
+        if (
+          sefazData &&
+          (sefazData.sourceStatus === 'sefaz_full' ||
+            sefazData.sourceStatus === 'sefaz_partial_cnpj' ||
+            sefazData.sourceStatus === 'cnpj_only')
+        ) {
+          diagnostics.offlineStatus = 'success';
+          diagnostics.offlineDetail = `NFC-e consultada (${sefazData.sourceStatus})`;
+          const resolvedAmount =
+            sefazData.amount > 0 ? sefazData.amount : parsedOffline?.amount || 0;
+          const resolvedDate =
+            sefazData.sourceStatus === 'sefaz_full' && sefazData.date
+              ? sefazData.date
+              : parsedOffline?.date || sefazData.date || formatLocalDateIso();
+          const resolvedPayment =
+            sefazData.sourceStatus === 'sefaz_full'
+              ? sefazData.paymentMethod
+              : parsedOffline?.paymentMethod || sefazData.paymentMethod || 'cartao_credito';
+
+          return {
+            data: sanitizeParsedReceiptData({
+              title: sefazData.title || parsedOffline?.title || 'Compra Nota Fiscal',
+              amount: resolvedAmount,
+              date: resolvedDate,
+              category:
+                sefazData.category !== 'outros'
+                  ? sefazData.category
+                  : parsedOffline?.category || 'alimentacao',
+              paymentMethod: resolvedPayment,
+              notes: sefazData.notes || parsedOffline?.notes || '',
+            }),
+            source: 'sefaz_qr',
+            diagnostics,
+            sefazMeta: {
+              sefazUrl: sefazData.sefazUrl,
+              sourceStatus: sefazData.sourceStatus,
+              cnpj: sefazData.cnpj,
+              captchaBlocked: sefazData.captchaBlocked,
+              cnaeDescription: sefazData.cnaeDescription,
+            },
+          };
+        }
+      } catch {
+        // Fall through to pure offline OCR merge below
+      }
+    }
 
     if (parsedOffline || (qr && (qr.amount || qr.title || qr.accessKey))) {
       const mergedTitle =

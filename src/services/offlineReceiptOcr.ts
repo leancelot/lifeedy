@@ -1,6 +1,10 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { FinanceCategory, Transaction } from '../types';
 import { formatLocalDateIso } from '../utils/dateUtils';
+import {
+  ParsedQrMetadata,
+  parseNfceQrMetadata,
+} from './nfceSefazParser';
 
 export interface ParsedReceiptFields {
   title: string;
@@ -11,16 +15,7 @@ export interface ParsedReceiptFields {
   notes?: string;
 }
 
-export interface ParsedQrReceiptData {
-  kind: 'nfce' | 'pix';
-  accessKey?: string;
-  cnpj?: string;
-  title?: string;
-  amount?: number;
-  date?: string;
-  paymentMethod?: Transaction['paymentMethod'];
-  notes?: string;
-}
+export type ParsedQrReceiptData = ParsedQrMetadata;
 
 export interface OfflineOcrResult {
   text: string;
@@ -29,12 +24,22 @@ export interface OfflineOcrResult {
   qrParsed?: ParsedQrReceiptData | null;
 }
 
+export interface NativeSefazPageResult {
+  statusCode: number;
+  finalUrl: string;
+  html: string;
+}
+
 interface OfflineReceiptOcrNativePlugin {
   recognizeText(options: { imageBase64: string }): Promise<{
     text: string;
     blockCount?: number;
     qrCodes?: string[];
   }>;
+  recognizeQrCode(options: { imageBase64: string }): Promise<{
+    qrCodes?: string[];
+  }>;
+  fetchSefazQrPage(options: { url: string }): Promise<NativeSefazPageResult>;
 }
 
 const OfflineReceiptOcrNative = registerPlugin<OfflineReceiptOcrNativePlugin>('OfflineReceiptOcr');
@@ -43,135 +48,8 @@ export function isNativeAndroidOcrAvailable(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
 }
 
-function formatCnpj(digits: string): string {
-  if (digits.length !== 14) return digits;
-  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(
-    8,
-    12
-  )}-${digits.slice(12)}`;
-}
-
-function parsePixEmvQr(raw: string): ParsedQrReceiptData | null {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith('000201')) return null;
-
-  const tags = new Map<string, string>();
-  let idx = 0;
-  while (idx + 4 <= trimmed.length) {
-    const id = trimmed.slice(idx, idx + 2);
-    const len = Number.parseInt(trimmed.slice(idx + 2, idx + 4), 10);
-    if (!Number.isFinite(len) || len < 0 || idx + 4 + len > trimmed.length) break;
-    const val = trimmed.slice(idx + 4, idx + 4 + len);
-    tags.set(id, val);
-    idx += 4 + len;
-  }
-
-  const merchantInfo = tags.get('26') || '';
-  const isPixPayload =
-    merchantInfo.toLowerCase().includes('br.gov.bcb.pix') || tags.get('53') === '986';
-  if (!isPixPayload) return null;
-
-  const rawAmount = tags.get('54');
-  const amount = rawAmount ? Number.parseFloat(rawAmount) : undefined;
-  const merchantName = tags.get('59')?.trim();
-  const merchantCity = tags.get('60')?.trim();
-
-  return {
-    kind: 'pix',
-    title: merchantName || 'Pagamento via Pix QR',
-    amount: amount && Number.isFinite(amount) && amount > 0 ? amount : undefined,
-    paymentMethod: 'pix',
-    notes: [merchantName, merchantCity].filter(Boolean).join(' • ') || 'QR Code Pix lido offline',
-  };
-}
-
 export function parseNfceQrCode(rawQr: string): ParsedQrReceiptData | null {
-  const trimmed = (rawQr || '').trim();
-  if (!trimmed) return null;
-
-  const pixParsed = parsePixEmvQr(trimmed);
-  if (pixParsed) return pixParsed;
-
-  const looksLikeNfce =
-    /nfce|nfe|sefaz|fazenda|p=\d{44}|chNFe=\d{44}/i.test(trimmed) || /^\d{44}$/.test(trimmed);
-  if (!looksLikeNfce) return null;
-
-  const keyMatch = trimmed.match(/(\d{44})/);
-  const accessKey = keyMatch ? keyMatch[1] : undefined;
-
-  let cnpj: string | undefined;
-  let inferredMonthPrefix: string | undefined;
-  if (accessKey) {
-    const yy = Number.parseInt(accessKey.slice(2, 4), 10);
-    const mm = Number.parseInt(accessKey.slice(4, 6), 10);
-    const rawCnpj = accessKey.slice(6, 20);
-    cnpj = formatCnpj(rawCnpj);
-    if (yy >= 20 && yy <= 35 && mm >= 1 && mm <= 12) {
-      inferredMonthPrefix = `20${String(yy).padStart(2, '0')}-${String(mm).padStart(2, '0')}`;
-    }
-  }
-
-  let amount: number | undefined;
-  let date: string | undefined;
-
-  try {
-    const urlObj = new URL(trimmed);
-    const vNf = urlObj.searchParams.get('vNF') || urlObj.searchParams.get('vNf');
-    if (vNf) {
-      const parsedVal = Number.parseFloat(vNf.replace(',', '.'));
-      if (Number.isFinite(parsedVal) && parsedVal > 0 && parsedVal <= 500000) {
-        amount = Math.round(parsedVal * 100) / 100;
-      }
-    }
-
-    const dhEmi = urlObj.searchParams.get('dhEmi');
-    if (dhEmi) {
-      let decoded = dhEmi;
-      if (/^[0-9a-fA-F]+$/.test(dhEmi) && dhEmi.length >= 20) {
-        try {
-          const pairs = dhEmi.match(/.{1,2}/g) || [];
-          decoded = pairs.map((hex) => String.fromCharCode(parseInt(hex, 16))).join('');
-        } catch {
-          decoded = dhEmi;
-        }
-      }
-      const isoDateMatch = decoded.match(/(202\d|203[0-5])-(\d{2})-(\d{2})/);
-      if (isoDateMatch) {
-        date = `${isoDateMatch[1]}-${isoDateMatch[2]}-${isoDateMatch[3]}`;
-      }
-    }
-
-    const pParam = urlObj.searchParams.get('p');
-    if (!amount && pParam) {
-      const parts = pParam.split('|');
-      // Some v1 states include value or date in query tokens; check numeric vNF pattern
-      for (const token of parts.slice(3)) {
-        if (/^\d+\.\d{2}$/.test(token)) {
-          const val = Number.parseFloat(token);
-          if (Number.isFinite(val) && val > 0 && val <= 500000) {
-            amount = val;
-            break;
-          }
-        }
-      }
-    }
-  } catch {
-    // Non-URL raw key or malformed query string
-  }
-
-  const noteParts = ['NFC-e QR Code'];
-  if (cnpj) noteParts.push(`CNPJ ${cnpj}`);
-  if (inferredMonthPrefix && !date) noteParts.push(`Emissão ${inferredMonthPrefix}`);
-  if (accessKey) noteParts.push(`Chave ${accessKey.slice(0, 8)}…${accessKey.slice(-6)}`);
-
-  return {
-    kind: 'nfce',
-    accessKey,
-    cnpj,
-    amount,
-    date,
-    notes: noteParts.join(' • '),
-  };
+  return parseNfceQrMetadata(rawQr);
 }
 
 export function extractBestQrFromList(qrCodes?: string[]): ParsedQrReceiptData | null {
@@ -183,15 +61,38 @@ export function extractBestQrFromList(qrCodes?: string[]): ParsedQrReceiptData |
   return null;
 }
 
-async function detectWebQrCodes(imageBase64: string): Promise<string[]> {
+export async function decodeQrFromCanvasImageData(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number
+): Promise<string | null> {
   try {
-    const DetectorCtor = (globalThis as unknown as {
-      BarcodeDetector?: new (opts?: { formats?: string[] }) => {
-        detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue?: string }>>;
-      };
-    }).BarcodeDetector;
-    if (!DetectorCtor || typeof Image === 'undefined') return [];
+    const jsQrModule = await import('jsqr');
+    const jsQR = jsQrModule.default;
+    const hit = jsQR(data, width, height, { inversionAttempts: 'attemptBoth' });
+    return hit?.data?.trim() || null;
+  } catch {
+    return null;
+  }
+}
 
+function boostCanvasContrast(data: Uint8ClampedArray): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(data.length);
+  for (let i = 0; i < data.length; i += 4) {
+    const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    const boosted = lum < 135 ? 0 : 255;
+    out[i] = boosted;
+    out[i + 1] = boosted;
+    out[i + 2] = boosted;
+    out[i + 3] = 255;
+  }
+  return out;
+}
+
+export async function detectWebQrCodes(imageBase64: string): Promise<string[]> {
+  if (typeof Image === 'undefined') return [];
+
+  try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
       el.onload = () => resolve(el);
@@ -199,12 +100,88 @@ async function detectWebQrCodes(imageBase64: string): Promise<string[]> {
       el.src = imageBase64;
     });
 
-    const detector = new DetectorCtor({ formats: ['qr_code'] });
-    const hits = await detector.detect(img);
-    return hits.map((h) => h.rawValue || '').filter(Boolean);
+    const DetectorCtor = (globalThis as unknown as {
+      BarcodeDetector?: new (opts?: { formats?: string[] }) => {
+        detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue?: string }>>;
+      };
+    }).BarcodeDetector;
+
+    if (DetectorCtor) {
+      try {
+        const detector = new DetectorCtor({ formats: ['qr_code'] });
+        const hits = await detector.detect(img);
+        const found = hits.map((h) => h.rawValue?.trim() || '').filter(Boolean);
+        if (found.length > 0) return found;
+      } catch {
+        // Fallback to jsQR canvas scan below
+      }
+    }
+
+    if (typeof document === 'undefined') return [];
+    const naturalW = img.width || 1;
+    const naturalH = img.height || 1;
+    const maxDim = 1600;
+    const scale = Math.min(1, maxDim / Math.max(naturalW, naturalH));
+    const width = Math.max(1, Math.round(naturalW * scale));
+    const height = Math.max(1, Math.round(naturalH * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return [];
+
+    ctx.drawImage(img, 0, 0, width, height);
+    const fullImageData = ctx.getImageData(0, 0, width, height);
+    const pass1 = await decodeQrFromCanvasImageData(fullImageData.data, width, height);
+    if (pass1) return [pass1];
+
+    // Pass 2: high-contrast thermal paper normalization on full image
+    const pass2 = await decodeQrFromCanvasImageData(
+      boostCanvasContrast(fullImageData.data),
+      width,
+      height
+    );
+    if (pass2) return [pass2];
+
+    // Pass 3: zoomed crop of center/lower receipt area at up to native resolution
+    const cropX = Math.round(naturalW * 0.1);
+    const cropY = Math.round(naturalH * 0.2);
+    const cropW = Math.max(1, Math.round(naturalW * 0.8));
+    const cropH = Math.max(1, Math.round(naturalH * 0.75));
+    const zoomScale = Math.min(1, 1400 / Math.max(cropW, cropH));
+    const zw = Math.max(1, Math.round(cropW * zoomScale));
+    const zh = Math.max(1, Math.round(cropH * zoomScale));
+
+    canvas.width = zw;
+    canvas.height = zh;
+    ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, zw, zh);
+    const cropData = ctx.getImageData(0, 0, zw, zh);
+    const pass3 = await decodeQrFromCanvasImageData(cropData.data, zw, zh);
+    if (pass3) return [pass3];
+
+    const pass4 = await decodeQrFromCanvasImageData(
+      boostCanvasContrast(cropData.data),
+      zw,
+      zh
+    );
+    return pass4 ? [pass4] : [];
   } catch {
     return [];
   }
+}
+
+export async function recognizeQrFromBase64(imageBase64: string): Promise<string[]> {
+  if (isNativeAndroidOcrAvailable()) {
+    const res = await OfflineReceiptOcrNative.recognizeQrCode({ imageBase64 });
+    return Array.isArray(res?.qrCodes) ? res.qrCodes.filter(Boolean) : [];
+  }
+  return detectWebQrCodes(imageBase64);
+}
+
+export async function fetchSefazQrPageNative(url: string): Promise<NativeSefazPageResult | null> {
+  if (!isNativeAndroidOcrAvailable()) return null;
+  return OfflineReceiptOcrNative.fetchSefazQrPage({ url });
 }
 
 export async function extractReceiptTextOffline(imageBase64: string): Promise<OfflineOcrResult> {

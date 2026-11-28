@@ -25,7 +25,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import { usePlanner } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import { CalendarEventCategory, LocalCalendarEvent, TaskItem } from '../../types';
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
@@ -126,7 +126,7 @@ export const AgendaTasksView: React.FC<AgendaTasksViewProps> = ({
     deleteTask,
     toggleSubtask,
     scheduleTaskInCalendar,
-  } = useApp();
+  } = usePlanner();
 
   const todayStr = toLocalDateStr(new Date());
   const [selectedDateStr, setSelectedDateStr] = useState<string>(todayStr);

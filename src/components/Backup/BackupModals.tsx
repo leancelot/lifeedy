@@ -18,7 +18,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import { useApp, useFinance, usePlanner, useWorkspace } from '../../context/AppContext';
+import { useFinance, usePlanner, useWorkspace } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import {
   addIncomingFileListener,
@@ -52,12 +52,9 @@ export const StartFromScratchModal: React.FC = () => {
     isStartFromScratchOpen,
     closeStartFromScratchModal,
     resetWorkspaceToZero,
-    tasks,
-    localEvents,
-    transactions,
-    financialGoals,
-    draftNotes,
-  } = useApp();
+  } = useWorkspace();
+  const { tasks, localEvents, draftNotes } = usePlanner();
+  const { transactions, financialGoals } = useFinance();
 
   const [isResetting, setIsResetting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

@@ -4,6 +4,8 @@ import {
   CheckSquare,
   CircleDollarSign,
   Plus,
+  QrCode,
+  StickyNote,
 } from 'lucide-react';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import { hapticImpactLight, hapticSelection } from '../../services/hapticsService';
@@ -12,7 +14,8 @@ interface QuickActionFabProps {
   isOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   onTriggerAgendaModal: (mode: 'task' | 'event') => void;
-  onTriggerFinanceModal: (mode: 'new-transaction') => void;
+  onTriggerFinanceModal: (mode: 'new-transaction' | 'scan-qr') => void;
+  onTriggerQuickDraft?: () => void;
 }
 
 export const QuickActionFab: React.FC<QuickActionFabProps> = ({
@@ -20,6 +23,7 @@ export const QuickActionFab: React.FC<QuickActionFabProps> = ({
   onOpenChange,
   onTriggerAgendaModal,
   onTriggerFinanceModal,
+  onTriggerQuickDraft,
 }) => {
   const [internalIsOpen, setInternalIsOpen] = useState(false);
   const isOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
@@ -45,9 +49,43 @@ export const QuickActionFab: React.FC<QuickActionFabProps> = ({
         />
       )}
 
-      {/* Exatamente 3 atalhos diretos que abrem seu modal imediatamente */}
+      {/* Atalhos diretos que abrem sua ação imediatamente */}
       {isOpen && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 md:left-auto md:translate-x-0 md:bottom-26 md:right-8 z-40 w-[min(calc(100vw-2rem),290px)] md:w-auto flex flex-col items-stretch md:items-end gap-2">
+          {onTriggerQuickDraft && (
+            <button
+              type="button"
+              onClick={() => {
+                hapticSelection();
+                onTriggerQuickDraft();
+                setOpen(false);
+              }}
+              style={{ animationDelay: '60ms' }}
+              className="animate-sheet-up pressable flex items-center justify-between md:justify-end gap-3 px-4 py-2.5 min-h-[48px] rounded-2xl bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 shadow-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer text-xs font-semibold group whitespace-nowrap shrink-0"
+            >
+              <span>Novo Rascunho</span>
+              <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+                <StickyNote className="w-4 h-4" />
+              </div>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              hapticSelection();
+              onTriggerFinanceModal('scan-qr');
+              setOpen(false);
+            }}
+            style={{ animationDelay: '45ms' }}
+            className="animate-sheet-up pressable flex items-center justify-between md:justify-end gap-3 px-4 py-2.5 min-h-[48px] rounded-2xl bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 shadow-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer text-xs font-semibold group whitespace-nowrap shrink-0"
+          >
+            <span>QR Nota Fiscal</span>
+            <div className="w-8 h-8 rounded-xl bg-teal-100 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+              <QrCode className="w-4 h-4" />
+            </div>
+          </button>
+
           <button
             type="button"
             onClick={() => {
@@ -55,8 +93,8 @@ export const QuickActionFab: React.FC<QuickActionFabProps> = ({
               onTriggerAgendaModal('event');
               setOpen(false);
             }}
-            style={{ animationDelay: '40ms' }}
-            className="animate-sheet-up pressable flex items-center justify-between md:justify-end gap-3 px-4 py-2.5 min-h-[48px] rounded-2xl bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 shadow-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer text-xs font-semibold group"
+            style={{ animationDelay: '30ms' }}
+            className="animate-sheet-up pressable flex items-center justify-between md:justify-end gap-3 px-4 py-2.5 min-h-[48px] rounded-2xl bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 shadow-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer text-xs font-semibold group whitespace-nowrap shrink-0"
           >
             <span>Novo Evento</span>
             <div className="w-8 h-8 rounded-xl bg-violet-100 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
@@ -71,8 +109,8 @@ export const QuickActionFab: React.FC<QuickActionFabProps> = ({
               onTriggerFinanceModal('new-transaction');
               setOpen(false);
             }}
-            style={{ animationDelay: '20ms' }}
-            className="animate-sheet-up pressable flex items-center justify-between md:justify-end gap-3 px-4 py-2.5 min-h-[48px] rounded-2xl bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 shadow-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer text-xs font-semibold group"
+            style={{ animationDelay: '15ms' }}
+            className="animate-sheet-up pressable flex items-center justify-between md:justify-end gap-3 px-4 py-2.5 min-h-[48px] rounded-2xl bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 shadow-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer text-xs font-semibold group whitespace-nowrap shrink-0"
           >
             <span>Nova Transação</span>
             <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
@@ -88,7 +126,7 @@ export const QuickActionFab: React.FC<QuickActionFabProps> = ({
               setOpen(false);
             }}
             style={{ animationDelay: '0ms' }}
-            className="animate-sheet-up pressable flex items-center justify-between md:justify-end gap-3 px-4 py-2.5 min-h-[48px] rounded-2xl bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 shadow-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer text-xs font-semibold group"
+            className="animate-sheet-up pressable flex items-center justify-between md:justify-end gap-3 px-4 py-2.5 min-h-[48px] rounded-2xl bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 shadow-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer text-xs font-semibold group whitespace-nowrap shrink-0"
           >
             <span>Nova Tarefa</span>
             <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">

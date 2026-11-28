@@ -30,6 +30,7 @@ interface UseAppPersistenceOptions {
   calendarEvents: LocalCalendarEvent[];
   transactions: Transaction[];
   hideValues: boolean;
+  financeLockEnabled: boolean;
   onboardingCompleted: boolean;
 }
 
@@ -49,6 +50,7 @@ export function useAppPersistence({
   calendarEvents,
   transactions,
   hideValues,
+  financeLockEnabled,
   onboardingCompleted,
 }: UseAppPersistenceOptions) {
   const [vaultStatus, setVaultStatus] = useState<VaultStatusState>({
@@ -200,7 +202,8 @@ export function useAppPersistence({
         monthBalance += tx.type === 'receita' ? tx.amount : -tx.amount;
       }
 
-      const balanceFormatted = hideValues
+      const shouldHideBalance = hideValues || financeLockEnabled;
+      const balanceFormatted = shouldHideBalance
         ? 'R$ •••••'
         : BRL_WIDGET_FORMATTER.format(monthBalance);
 
@@ -208,14 +211,14 @@ export function useAppPersistence({
         pendingTasksCount,
         todayEventsCount,
         balanceFormatted,
-        hideValues,
+        hideValues: shouldHideBalance,
       });
     }, 500);
 
     return () => {
       if (widgetSyncTimerRef.current) clearTimeout(widgetSyncTimerRef.current);
     };
-  }, [tasks, calendarEvents, transactions, hideValues, onboardingCompleted]);
+  }, [tasks, calendarEvents, transactions, hideValues, financeLockEnabled, onboardingCompleted]);
 
   const clearAllLocalPersistence = useCallback(async () => {
     await clearPersistedAppDatabase();

@@ -1,6 +1,7 @@
 import React from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Bell, Eye, EyeOff, Moon, Search, Settings, Sparkles, Sun } from 'lucide-react';
-import { useApp, useFinance } from '../context/AppContext';
+import { useFinance, usePlanner, useWorkspace } from '../context/AppContext';
 import { hapticImpactLight, hapticSelection } from '../services/hapticsService';
 
 interface HeaderProps {
@@ -22,10 +23,11 @@ export const Header: React.FC<HeaderProps> = ({
     theme,
     toggleTheme,
     userName,
-    notificationsList,
     appUpdateResult,
-  } = useApp();
-  const { hideValues, toggleHideValues } = useFinance();
+    backupHealth,
+  } = useWorkspace();
+  const { notificationsList } = usePlanner();
+  const { hideValues, toggleHideValues, pendingBankNotifications } = useFinance();
 
   const todayStr = new Intl.DateTimeFormat('pt-BR', {
     weekday: 'short',
@@ -34,8 +36,11 @@ export const Header: React.FC<HeaderProps> = ({
   }).format(new Date());
 
   const capitalizedToday = todayStr.charAt(0).toUpperCase() + todayStr.slice(1);
-  const unreadCount = notificationsList.filter((n) => !n.read).length;
-  const hasAppUpdate = Boolean(appUpdateResult?.hasUpdate);
+  const unreadCount =
+    notificationsList.filter((n) => !n.read).length +
+    pendingBankNotifications.length +
+    (backupHealth.shouldRemind ? 1 : 0);
+  const hasAppUpdate = Capacitor.isNativePlatform() && Boolean(appUpdateResult?.hasUpdate);
 
   return (
     <header className="sticky top-0 z-30 pt-[max(env(safe-area-inset-top,0px),var(--safe-area-inset-top,0px))] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-b border-zinc-200/80 dark:border-zinc-800 transition-colors">

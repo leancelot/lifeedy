@@ -5,6 +5,12 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer, type ViteDevServer } from 'vite';
 import type { GoogleGenAI } from '@google/genai';
+import {
+  extractNfceKeyOrUrl,
+  inferCategoryFromTextAndCnae,
+  isAllowedSefazUrl,
+  parseSefazHtmlToReceipt,
+} from './src/services/nfceSefazParser.ts';
 
 dotenv.config();
 
@@ -91,7 +97,7 @@ const CONTENT_SECURITY_POLICY = [
   "img-src 'self' data: blob: https:",
   "media-src 'self' data: blob:",
   "worker-src 'self' blob:",
-  "connect-src 'self' https://api.github.com https://github.com https://objects.githubusercontent.com https://brasilapi.com.br https://cdn.jsdelivr.net wss:",
+  "connect-src 'self' https://api.github.com https://github.com https://objects.githubusercontent.com https://open.cnpja.com https://publica.cnpj.ws https://brasilapi.com.br https://cdn.jsdelivr.net wss:",
   "frame-src 'self'",
   "frame-ancestors 'self' https://aistudio.google.com https://*.google.com",
 ].join('; ');
@@ -151,6 +157,7 @@ function createRateLimiter(bucketName: string, maxRequests: number, windowMs: nu
 }
 
 const receiptRateLimiter = createRateLimiter('receipt', 15, 5 * 60 * 1000);
+const nfceRateLimiter = createRateLimiter('nfce', 25, 5 * 60 * 1000);
 const diagnosticsRateLimiter = createRateLimiter('diagnostics', 20, 5 * 60 * 1000);
 
 // Increase body limit to support base64 photos/receipts
@@ -434,6 +441,421 @@ Extraia com a máxima precisão os dados financeiros para lançamento de despesa
     const mapped = mapReceiptErrorToPortuguese(info);
     return res.status(mapped.httpStatus).json({
       error: mapped.userMessage,
+    });
+  }
+});
+
+const SEFAZ_MAX_BYTES = 600 * 1024;
+const SEFAZ_TIMEOUT_MS = 7500;
+const CNPJ_TIMEOUT_MS = 5000;
+
+function decodeHtmlBuffer(buffer: ArrayBuffer, contentTypeHeader: string): string {
+  const bytes = new Uint8Array(buffer);
+  const headerMatch = contentTypeHeader.match(/charset\s*=\s*["']?([a-zA-Z0-9_-]+)/i);
+  let charset = headerMatch?.[1]?.toLowerCase() || '';
+
+  if (!charset) {
+    const headBytes = bytes.subarray(0, Math.min(2048, bytes.length));
+    const headAscii = Buffer.from(headBytes).toString('latin1');
+    const metaMatch = headAscii.match(
+      /<meta[^>]+charset\s*=\s*["']?\s*([a-zA-Z0-9_-]+)/i
+    );
+    if (metaMatch?.[1]) {
+      charset = metaMatch[1].toLowerCase();
+    }
+  }
+
+  const resolvedEncoding =
+    charset === 'iso-8859-1' || charset === 'latin1' || charset === 'windows-1252'
+      ? 'windows-1252'
+      : 'utf-8';
+
+  return new TextDecoder(resolvedEncoding, { fatal: false }).decode(bytes);
+}
+
+async function fetchAllowedSefazHtmlOnce(initialUrl: string): Promise<{
+  statusCode: number;
+  finalUrl: string;
+  html: string;
+}> {
+  let currentUrl = initialUrl;
+  const maxRedirects = 4;
+  const cookieJar = new Map<string, string>();
+
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const check = isAllowedSefazUrl(currentUrl);
+    if (!check.ok || !check.url) {
+      throw new Error(check.error || 'URL SEFAZ não permitida.');
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SEFAZ_TIMEOUT_MS);
+
+    try {
+      const headers: Record<string, string> = {
+        'User-Agent':
+          'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9',
+      };
+      if (cookieJar.size > 0) {
+        headers.Cookie = Array.from(cookieJar.entries())
+          .map(([k, v]) => `${k}=${v}`)
+          .join('; ');
+      }
+
+      const response = await fetch(check.url, {
+        method: 'GET',
+        redirect: 'manual',
+        signal: controller.signal,
+        headers,
+      });
+
+      const setCookies =
+        typeof response.headers.getSetCookie === 'function'
+          ? response.headers.getSetCookie()
+          : response.headers.get('set-cookie')
+            ? [response.headers.get('set-cookie') as string]
+            : [];
+      for (const rawCookie of setCookies) {
+        const pair = rawCookie.split(';')[0];
+        const eqIdx = pair.indexOf('=');
+        if (eqIdx > 0) {
+          cookieJar.set(pair.slice(0, eqIdx).trim(), pair.slice(eqIdx + 1).trim());
+        }
+      }
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location || hop === maxRedirects) {
+          throw new Error('Redirecionamento excessivo ou inválido no portal da SEFAZ.');
+        }
+        currentUrl = new URL(location, check.url).toString();
+        continue;
+      }
+
+      const rawBuffer = await response.arrayBuffer();
+      const cappedBuffer =
+        rawBuffer.byteLength > SEFAZ_MAX_BYTES ? rawBuffer.slice(0, SEFAZ_MAX_BYTES) : rawBuffer;
+      const html = decodeHtmlBuffer(cappedBuffer, response.headers.get('content-type') || '');
+
+      return {
+        statusCode: response.status,
+        finalUrl: check.url,
+        html,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  throw new Error('Não foi possível concluir a consulta no portal da SEFAZ.');
+}
+
+async function fetchAllowedSefazHtml(initialUrl: string): Promise<{
+  statusCode: number;
+  finalUrl: string;
+  html: string;
+}> {
+  try {
+    return await fetchAllowedSefazHtmlOnce(initialUrl);
+  } catch (err) {
+    if (initialUrl.startsWith('http://')) {
+      const httpsAlt = initialUrl.replace(/^http:\/\//i, 'https://');
+      if (isAllowedSefazUrl(httpsAlt).ok) {
+        return fetchAllowedSefazHtmlOnce(httpsAlt);
+      }
+    }
+    throw err;
+  }
+}
+
+interface CnpjLookupSummary {
+  nomeFantasia?: string;
+  razaoSocial?: string;
+  cnaeFiscalDescricao?: string;
+  municipio?: string;
+  uf?: string;
+}
+
+async function queryJsonWithTimeout(url: string): Promise<Record<string, unknown> | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CNPJ_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      },
+    });
+    if (!response.ok) return null;
+    const json = (await response.json()) as Record<string, unknown>;
+    return json && typeof json === 'object' ? json : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchCnpjReceitaFederal(cnpjDigits: string): Promise<CnpjLookupSummary | null> {
+  if (!/^\d{14}$/.test(cnpjDigits)) return null;
+
+  // 1. CNPJá Open API (fast, rich Fantasia + Razão + CNAE)
+  const cnpja = await queryJsonWithTimeout(`https://open.cnpja.com/office/${cnpjDigits}`);
+  if (cnpja) {
+    const company = (cnpja.company || {}) as Record<string, unknown>;
+    const mainActivity = (cnpja.mainActivity || {}) as Record<string, unknown>;
+    const address = (cnpja.address || {}) as Record<string, unknown>;
+    const nomeFantasia =
+      typeof cnpja.alias === 'string' && cnpja.alias.trim() ? cnpja.alias.trim() : undefined;
+    const razaoSocial =
+      typeof company.name === 'string' && company.name.trim() ? company.name.trim() : undefined;
+    const cnaeFiscalDescricao =
+      typeof mainActivity.text === 'string' && mainActivity.text.trim()
+        ? mainActivity.text.trim()
+        : undefined;
+    if (nomeFantasia || razaoSocial || cnaeFiscalDescricao) {
+      return {
+        nomeFantasia,
+        razaoSocial,
+        cnaeFiscalDescricao,
+        municipio: typeof address.city === 'string' ? address.city : undefined,
+        uf: typeof address.state === 'string' ? address.state : undefined,
+      };
+    }
+  }
+
+  // 2. CNPJ.ws Public API
+  const cnpjWs = await queryJsonWithTimeout(`https://publica.cnpj.ws/cnpj/${cnpjDigits}`);
+  if (cnpjWs) {
+    const est = (cnpjWs.estabelecimento || {}) as Record<string, unknown>;
+    const ativ = (est.atividade_principal || {}) as Record<string, unknown>;
+    const cid = (est.cidade || {}) as Record<string, unknown>;
+    const ufObj = (est.estado || {}) as Record<string, unknown>;
+    const nomeFantasia =
+      typeof est.nome_fantasia === 'string' && est.nome_fantasia.trim()
+        ? est.nome_fantasia.trim()
+        : undefined;
+    const razaoSocial =
+      typeof cnpjWs.razao_social === 'string' && cnpjWs.razao_social.trim()
+        ? cnpjWs.razao_social.trim()
+        : undefined;
+    const cnaeFiscalDescricao =
+      typeof ativ.descricao === 'string' && ativ.descricao.trim()
+        ? ativ.descricao.trim()
+        : undefined;
+    if (nomeFantasia || razaoSocial || cnaeFiscalDescricao) {
+      return {
+        nomeFantasia,
+        razaoSocial,
+        cnaeFiscalDescricao,
+        municipio: typeof cid.nome === 'string' ? cid.nome : undefined,
+        uf: typeof ufObj.sigla === 'string' ? ufObj.sigla : undefined,
+      };
+    }
+  }
+
+  // 3. ReceitaWS Public API
+  const receitaWs = await queryJsonWithTimeout(`https://receitaws.com.br/v1/cnpj/${cnpjDigits}`);
+  if (receitaWs && receitaWs.status !== 'ERROR') {
+    const atividades = Array.isArray(receitaWs.atividade_principal)
+      ? (receitaWs.atividade_principal as Array<Record<string, unknown>>)
+      : [];
+    const nomeFantasia =
+      typeof receitaWs.fantasia === 'string' && receitaWs.fantasia.trim()
+        ? receitaWs.fantasia.trim()
+        : undefined;
+    const razaoSocial =
+      typeof receitaWs.nome === 'string' && receitaWs.nome.trim()
+        ? receitaWs.nome.trim()
+        : undefined;
+    const cnaeFiscalDescricao =
+      typeof atividades[0]?.text === 'string' && atividades[0].text.trim()
+        ? atividades[0].text.trim()
+        : undefined;
+    if (nomeFantasia || razaoSocial || cnaeFiscalDescricao) {
+      return {
+        nomeFantasia,
+        razaoSocial,
+        cnaeFiscalDescricao,
+        municipio: typeof receitaWs.municipio === 'string' ? receitaWs.municipio : undefined,
+        uf: typeof receitaWs.uf === 'string' ? receitaWs.uf : undefined,
+      };
+    }
+  }
+
+  // 4. BrasilAPI fallback
+  const brasilApi = await queryJsonWithTimeout(`https://brasilapi.com.br/api/cnpj/v1/${cnpjDigits}`);
+  if (brasilApi) {
+    const nomeFantasia =
+      typeof brasilApi.nome_fantasia === 'string' && brasilApi.nome_fantasia.trim()
+        ? brasilApi.nome_fantasia.trim()
+        : undefined;
+    const razaoSocial =
+      typeof brasilApi.razao_social === 'string' && brasilApi.razao_social.trim()
+        ? brasilApi.razao_social.trim()
+        : undefined;
+    const cnaeFiscalDescricao =
+      typeof brasilApi.cnae_fiscal_descricao === 'string' && brasilApi.cnae_fiscal_descricao.trim()
+        ? brasilApi.cnae_fiscal_descricao.trim()
+        : undefined;
+    if (nomeFantasia || razaoSocial || cnaeFiscalDescricao) {
+      return {
+        nomeFantasia,
+        razaoSocial,
+        cnaeFiscalDescricao,
+        municipio: typeof brasilApi.municipio === 'string' ? brasilApi.municipio : undefined,
+        uf: typeof brasilApi.uf === 'string' ? brasilApi.uf : undefined,
+      };
+    }
+  }
+
+  return null;
+}
+
+function getServerLocalDateIso(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+app.post('/api/nfce/consultar', nfceRateLimiter, async (req, res) => {
+  try {
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+      qrUrl?: unknown;
+      accessKey?: unknown;
+    };
+    const rawQrUrl = typeof body.qrUrl === 'string' ? body.qrUrl.trim() : '';
+    const rawAccessKey = typeof body.accessKey === 'string' ? body.accessKey.trim() : '';
+    const rawInput = rawQrUrl || rawAccessKey;
+
+    if (!rawInput) {
+      return res.status(400).json({
+        error: 'Informe a URL do QR Code da nota fiscal ou a chave de acesso de 44 dígitos.',
+      });
+    }
+
+    if (rawQrUrl && /^https?:\/\//i.test(rawQrUrl)) {
+      const urlCheck = isAllowedSefazUrl(rawQrUrl);
+      if (!urlCheck.ok) {
+        return res.status(400).json({ error: urlCheck.error });
+      }
+    }
+
+    const extracted = extractNfceKeyOrUrl(rawInput);
+    if (!extracted.sefazUrl && !extracted.accessKey) {
+      return res.status(400).json({
+        error:
+          'QR Code ou chave inválida. Use um QR Code oficial de NFC-e/SEFAZ (.gov.br) ou uma chave de 44 dígitos.',
+      });
+    }
+
+    const preCnpjDigits = (extracted.cnpj || '').replace(/\D/g, '');
+    const sefazPromise = extracted.sefazUrl
+      ? fetchAllowedSefazHtml(extracted.sefazUrl).catch((err) => {
+          console.warn('Falha ao consultar portal SEFAZ:', err instanceof Error ? err.message : err);
+          return null;
+        })
+      : Promise.resolve(null);
+
+    const preCnpjPromise =
+      preCnpjDigits.length === 14 ? fetchCnpjReceitaFederal(preCnpjDigits) : Promise.resolve(null);
+
+    const [sefazHtmlResult, preCnpjData] = await Promise.all([sefazPromise, preCnpjPromise]);
+
+    let parsedHtml: ReturnType<typeof parseSefazHtmlToReceipt> | null = null;
+    if (
+      sefazHtmlResult &&
+      sefazHtmlResult.statusCode >= 200 &&
+      sefazHtmlResult.statusCode < 400 &&
+      sefazHtmlResult.html
+    ) {
+      parsedHtml = parseSefazHtmlToReceipt(sefazHtmlResult.html, extracted.qrParsed);
+    }
+
+    const cnpjFormatted = parsedHtml?.cnpj || extracted.cnpj || '';
+    const cnpjDigits = cnpjFormatted.replace(/\D/g, '');
+
+    let cnpjData = preCnpjData;
+    if (!cnpjData && cnpjDigits.length === 14 && cnpjDigits !== preCnpjDigits) {
+      cnpjData = await fetchCnpjReceitaFederal(cnpjDigits);
+    }
+
+    const resolvedTitle =
+      parsedHtml?.title ||
+      cnpjData?.nomeFantasia ||
+      cnpjData?.razaoSocial ||
+      (cnpjFormatted ? `Estabelecimento ${cnpjFormatted}` : 'Compra Nota Fiscal (NFC-e)');
+
+    const resolvedAmount = parsedHtml?.amount ?? extracted.qrParsed?.amount ?? 0;
+    const resolvedDate =
+      parsedHtml?.date || extracted.qrParsed?.date || getServerLocalDateIso();
+    const resolvedPayment = parsedHtml?.paymentMethod || 'cartao_credito';
+    const resolvedItems = parsedHtml?.items || [];
+
+    const categoryHint = [
+      resolvedTitle,
+      cnpjData?.cnaeFiscalDescricao || '',
+      ...resolvedItems,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const resolvedCategory = inferCategoryFromTextAndCnae(categoryHint);
+
+    const noteParts: string[] = [];
+    if (resolvedItems.length > 0) {
+      noteParts.push(`Itens: ${resolvedItems.join(', ')}`);
+    }
+    if (cnpjData?.cnaeFiscalDescricao) {
+      noteParts.push(`Atividade: ${cnpjData.cnaeFiscalDescricao}`);
+    }
+    if (cnpjFormatted) {
+      noteParts.push(`CNPJ: ${cnpjFormatted}`);
+    }
+    if (extracted.accessKey) {
+      noteParts.push(
+        `Chave: ${extracted.accessKey.slice(0, 8)}…${extracted.accessKey.slice(-6)}`
+      );
+    }
+
+    const captchaBlocked = Boolean(parsedHtml?.captchaBlocked);
+    const hasFullSefaz = Boolean(
+      parsedHtml && !captchaBlocked && (parsedHtml.title || resolvedItems.length > 0 || (parsedHtml.amount ?? 0) > 0)
+    );
+
+    const sourceStatus = hasFullSefaz
+      ? 'sefaz_full'
+      : cnpjData && (extracted.sefazUrl || parsedHtml)
+        ? 'sefaz_partial_cnpj'
+        : cnpjData
+          ? 'cnpj_only'
+          : 'qr_offline';
+
+    return res.json({
+      title: resolvedTitle,
+      amount: resolvedAmount,
+      date: resolvedDate,
+      category: resolvedCategory,
+      paymentMethod: resolvedPayment,
+      notes: noteParts.join(' • '),
+      accessKey: extracted.accessKey,
+      cnpj: cnpjFormatted || undefined,
+      items: resolvedItems,
+      sefazUrl: sefazHtmlResult?.finalUrl || extracted.sefazUrl,
+      captchaBlocked,
+      sourceStatus,
+      cnaeDescription: cnpjData?.cnaeFiscalDescricao,
+    });
+  } catch (err) {
+    console.error('Erro inesperado na consulta NFC-e:', err);
+    return res.status(500).json({
+      error: 'Não foi possível consultar os dados da nota fiscal na Receita Federal/SEFAZ agora.',
     });
   }
 });

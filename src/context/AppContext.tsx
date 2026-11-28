@@ -55,7 +55,6 @@ import { formatLocalDateIso } from '../utils/dateUtils';
 import { validateAndParseBackupJson } from '../utils/runtimeValidator';
 import {
   CURRENT_DATA_VERSION,
-  DEFAULT_WIDGETS,
   serializeAppPayloadSafely,
 } from '../utils/storageSanitizer';
 import { FinanceContext, FinanceContextType, useFinance } from './FinanceContext';
@@ -132,9 +131,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
   const [specialDates, setSpecialDates] = useState<LocalSpecialDate[]>(
     () => initialPayload.specialDates || []
-  );
-  const [dashboardWidgets, setDashboardWidgets] = useState<string[]>(
-    () => initialPayload.dashboardWidgets || DEFAULT_WIDGETS
   );
 
   const [androidPermissions, setAndroidPermissions] = useState<AndroidPermissionsStatus | null>(null);
@@ -257,7 +253,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       budgetLimits,
       draftNotes,
       specialDates,
-      dashboardWidgets,
       pendingBankNotifications: bankQueue.pendingBankNotifications,
       bankCaptureSettings: bankQueue.bankCaptureSettings,
       scheduledValueMessages: bankQueue.scheduledValueMessages,
@@ -267,7 +262,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bankQueue.pendingBankNotifications,
       bankQueue.scheduledValueMessages,
       budgetLimits,
-      dashboardWidgets,
       draftNotes,
       financialGoals,
       localEvents,
@@ -288,7 +282,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (sanitized.budgetLimits) setBudgetLimits(sanitized.budgetLimits);
       if (sanitized.draftNotes) setDraftNotes(sanitized.draftNotes);
       if (sanitized.specialDates) setSpecialDates(sanitized.specialDates);
-      if (sanitized.dashboardWidgets) setDashboardWidgets(sanitized.dashboardWidgets);
       if (sanitized.pendingBankNotifications) {
         bankQueue.setPendingBankNotifications(sanitized.pendingBankNotifications);
       }
@@ -330,6 +323,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     calendarEvents: calendarActions.calendarEvents,
     transactions,
     hideValues: financeActions.hideValues,
+    financeLockEnabled: financeActions.financeLockEnabled,
     onboardingCompleted,
   });
 
@@ -342,12 +336,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (cleaned) setUserNameState(cleaned);
     setOnboardingCompleted(true);
     hapticSuccess();
-  }, []);
-
-  const toggleDashboardWidget = useCallback((widgetId: string) => {
-    setDashboardWidgets((prev) =>
-      prev.includes(widgetId) ? prev.filter((w) => w !== widgetId) : [...prev, widgetId]
-    );
   }, []);
 
   const openStartFromScratchModal = useCallback(() => {
@@ -366,7 +354,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setBudgetLimits([]);
     setDraftNotes([]);
     setSpecialDates([]);
-    setDashboardWidgets(DEFAULT_WIDGETS);
     bankQueue.setPendingBankNotifications([]);
     bankQueue.setScheduledValueMessages([]);
     notificationsEngine.resetNotificationMemory();
@@ -753,8 +740,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUserName,
       onboardingCompleted,
       completeOnboarding,
-      dashboardWidgets,
-      toggleDashboardWidget,
       isStartFromScratchOpen,
       openStartFromScratchModal,
       closeStartFromScratchModal,
@@ -810,7 +795,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       connectivity.dismissReconnectedBanner,
       connectivity.isOnline,
       connectivity.justReconnected,
-      dashboardWidgets,
       disconnectAutoBackupFolder,
       dismissBackupReminder,
       exportBackupJson,
@@ -832,7 +816,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUserName,
       theme,
       toggleAutoBackupEnabled,
-      toggleDashboardWidget,
       toggleTheme,
       undoToast,
       updater.appUpdateResult,

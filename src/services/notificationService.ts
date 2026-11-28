@@ -224,10 +224,7 @@ export function buildUpcomingNotificationPlan(
       if (Number.isFinite(hour) && Number.isFinite(minute)) {
         const dueAt = parseLocalDate(task.dueDate, hour, minute);
         if (dueAt) {
-          const minsBefore =
-            typeof task.reminderMinutesBefore === 'number' && task.reminderMinutesBefore > 0
-              ? task.reminderMinutesBefore
-              : 15;
+          const minsBefore = 15;
           const beforeAt = new Date(dueAt.getTime() - minsBefore * 60_000);
           pushPlan({
             key: `task-before-${task.id}-${task.dueDate}-${task.dueTime}-${minsBefore}`,

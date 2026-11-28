@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { formatLocalDateIso } from '../dateUtils';
 import {
   CURRENT_DATA_VERSION,
-  DEFAULT_WIDGETS,
   computeStableContentChecksum,
   sanitizeLegacyPayload,
   serializeAppPayloadSafely,
 } from '../storageSanitizer';
+import { validateAndParseBackupJson } from '../runtimeValidator';
 
 describe('sanitizeLegacyPayload', () => {
   it('retorna objeto vazio para entradas nulas ou inválidas sem lançar exceção', () => {
@@ -54,7 +54,7 @@ describe('sanitizeLegacyPayload', () => {
     expect(sanitized.onboardingCompleted).toBe(true);
     expect(sanitized.tasks).toHaveLength(1);
     expect(sanitized.transactions).toHaveLength(1);
-    expect(sanitized.dashboardWidgets).toEqual(['overview', 'finance']);
+    expect((sanitized as Record<string, unknown>).dashboardWidgets).toBeUndefined();
   });
 
   it('remove seeds legados exatos sem apagar registros personalizados do usuário', () => {
@@ -86,7 +86,6 @@ describe('sanitizeLegacyPayload', () => {
     expect(sanitized.transactions?.map((t) => t.id)).toEqual(['tx-1-edited', 'tx-user']);
     expect(sanitized.budgetLimits?.map((b) => b.category)).toEqual(['alimentacao']);
     expect(sanitized.draftNotes?.map((d) => d.id)).toEqual(['draft-user']);
-    expect(sanitized.dashboardWidgets).toEqual(DEFAULT_WIDGETS);
   });
 
   it('preserva rascunhos multimídia (lista, imagem e áudio) e datas especiais', () => {
@@ -236,5 +235,38 @@ describe('sanitizeLegacyPayload', () => {
     expect(sanitized.events).toHaveLength(1);
     expect(sanitized.events?.[0].summary).toBe('Dentista');
     expect(sanitized.events?.[0].source).toBe('local');
+  });
+
+  it('aceita backup antigo contendo dashboardWidgets e reminderMinutesBefore sem erro de validação', () => {
+    const legacyBackupJson = JSON.stringify({
+      version: 4,
+      userName: 'Maria',
+      onboardingCompleted: true,
+      dashboardWidgets: ['overview', 'finance'],
+      tasks: [
+        {
+          id: 't-legacy-1',
+          title: 'Tomar remédio',
+          dueDate: '2026-11-27',
+          dueTime: '09:00',
+          priority: 'high',
+          category: 'saude',
+          completed: false,
+          reminderMinutesBefore: 30,
+          subtasks: [],
+        },
+      ],
+      transactions: [],
+      financialGoals: [],
+      budgetLimits: [],
+      draftNotes: [],
+    });
+
+    const validated = validateAndParseBackupJson(legacyBackupJson);
+    expect(validated.ok).toBe(true);
+    expect(validated.data?.payload.tasks).toHaveLength(1);
+    expect(validated.data?.payload.tasks?.[0].title).toBe('Tomar remédio');
+    expect((validated.data?.payload.tasks?.[0] as unknown as Record<string, unknown>).reminderMinutesBefore).toBeUndefined();
+    expect((validated.data?.payload as Record<string, unknown>).dashboardWidgets).toBeUndefined();
   });
 });

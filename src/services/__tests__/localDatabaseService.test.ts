@@ -174,7 +174,6 @@ function makeSamplePayload(overrides?: Partial<AppDataPayload>): AppDataPayload 
     budgetLimits: [],
     draftNotes: [],
     specialDates: [],
-    dashboardWidgets: ['summary'],
     pendingBankNotifications: [],
     ...overrides,
   };

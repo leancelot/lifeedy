@@ -11,13 +11,14 @@ import {
   ChevronUp,
   Clock,
   Compass,
+  Lock,
   Plus,
   ShieldCheck,
   Sparkles,
   Target,
   X,
 } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import { useFinance, usePlanner, useWorkspace } from '../../context/AppContext';
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
 import { LocalCalendarEvent } from '../../types';
 import { formatLocalDateIso } from '../../utils/dateUtils';
@@ -29,6 +30,8 @@ interface DashboardViewProps {
   onOpenQuickTour?: () => void;
   onDismissTourPrompt?: () => void;
   onOpenBackupSettings?: () => void;
+  isFinanceLocked?: boolean;
+  quickDraftFocusToken?: number;
 }
 
 const getEventDateKey = (ev: LocalCalendarEvent): string => {
@@ -43,7 +46,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenQuickTour,
   onDismissTourPrompt,
   onOpenBackupSettings,
+  isFinanceLocked = false,
+  quickDraftFocusToken = 0,
 }) => {
+  const { backupHealth, dismissBackupReminder } = useWorkspace();
   const {
     tasks,
     toggleTaskCompletion,
@@ -52,19 +58,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     scheduleTaskInCalendar,
     addTask,
     calendarEvents,
-    financialGoals,
-    updateGoal,
-    addTransaction,
-    formatMoney,
-    backupHealth,
-    dismissBackupReminder,
-  } = useApp();
+  } = usePlanner();
+  const { financialGoals, updateGoal, addTransaction, formatMoney, hideValues } = useFinance();
 
   const [quickTaskTitle, setQuickTaskTitle] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'pending' | 'completed'>('all');
   const [expandedTaskIds, setExpandedTaskIds] = useState<Record<string, boolean>>({});
   const [isDepositingGoal, setIsDepositingGoal] = useState(false);
   const [goalDepositAmount, setGoalDepositAmount] = useState('');
+  const [goalDepositRecordTx, setGoalDepositRecordTx] = useState(true);
 
   const now = new Date();
   const todayStr = formatLocalDateIso(now);
@@ -119,7 +121,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const handleQuickGoalDeposit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!focusGoal) return;
+    if (!focusGoal || isFinanceLocked) return;
     const parsed = parseFloat(goalDepositAmount.replace(',', '.'));
     if (isNaN(parsed) || parsed <= 0) return;
 
@@ -127,15 +129,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     updateGoal(focusGoal.id, {
       currentAmount: focusGoal.currentAmount + parsed,
     });
-    addTransaction({
-      type: 'despesa',
-      title: `Aporte: ${focusGoal.title}`,
-      amount: parsed,
-      category: 'investimentos',
-      date: todayStr,
-      paymentMethod: 'pix',
-      notes: 'Aporte rápido pelo Início',
-    });
+    if (goalDepositRecordTx) {
+      addTransaction({
+        type: 'despesa',
+        title: `Aporte: ${focusGoal.title}`,
+        amount: parsed,
+        category: 'investimentos',
+        date: todayStr,
+        paymentMethod: 'pix',
+        notes: 'Aporte rápido pelo Início',
+      });
+    }
     setGoalDepositAmount('');
     setIsDepositingGoal(false);
   };
@@ -347,14 +351,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <ArrowRight className="w-3 h-3" />
                 </button>
 
-                {focusGoal && goalStats && goalStats.remaining > 0 && (
+                {!isFinanceLocked && focusGoal && goalStats && goalStats.remaining > 0 && (
                   <button
                     type="button"
                     onClick={() => {
                       hapticSelection();
                       setIsDepositingGoal((prev) => !prev);
                     }}
-                    className="pressable h-6 px-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                    className="pressable min-h-[28px] px-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
                   >
                     <Plus className="w-3 h-3" />
                     <span>Aportar</span>
@@ -362,43 +366,75 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 )}
               </div>
 
-              {focusGoal && goalStats ? (
+              {isFinanceLocked ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    hapticSelection();
+                    setCurrentTab('financas');
+                  }}
+                  className="flex items-center gap-2.5 text-left cursor-pointer group"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-200 group-hover:underline">
+                      Meta protegida por biometria
+                    </p>
+                    <p className="text-[11px] text-zinc-400">
+                      Toque para desbloquear em Finanças
+                    </p>
+                  </div>
+                </button>
+              ) : focusGoal && goalStats ? (
                 <div className="space-y-2">
                   <div className="flex items-baseline justify-between gap-2">
                     <p className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">
                       {focusGoal.title}
                     </p>
                     <span className="text-[11px] font-mono tabular-nums font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
-                      {goalStats.pct}%
+                      {hideValues ? '••%' : `${goalStats.pct}%`}
                     </span>
                   </div>
 
                   <div className="w-full h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
                     <div
                       className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-                      style={{ width: `${goalStats.pct}%` }}
+                      style={{ width: hideValues ? '0%' : `${goalStats.pct}%` }}
                     />
                   </div>
 
                   {isDepositingGoal ? (
-                    <form onSubmit={handleQuickGoalDeposit} className="flex items-center gap-1.5 pt-0.5">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        required
-                        autoFocus
-                        value={goalDepositAmount}
-                        onChange={(e) => setGoalDepositAmount(e.target.value)}
-                        placeholder="Valor R$"
-                        className="flex-1 h-8 px-2.5 text-xs rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-mono tabular-nums focus:outline-none"
-                      />
-                      <button
-                        type="submit"
-                        className="pressable h-8 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold cursor-pointer"
-                      >
-                        Salvar
-                      </button>
+                    <form onSubmit={handleQuickGoalDeposit} className="space-y-1.5 pt-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          required
+                          autoFocus
+                          value={goalDepositAmount}
+                          onChange={(e) => setGoalDepositAmount(e.target.value)}
+                          placeholder="Valor R$"
+                          className="flex-1 h-8 px-2.5 text-xs rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-mono tabular-nums focus:outline-none"
+                        />
+                        <button
+                          type="submit"
+                          className="pressable h-8 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold cursor-pointer shrink-0"
+                        >
+                          Salvar
+                        </button>
+                      </div>
+                      <label className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={goalDepositRecordTx}
+                          onChange={(e) => setGoalDepositRecordTx(e.target.checked)}
+                          className="w-3.5 h-3.5 rounded accent-emerald-600 shrink-0"
+                        />
+                        <span>Registrar também em Finanças</span>
+                      </label>
                     </form>
                   ) : (
                     <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono tabular-nums">
@@ -632,7 +668,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Coluna Direita: Rascunhos Multimídia Estilo Keep */}
         <div className="lg:col-span-5">
-          <DraftsSection />
+          <DraftsSection quickFocusToken={quickDraftFocusToken} />
         </div>
       </div>
     </div>

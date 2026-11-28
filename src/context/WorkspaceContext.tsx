@@ -40,8 +40,6 @@ export interface WorkspaceContextType {
   setUserName: (name: string) => void;
   onboardingCompleted: boolean;
   completeOnboarding: (name: string) => void;
-  dashboardWidgets: string[];
-  toggleDashboardWidget: (widgetId: string) => void;
 
   isStartFromScratchOpen: boolean;
   openStartFromScratchModal: () => void;

@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 import {
   AlertCircle,
   Camera,
@@ -7,12 +9,15 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  ExternalLink,
   Image as ImageIcon,
   Loader2,
   Pencil,
+  QrCode,
   Receipt,
   RefreshCw,
   Send,
+  ShieldCheck,
   Upload,
   X,
 } from 'lucide-react';
@@ -22,7 +27,9 @@ import {
   ReceiptScanError,
   scanReceiptWithAI,
 } from '../../services/receiptScannerService';
-import { useApp } from '../../context/AppContext';
+import { lookupNfceFromQrOrKey } from '../../services/nfceSefazLookupService';
+import { NfceParsedReceipt } from '../../services/nfceSefazParser';
+import { useFinance } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import { hapticSelection } from '../../services/hapticsService';
 import {
@@ -34,12 +41,24 @@ import { validateReceiptImageFile } from '../../utils/runtimeValidator';
 import { formatLocalDateIso } from '../../utils/dateUtils';
 import { FinanceCategory, Transaction } from '../../types';
 import { triggerConfetti } from '../../utils/confettiEffect';
+import { QrReceiptScannerView } from './QrReceiptScannerView';
 
 interface ReceiptScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialFile?: File | null;
   onConsumeInitialFile?: () => void;
+  initialMode?: 'upload' | 'qr';
+}
+
+type ScanSourceType = 'ai' | 'offline_ocr' | 'manual' | 'sefaz_qr' | 'pix_qr';
+
+interface SefazReviewMeta {
+  sefazUrl?: string;
+  sourceStatus?: NfceParsedReceipt['sourceStatus'];
+  cnpj?: string;
+  captchaBlocked?: boolean;
+  cnaeDescription?: string;
 }
 
 export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
@@ -47,15 +66,20 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
   onClose,
   initialFile,
   onConsumeInitialFile,
+  initialMode = 'upload',
 }) => {
-  const { addTransaction } = useApp();
+  const { addTransaction } = useFinance();
 
-  const [step, setStep] = useState<'upload' | 'scanning' | 'review'>('upload');
+  const [step, setStep] = useState<'upload' | 'qr' | 'scanning' | 'review'>(() =>
+    !initialFile && initialMode === 'qr' ? 'qr' : 'upload'
+  );
+  const [scanningMode, setScanningMode] = useState<'photo' | 'sefaz'>('photo');
   const [selectedImagePreview, setSelectedImagePreview] = useState<string | null>(null);
   const [lastFile, setLastFile] = useState<File | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<ReceiptScanDiagnostics | null>(null);
-  const [scanSource, setScanSource] = useState<'ai' | 'offline_ocr' | 'manual'>('ai');
+  const [scanSource, setScanSource] = useState<ScanSourceType>('ai');
+  const [sefazMeta, setSefazMeta] = useState<SefazReviewMeta | null>(null);
   const [isLogExpanded, setIsLogExpanded] = useState(false);
   const [copiedLog, setCopiedLog] = useState(false);
 
@@ -72,18 +96,28 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
 
   useBackHandler(isOpen, () => {
     if (step === 'scanning') return false;
+    if (step === 'qr') {
+      setStep('upload');
+      setErrorMsg(null);
+      return true;
+    }
     handleClose();
     return true;
   });
 
   useEffect(() => {
-    if (isOpen && initialFile) {
+    if (!isOpen) return;
+    if (initialFile) {
       const fileToScan = initialFile;
       onConsumeInitialFile?.();
       void handleFileSelected(fileToScan);
+    } else if (initialMode === 'qr') {
+      setErrorMsg(null);
+      setDiagnostics(null);
+      setStep('qr');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, initialFile]);
+  }, [isOpen, initialFile, initialMode]);
 
   if (!isOpen) return null;
 
@@ -106,13 +140,15 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     setLastFile(file);
     setErrorMsg(null);
     setDiagnostics(null);
+    setSefazMeta(null);
     setIsLogExpanded(false);
     setCopiedLog(false);
+    setScanningMode('photo');
     setStep('scanning');
 
     try {
       const result = await scanReceiptWithAI(file, { forceServerRetry });
-      const { data, source, diagnostics: scanDiag } = result;
+      const { data, source, diagnostics: scanDiag, sefazMeta: resolvedSefazMeta } = result;
 
       setTitle(data.title);
       setAmount(data.amount > 0 ? data.amount.toFixed(2) : '');
@@ -121,6 +157,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       setPaymentMethod(data.paymentMethod || 'cartao_credito');
       setNotes(data.notes || '');
       setScanSource(source);
+      setSefazMeta(resolvedSefazMeta || null);
       setDiagnostics(scanDiag);
 
       setStep('review');
@@ -145,6 +182,45 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     }
   };
 
+  const handleQrDetected = async (rawQr: string) => {
+    if (selectedImagePreview) {
+      URL.revokeObjectURL(selectedImagePreview);
+      setSelectedImagePreview(null);
+    }
+    setLastFile(null);
+    setErrorMsg(null);
+    setDiagnostics(null);
+    setSefazMeta(null);
+    setScanningMode('sefaz');
+    setStep('scanning');
+
+    try {
+      const res = await lookupNfceFromQrOrKey(rawQr);
+      setTitle(res.title);
+      setAmount(res.amount > 0 ? res.amount.toFixed(2) : '');
+      setDate(res.date || formatLocalDateIso());
+      setCategory(res.category || 'outros');
+      setPaymentMethod(res.paymentMethod || 'cartao_credito');
+      setNotes(res.notes || '');
+      setScanSource(res.sourceStatus === 'pix_qr' ? 'pix_qr' : 'sefaz_qr');
+      setSefazMeta({
+        sefazUrl: res.sefazUrl,
+        sourceStatus: res.sourceStatus,
+        cnpj: res.cnpj,
+        captchaBlocked: res.captchaBlocked,
+        cnaeDescription: res.cnaeDescription,
+      });
+      setStep('review');
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível consultar a nota fiscal na Receita Federal/SEFAZ.';
+      setErrorMsg(msg);
+      setStep('qr');
+    }
+  };
+
   const handleRetryScan = () => {
     if (!lastFile) return;
     handleFileSelected(lastFile, true);
@@ -152,6 +228,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
 
   const handleManualFallback = () => {
     setErrorMsg(null);
+    setSefazMeta(null);
     setTitle('');
     setAmount('');
     setDate(formatLocalDateIso());
@@ -210,21 +287,22 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     link.click();
   };
 
-  const resetAll = () => {
+  const resetAll = (targetStep: 'upload' | 'qr' = 'upload') => {
     if (selectedImagePreview) {
       URL.revokeObjectURL(selectedImagePreview);
     }
-    setStep('upload');
+    setStep(targetStep);
     setSelectedImagePreview(null);
     setLastFile(null);
     setErrorMsg(null);
     setDiagnostics(null);
+    setSefazMeta(null);
     setIsLogExpanded(false);
     setCopiedLog(false);
   };
 
   const handleClose = () => {
-    resetAll();
+    resetAll('upload');
     onClose();
   };
 
@@ -233,6 +311,17 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     const amountNum = parseFloat(amount.replace(',', '.'));
     if (!title.trim() || isNaN(amountNum) || amountNum <= 0) return;
 
+    const fallbackNote =
+      scanSource === 'sefaz_qr'
+        ? 'Lançado via QR Code da Nota Fiscal (Receita Federal / SEFAZ)'
+        : scanSource === 'pix_qr'
+          ? 'Lançado via leitura de QR Code Pix'
+          : scanSource === 'offline_ocr'
+            ? 'Lançado via leitura offline de Nota Fiscal'
+            : scanSource === 'manual'
+              ? 'Lançado manualmente pelo leitor de Nota Fiscal'
+              : 'Lançado automaticamente via leitura de Nota Fiscal por IA';
+
     addTransaction({
       type: 'despesa',
       title: title.trim(),
@@ -240,18 +329,12 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       category,
       date: date || formatLocalDateIso(),
       paymentMethod,
-      notes:
-        notes.trim() ||
-        (scanSource === 'offline_ocr'
-          ? 'Lançado via leitura offline de Nota Fiscal'
-          : scanSource === 'manual'
-            ? 'Lançado manualmente pelo leitor de Nota Fiscal'
-            : 'Lançado automaticamente via leitura de Nota Fiscal por IA'),
+      notes: notes.trim() || fallbackNote,
       recurring: false,
     });
 
     triggerConfetti({ particleCount: 35, spread: 60, origin: { y: 0.7 } });
-    resetAll();
+    resetAll('upload');
     onClose();
   };
 
@@ -332,6 +415,88 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     );
   };
 
+  const renderSourceBadge = () => {
+    if (scanSource === 'manual') {
+      return (
+        <div className="p-3 bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/70 rounded-2xl flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300">
+          <Pencil className="w-4 h-4 text-zinc-500 shrink-0" />
+          <span>Preenchimento manual · Confira e complete os dados da nota</span>
+        </div>
+      );
+    }
+
+    if (scanSource === 'sefaz_qr' || scanSource === 'pix_qr') {
+      const statusLabel =
+        sefazMeta?.sourceStatus === 'sefaz_full'
+          ? 'Dados oficiais obtidos da SEFAZ / Receita Federal'
+          : sefazMeta?.sourceStatus === 'sefaz_partial_cnpj' || sefazMeta?.sourceStatus === 'cnpj_only'
+            ? 'Empresa e categoria consultadas na Receita Federal (CNPJ)'
+            : scanSource === 'pix_qr'
+              ? 'Dados lidos do QR Code Pix'
+              : 'Lido do QR Code da Nota Fiscal (NFC-e)';
+
+      const needsAttention = Boolean(sefazMeta?.captchaBlocked || !amount);
+
+      return (
+        <div className="space-y-2">
+          <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex items-center justify-between gap-2 text-xs font-medium text-emerald-800 dark:text-emerald-300">
+            <div className="flex items-center gap-2 min-w-0">
+              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span className="truncate">{statusLabel}</span>
+            </div>
+
+            {sefazMeta?.sefazUrl && (
+              Capacitor.isNativePlatform() ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (sefazMeta.sefazUrl) {
+                      void Browser.open({ url: sefazMeta.sefazUrl });
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-700 dark:text-emerald-300 text-[11px] font-semibold shrink-0 cursor-pointer"
+                >
+                  <span>SEFAZ</span>
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              ) : (
+                <a
+                  href={sefazMeta.sefazUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-700 dark:text-emerald-300 text-[11px] font-semibold shrink-0"
+                >
+                  <span>SEFAZ</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )
+            )}
+          </div>
+
+          {needsAttention && (
+            <div className="px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/70 text-[11px] text-amber-800 dark:text-amber-300">
+              {sefazMeta?.captchaBlocked
+                ? 'O portal estadual da SEFAZ pediu verificação humana (CAPTCHA). Já preenchemos os dados pela Receita Federal — confira o valor total antes de salvar.'
+                : 'Este QR Code não traz o valor embutido na URL. Confira ou digite o valor total pago.'}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex items-center justify-between gap-2 text-xs font-medium text-emerald-800 dark:text-emerald-300">
+        <div className="flex items-center gap-2 min-w-0">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span className="truncate">Nota pronta para conferência</span>
+        </div>
+        <span className="text-[11px] font-medium text-emerald-700/80 dark:text-emerald-400/90 whitespace-nowrap shrink-0">
+          {scanSource === 'offline_ocr' ? '· Leitura offline' : '· Leitura por IA'}
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div
       onClick={(e) => {
@@ -355,14 +520,16 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
         {/* Modal Header */}
         <div className="flex items-center gap-3 mb-5">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#DC7B62] to-[#BE6272] dark:from-[#F2A68E] dark:to-[#E69BA7] text-white dark:text-[#24120E] flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
-            <Receipt className="w-6 h-6" />
+            {step === 'qr' ? <QrCode className="w-6 h-6" /> : <Receipt className="w-6 h-6" />}
           </div>
           <div>
             <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
-              Leitor de Nota Fiscal
+              {step === 'qr' ? 'QR Code da Nota Fiscal' : 'Leitor de Nota Fiscal'}
             </h3>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Fotografe ou envie o comprovante para lançar sua despesa
+              {step === 'qr'
+                ? 'Escaneie o QR da NFC-e para puxar os dados da Receita Federal / SEFAZ'
+                : 'Leia pelo QR Code da Receita Federal ou envie a foto do comprovante'}
             </p>
           </div>
         </div>
@@ -407,35 +574,60 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
         {/* STEP 1: Upload or Snap Photo */}
         {step === 'upload' && (
           <div className="space-y-4">
+            <button
+              type="button"
+              onClick={() => {
+                setErrorMsg(null);
+                setDiagnostics(null);
+                hapticSelection();
+                setStep('qr');
+              }}
+              className="pressable w-full flex items-center justify-between gap-3 p-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-md shadow-emerald-600/20 cursor-pointer text-left"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+                  <QrCode className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <span className="block text-sm font-bold truncate">
+                    Ler QR Code da Nota (Receita Federal)
+                  </span>
+                  <span className="block text-[11px] text-emerald-50/90 truncate">
+                    Puxa estabelecimento, valor, itens e categoria direto da SEFAZ
+                  </span>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-lg bg-white/20 text-[11px] font-bold shrink-0">
+                Abrir
+              </span>
+            </button>
+
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-3xl p-8 text-center cursor-pointer transition-colors bg-zinc-50/50 dark:bg-zinc-800/40 flex flex-col items-center justify-center gap-3"
+              className="border-2 border-dashed border-zinc-200 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-3xl p-7 text-center cursor-pointer transition-colors bg-zinc-50/50 dark:bg-zinc-800/40 flex flex-col items-center justify-center gap-3"
             >
-              <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                <Upload className="w-7 h-7" />
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                <Upload className="w-6 h-6" />
               </div>
               <div>
                 <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                  Clique ou arraste a imagem da Nota Fiscal
+                  Ou clique para enviar foto da Nota Fiscal
                 </p>
                 <p className="text-xs text-zinc-400 mt-1">
-                  Suporta fotos de cupons (NFC-e, SAT), DANFE e recibos em PNG, JPG ou WEBP
+                  Suporta cupons (NFC-e, SAT), DANFE e recibos em PNG, JPG ou WEBP
                 </p>
               </div>
             </div>
 
-            {errorMsg && (
-              <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/70 text-xs text-rose-600 dark:text-rose-400">
-                <span>{errorMsg}</span>
-                {isAndroidNativeHealthSupported() && (
-                  <button
-                    type="button"
-                    onClick={() => void openAndroidPermissionSettings('appDetails')}
-                    className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold shrink-0 cursor-pointer"
-                  >
-                    Abrir ajustes
-                  </button>
-                )}
+            {errorMsg && isAndroidNativeHealthSupported() && (
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => void openAndroidPermissionSettings('appDetails')}
+                  className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold shrink-0 cursor-pointer"
+                >
+                  Abrir ajustes de câmera
+                </button>
               </div>
             )}
 
@@ -493,6 +685,17 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
           </div>
         )}
 
+        {/* STEP 1B: Live QR Scanner + Photo/Key Fallback */}
+        {step === 'qr' && (
+          <QrReceiptScannerView
+            onQrDetected={(rawQr) => void handleQrDetected(rawQr)}
+            onBackToUpload={() => {
+              setErrorMsg(null);
+              setStep('upload');
+            }}
+          />
+        )}
+
         {/* STEP 2: Scanning in Progress */}
         {step === 'scanning' && (
           <div className="py-12 flex flex-col items-center justify-center text-center space-y-4">
@@ -501,10 +704,14 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
             </div>
             <div>
               <h4 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                Analisando sua Nota Fiscal...
+                {scanningMode === 'sefaz'
+                  ? 'Consultando Receita Federal / SEFAZ...'
+                  : 'Analisando sua Nota Fiscal...'}
               </h4>
               <p className="text-xs text-zinc-500 max-w-sm mx-auto mt-1">
-                Extraindo estabelecimento, valor total, data de emissão e categoria da despesa.
+                {scanningMode === 'sefaz'
+                  ? 'Buscando estabelecimento, valor total, itens e categoria fiscal da NFC-e.'
+                  : 'Extraindo estabelecimento, valor total, data de emissão e categoria da despesa.'}
               </p>
             </div>
             {selectedImagePreview && (
@@ -522,24 +729,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
         {/* STEP 3: Review & Confirm */}
         {step === 'review' && (
           <form onSubmit={handleConfirmAndSave} className="space-y-4">
-            {scanSource === 'manual' ? (
-              <div className="p-3 bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/70 rounded-2xl flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                <Pencil className="w-4 h-4 text-zinc-500 shrink-0" />
-                <span>Preenchimento manual · Confira e complete os dados da nota</span>
-              </div>
-            ) : (
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex items-center justify-between gap-2 text-xs font-medium text-emerald-800 dark:text-emerald-300">
-                <div className="flex items-center gap-2 min-w-0">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span className="truncate">
-                    Nota pronta para conferência
-                  </span>
-                </div>
-                <span className="text-[11px] font-medium text-emerald-700/80 dark:text-emerald-400/90 whitespace-nowrap shrink-0">
-                  {scanSource === 'offline_ocr' ? '· Leitura offline' : '· Leitura por IA'}
-                </span>
-              </div>
-            )}
+            {renderSourceBadge()}
 
             <div className="flex gap-4">
               {selectedImagePreview && (
@@ -640,7 +830,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                Itens Identificados na Nota
+                Itens e Dados Fiscais Identificados
               </label>
               <textarea
                 rows={2}
@@ -654,10 +844,10 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
             <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-2">
               <button
                 type="button"
-                onClick={resetAll}
+                onClick={() => resetAll(scanSource === 'sefaz_qr' || scanSource === 'pix_qr' ? 'qr' : 'upload')}
                 className="pressable min-h-[40px] px-2 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer whitespace-nowrap"
               >
-                Ler outra foto
+                {scanSource === 'sefaz_qr' || scanSource === 'pix_qr' ? 'Ler outro QR' : 'Ler outra foto'}
               </button>
 
               <div className="flex items-center gap-2">

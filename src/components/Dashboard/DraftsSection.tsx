@@ -18,7 +18,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import { useFinance, usePlanner } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import { DraftNote, FinanceCategory, TransactionType } from '../../types';
 import { hapticImpactLight, hapticSelection, hapticSuccess } from '../../services/hapticsService';
@@ -50,7 +50,11 @@ const RichDraftModal = lazyWithRetry(
   'rich-draft-modal'
 );
 
-export const DraftsSection: React.FC = () => {
+interface DraftsSectionProps {
+  quickFocusToken?: number;
+}
+
+export const DraftsSection: React.FC<DraftsSectionProps> = ({ quickFocusToken = 0 }) => {
   const {
     draftNotes,
     addDraftNote,
@@ -60,9 +64,9 @@ export const DraftsSection: React.FC = () => {
     toggleDraftChecklistItem,
     addDraftChecklistItem,
     convertDraftToTask,
-    addTransaction,
     addLocalEvent,
-  } = useApp();
+  } = usePlanner();
+  const { addTransaction } = useFinance();
 
   const [filterMode, setFilterMode] = useState<'all' | 'pinned' | 'lists' | 'media'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -249,6 +253,12 @@ export const DraftsSection: React.FC = () => {
       streamRef.current = null;
     }
   };
+
+  useEffect(() => {
+    if (quickFocusToken > 0) {
+      setComposerMode('text');
+    }
+  }, [quickFocusToken]);
 
   useEffect(() => {
     return () => {

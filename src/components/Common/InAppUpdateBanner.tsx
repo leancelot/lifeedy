@@ -8,7 +8,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import { useWorkspace } from '../../context/AppContext';
 import { isNativeSelfUpdateSupported } from '../../services/appUpdaterBridge';
 import {
   getStoredGitHubConfig,
@@ -34,13 +34,13 @@ export const InAppUpdateBanner: React.FC = () => {
     retryInstallPendingApk,
     dismissUpdateBanner,
     resetUpdateDownloadState,
-  } = useApp();
+  } = useWorkspace();
 
   const nativeAndroid = isNativeSelfUpdateSupported();
   const isFlowActive = updateDownloadState.status !== 'idle';
   const hasVisibleUpdate = Boolean(appUpdateResult?.hasUpdate && !isUpdateBannerDismissed);
 
-  if (!hasVisibleUpdate && !isFlowActive) {
+  if (!nativeAndroid || (!hasVisibleUpdate && !isFlowActive)) {
     return null;
   }
 

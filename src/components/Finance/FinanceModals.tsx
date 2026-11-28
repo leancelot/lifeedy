@@ -209,7 +209,7 @@ export const FinanceTransactionModal: React.FC<FinanceTransactionModalProps> = (
               htmlFor="txRecurringCheckbox"
               className="text-xs font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer"
             >
-              Despesa / Entrada Fixa Recorrente (todo mês)
+              Lembrar todo mês no Resumo (despesa/entrada fixa)
             </label>
           </div>
 
@@ -512,6 +512,8 @@ interface FinanceAddToGoalModalProps {
   addingToGoal: { id: string; title: string } | null;
   addGoalAmount: string;
   setAddGoalAmount: (v: string) => void;
+  recordTransaction: boolean;
+  setRecordTransaction: (v: boolean) => void;
   onClose: () => void;
   onSubmit: (e: React.FormEvent) => void;
 }
@@ -520,6 +522,8 @@ export const FinanceAddToGoalModal: React.FC<FinanceAddToGoalModalProps> = ({
   addingToGoal,
   addGoalAmount,
   setAddGoalAmount,
+  recordTransaction,
+  setRecordTransaction,
   onClose,
   onSubmit,
 }) => {
@@ -571,9 +575,23 @@ export const FinanceAddToGoalModal: React.FC<FinanceAddToGoalModalProps> = ({
               placeholder="Valor"
               value={addGoalAmount}
               onChange={(e) => setAddGoalAmount(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none"
+              className="w-full px-3.5 py-2.5 text-sm rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none font-mono tabular-nums"
             />
           </div>
+
+          <label className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/80 dark:border-zinc-700 cursor-pointer">
+            <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              Registrar também como saída (Investimentos)
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={recordTransaction}
+              onChange={(e) => setRecordTransaction(e.target.checked)}
+              className="w-4 h-4 rounded accent-emerald-600 cursor-pointer shrink-0"
+            />
+          </label>
+
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"

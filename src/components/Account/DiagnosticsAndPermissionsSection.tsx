@@ -17,7 +17,7 @@ import {
   ShieldCheck,
   Trash2,
 } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import { usePlanner, useWorkspace } from '../../context/AppContext';
 import {
   getWebMediaPermissionsStatus,
   isAndroidNativeHealthSupported,
@@ -62,11 +62,10 @@ export const DiagnosticsAndPermissionsSection: React.FC<DiagnosticsAndPermission
     androidPermissions,
     refreshAndroidPermissions,
     openAndroidSettings,
-    notificationPermission,
-    enableNotifications,
     vaultStatus,
     isOnline,
-  } = useApp();
+  } = useWorkspace();
+  const { notificationPermission, enableNotifications } = usePlanner();
 
   const nativeAndroid = isAndroidNativeHealthSupported();
   const [journalEntries, setJournalEntries] = useState<ErrorJournalEntry[]>(() => getErrorJournal());
@@ -506,15 +505,17 @@ export const DiagnosticsAndPermissionsSection: React.FC<DiagnosticsAndPermission
           </button>
         </div>
 
-        <label className="flex items-center justify-between gap-2 text-[11px] text-zinc-600 dark:text-zinc-300 cursor-pointer">
-          <span>Enviar relatórios sanitizados automaticamente quando online</span>
-          <input
-            type="checkbox"
-            checked={autoReport}
-            onChange={(e) => handleToggleAutoReport(e.target.checked)}
-            className="w-4 h-4 rounded accent-indigo-600 shrink-0"
-          />
-        </label>
+        {nativeAndroid && (
+          <label className="flex items-center justify-between gap-2 text-[11px] text-zinc-600 dark:text-zinc-300 cursor-pointer">
+            <span>Enviar relatórios sanitizados automaticamente quando online</span>
+            <input
+              type="checkbox"
+              checked={autoReport}
+              onChange={(e) => handleToggleAutoReport(e.target.checked)}
+              className="w-4 h-4 rounded accent-indigo-600 shrink-0"
+            />
+          </label>
+        )}
 
         {diagMessage && (
           <p className="text-[11px] font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/70 rounded-xl px-3 py-2">
@@ -532,15 +533,17 @@ export const DiagnosticsAndPermissionsSection: React.FC<DiagnosticsAndPermission
             <span>Exportar log</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => void handleSendReportToServer()}
-            disabled={isSendingReport || !isOnline}
-            className="pressable min-h-[36px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-[11px] font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>{isSendingReport ? 'Enviando...' : 'Enviar relatório'}</span>
-          </button>
+          {nativeAndroid && (
+            <button
+              type="button"
+              onClick={() => void handleSendReportToServer()}
+              disabled={isSendingReport || !isOnline}
+              className="pressable min-h-[36px] px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-[11px] font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>{isSendingReport ? 'Enviando...' : 'Enviar relatório'}</span>
+            </button>
+          )}
 
           <a
             href={mailtoUrl}

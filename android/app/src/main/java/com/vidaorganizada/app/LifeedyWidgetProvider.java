@@ -92,7 +92,7 @@ public class LifeedyWidgetProvider extends AppWidgetProvider {
         );
         views.setOnClickPendingIntent(
                 R.id.widget_btn_scan_qr,
-                createShortcutPendingIntent(context, 102, "scan-receipt")
+                createShortcutPendingIntent(context, 102, "scan-qr")
         );
         views.setOnClickPendingIntent(
                 R.id.widget_btn_new_task,

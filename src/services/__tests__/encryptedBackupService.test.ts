@@ -50,7 +50,6 @@ const SAMPLE_PAYLOAD: AppDataPayload = {
   draftNotes: [],
   pendingBankNotifications: [],
   specialDates: [],
-  dashboardWidgets: ['overview', 'schedule', 'tasks', 'finance'],
 };
 
 describe('encryptedBackupService', () => {

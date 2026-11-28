@@ -20,14 +20,6 @@ import {
 import { formatLocalDateIso } from './dateUtils';
 
 export const CURRENT_DATA_VERSION = 4;
-export const DEFAULT_WIDGETS = [
-  'overview',
-  'schedule',
-  'tasks',
-  'finance',
-  'scratchpad',
-  'reminders',
-];
 
 export const DEFAULT_BANK_CAPTURE_SETTINGS: BankCaptureSettings = {
   captureBanksEnabled: true,
@@ -133,10 +125,6 @@ function normalizeTaskItem(raw: unknown): TaskItem | null {
         ? r.linkedEventId
         : typeof r.googleCalendarEventId === 'string'
         ? r.googleCalendarEventId
-        : undefined,
-    reminderMinutesBefore:
-      typeof r.reminderMinutesBefore === 'number' && Number.isFinite(r.reminderMinutesBefore)
-        ? r.reminderMinutesBefore
         : undefined,
   };
 }
@@ -586,9 +574,6 @@ export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> 
       ? record.events.map(normalizeLocalEvent).filter((e): e is LocalCalendarEvent => e !== null)
       : []
   );
-  const dashboardWidgets = Array.isArray(record.dashboardWidgets)
-    ? (record.dashboardWidgets.filter((w): w is string => typeof w === 'string') as string[])
-    : DEFAULT_WIDGETS;
   const pendingBankNotifications: PendingBankNotification[] = Array.isArray(
     record.pendingBankNotifications
   )
@@ -619,7 +604,6 @@ export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> 
       budgetLimits: rawBudgets,
       draftNotes: rawDrafts,
       specialDates,
-      dashboardWidgets,
       pendingBankNotifications,
       bankCaptureSettings,
       scheduledValueMessages,
@@ -657,7 +641,6 @@ export function sanitizeLegacyPayload(parsed: unknown): Partial<AppDataPayload> 
     budgetLimits,
     draftNotes,
     specialDates,
-    dashboardWidgets,
     pendingBankNotifications,
     bankCaptureSettings,
     scheduledValueMessages,

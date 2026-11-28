@@ -9,11 +9,14 @@ import {
   Check,
   CheckCircle2,
   Clock,
+  HardDrive,
+  Lock,
   Sparkles,
   Trash2,
+  Wallet,
   X,
 } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+import { useFinance, usePlanner, useWorkspace } from '../../context/AppContext';
 import { useBackHandler } from '../../context/BackNavigationContext';
 import { hapticSelection, hapticSuccess } from '../../services/hapticsService';
 import { LocalCalendarEvent } from '../../types';
@@ -22,6 +25,9 @@ interface NotificationCenterModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenAgenda?: () => void;
+  onOpenFinance?: () => void;
+  onOpenBackupSettings?: () => void;
+  isFinanceLocked?: boolean;
 }
 
 const toLocalDateStr = (d: Date): string =>
@@ -40,7 +46,17 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   isOpen,
   onClose,
   onOpenAgenda,
+  onOpenFinance,
+  onOpenBackupSettings,
+  isFinanceLocked = false,
 }) => {
+  const { backupHealth } = useWorkspace();
+  const {
+    pendingBankNotifications,
+    hideValues,
+    formatMoney,
+    financeLockEnabled,
+  } = useFinance();
   const {
     notificationsList,
     notificationPermission,
@@ -51,7 +67,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     tasks,
     toggleTaskCompletion,
     calendarEvents,
-  } = useApp();
+  } = usePlanner();
 
   useBackHandler(isOpen, () => {
     onClose();
@@ -63,6 +79,8 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   const todayStr = toLocalDateStr(new Date());
   const dueTodayTasks = tasks.filter((t) => !t.completed && t.dueDate === todayStr);
   const todayEvents = calendarEvents.filter((ev) => getEventDateKey(ev) === todayStr);
+  const shouldMaskFinance = Boolean(isFinanceLocked || financeLockEnabled || hideValues);
+  const pendingTotal = pendingBankNotifications.reduce((acc, item) => acc + (item.amount || 0), 0);
 
   return (
     <div
@@ -74,7 +92,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
       }}
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-backdrop-in keyboard-modal-backdrop"
     >
-      <div className="w-full sm:max-w-lg bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sm:p-7 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:pb-7 keyboard-modal-sheet flex flex-col relative animate-bottom-sheet">
+      <div className="w-full sm:max-w-lg max-h-[90dvh] bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sm:p-7 pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] sm:pb-7 keyboard-modal-sheet flex flex-col relative animate-bottom-sheet">
         <div className="sm:hidden w-10 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700 mx-auto mb-3 shrink-0" />
 
         <button
@@ -153,6 +171,83 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+          {/* Pendências Financeiras & Lembrete de Backup */}
+          {(pendingBankNotifications.length > 0 || backupHealth.shouldRemind) && (
+            <div className="space-y-2">
+              {pendingBankNotifications.length > 0 && (
+                <div className="p-3.5 rounded-2xl bg-violet-50/70 dark:bg-violet-950/25 border border-violet-200/80 dark:border-violet-900/50 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-white dark:bg-zinc-800 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
+                      {isFinanceLocked ? (
+                        <Lock className="w-4 h-4" />
+                      ) : (
+                        <Wallet className="w-4 h-4" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                        {pendingBankNotifications.length} lançamento(s) bancário(s) pendente(s)
+                      </p>
+                      <p className="text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
+                        {shouldMaskFinance
+                          ? 'Valores ocultos pela privacidade · revise na aba Finanças'
+                          : `Total aguardando confirmação: ${formatMoney(pendingTotal)}`}
+                      </p>
+                    </div>
+                  </div>
+                  {onOpenFinance && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        hapticSelection();
+                        onClose();
+                        onOpenFinance();
+                      }}
+                      className="pressable min-h-[36px] px-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
+                    >
+                      <span>Revisar em Finanças</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {backupHealth.shouldRemind && (
+                <div className="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200/80 dark:border-amber-900/50 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-white dark:bg-zinc-800 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                      <HardDrive className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                        Backup portátil recomendado
+                      </p>
+                      <p className="text-[11px] text-zinc-600 dark:text-zinc-400 line-clamp-2">
+                        {backupHealth.daysSinceLastBackup !== null
+                          ? `Último backup há ${backupHealth.daysSinceLastBackup} dia(s). Exporte uma cópia cifrada recente.`
+                          : 'Nenhum backup portátil exportado ainda. Proteja seus dados locais.'}
+                      </p>
+                    </div>
+                  </div>
+                  {onOpenBackupSettings && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        hapticSelection();
+                        onClose();
+                        onOpenBackupSettings();
+                      }}
+                      className="pressable min-h-[36px] px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
+                    >
+                      <span>Fazer backup</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Lembretes de Hoje (Tarefas + Eventos/Aniversários) */}
           {(dueTodayTasks.length > 0 || todayEvents.length > 0) && (
             <div className="space-y-2">
